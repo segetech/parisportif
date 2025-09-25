@@ -153,7 +153,10 @@ function Bets() {
           ),
         );
       } else {
-        const row = await api.bets.create({ ...values, created_by: user!.id });
+        const row = await api.bets.create({
+          ...(values as Omit<Bet, "id" | "created_at">),
+          created_by: user!.id,
+        });
         setRows((prev) => [row, ...prev]);
       }
       setOpen(false);
