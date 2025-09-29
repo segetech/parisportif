@@ -102,7 +102,8 @@ function Transactions() {
   const [lookups, setLookups] = useState<{
     operators: string[];
     payment_operators: string[];
-  }>({ operators: [], payment_operators: [] });
+    platforms: string[];
+  }>({ operators: [], payment_operators: [], platforms: [] });
 
   useEffect(() => {
     (async () => {
