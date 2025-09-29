@@ -327,7 +327,10 @@ function Bets() {
                 <label className="text-xs font-medium">Opérateur de jeux</label>
                 <Select
                   value={watch("operator")}
-                  onValueChange={(v) => setValue("operator", v)}
+                  onValueChange={(v) => {
+                    if (v === "__add__") return addLookup("operators", "opérateur", (name) => setValue("operator", name));
+                    setValue("operator", v);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choisir" />
