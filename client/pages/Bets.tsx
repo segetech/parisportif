@@ -171,6 +171,30 @@ function Bets() {
     else if (editing) reset(editing as any);
   }, [open]);
 
+  const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
+  async function addLookup(
+    key: keyof typeof api.store.lookups,
+    label: string,
+    onAdded?: (value: string) => void,
+  ) {
+    if (!canManageLookups) {
+      toast.error("Accès refusé : création réservée à l’admin.");
+      return;
+    }
+    const name = window.prompt(`Ajouter ${label} :`);
+    if (!name) return;
+    await api.lookups.add(key as any, name);
+    const l = await api.lookups.all();
+    setLookups({
+      operators: l.operators,
+      supports: l.supports,
+      bet_types: l.bet_types,
+      statuses: l.statuses,
+    });
+    onAdded?.(name);
+    toast.success(`${label} ajouté(e).`);
+  }
+
   return (
     <AppLayout onNew={onNew} newButtonLabel="+ Nouveau pari">
       <div className="rounded-md border overflow-hidden">
