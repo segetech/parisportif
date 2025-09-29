@@ -368,6 +368,7 @@ function Bets() {
                         {op}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__add__">+ Ajouter un support…</SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.support && (
