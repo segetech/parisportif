@@ -517,6 +517,7 @@ function Transactions() {
                           {op}
                         </SelectItem>
                       ))}
+                      <SelectItem value="__add__">+ Ajouter un opérateur de paiement…</SelectItem>
                     </SelectContent>
                   </Select>
                   {errors.payment_operator && (
