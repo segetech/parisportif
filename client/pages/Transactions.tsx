@@ -444,7 +444,10 @@ function Transactions() {
                     Opérateur de jeux
                   </label>
                   <Select
-                    onValueChange={(v) => setValue("operator", v)}
+                    onValueChange={(v) => {
+                      if (v === "__add__") return addLookup("operators", "opérateur", (name) => setValue("operator", name));
+                      setValue("operator", v);
+                    }}
                     value={watch("operator")}
                   >
                     <SelectTrigger>
