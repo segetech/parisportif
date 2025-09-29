@@ -111,6 +111,7 @@ function Transactions() {
       setLookups({
         operators: l.operators,
         payment_operators: l.payment_operators,
+        platforms: l.platforms,
       });
     })();
   }, []);
