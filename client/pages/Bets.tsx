@@ -56,22 +56,9 @@ const schema = z
       .int()
       .positive({ message: "Le montant doit être un entier positif." }),
     status: z.enum(["gagné", "perdu", "en attente"]),
-    amount_won_fcfa: z.coerce.number().int().nonnegative().optional(),
     reference: z.string().min(1, { message: "Référence requise" }),
-    ticket_url: z
-      .string()
-      .url({ message: "URL invalide" })
-      .optional()
-      .or(z.literal("")),
     notes: z.string().optional(),
-  })
-  .refine(
-    (data) => data.status !== "gagné" || (data.amount_won_fcfa ?? 0) > 0,
-    {
-      message: "Le montant gagné est requis quand le statut est ‘gagné’.",
-      path: ["amount_won_fcfa"],
-    },
-  );
+  });
 
 type FormValues = z.infer<typeof schema>;
 
@@ -208,7 +195,6 @@ function Bets() {
               <TableHead>Type</TableHead>
               <TableHead>Montant</TableHead>
               <TableHead>Statut</TableHead>
-              <TableHead>Gain</TableHead>
               <TableHead>Référence</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
@@ -226,13 +212,6 @@ function Bets() {
                     {new Intl.NumberFormat("fr-FR").format(r.amount_fcfa)} F CFA
                   </TableCell>
                   <TableCell>{r.status}</TableCell>
-                  <TableCell>
-                    {r.amount_won_fcfa
-                      ? new Intl.NumberFormat("fr-FR").format(
-                          r.amount_won_fcfa,
-                        ) + " F CFA"
-                      : "-"}
-                  </TableCell>
                   <TableCell>{r.reference}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
@@ -421,41 +400,23 @@ function Bets() {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium">Statut</label>
-                <Select
-                  value={watch("status")}
-                  onValueChange={(v) => setValue("status", v as any)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {lookups.statuses.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs font-medium">
-                  Montant gagné (F CFA)
-                </label>
-                <Input
-                  type="number"
-                  step="1"
-                  min="0"
-                  {...register("amount_won_fcfa", { valueAsNumber: true })}
-                />
-                {errors.amount_won_fcfa && (
-                  <p className="text-xs text-red-600">
-                    {errors.amount_won_fcfa.message}
-                  </p>
-                )}
-              </div>
+            <div>
+              <label className="text-xs font-medium">Statut</label>
+              <Select
+                value={watch("status")}
+                onValueChange={(v) => setValue("status", v as any)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {lookups.statuses.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="text-xs font-medium">Référence (unique)</label>
@@ -466,17 +427,9 @@ function Bets() {
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium">
-                  Lien du ticket (URL)
-                </label>
-                <Input {...register("ticket_url")} />
-              </div>
-              <div>
-                <label className="text-xs font-medium">Notes</label>
-                <Input {...register("notes")} />
-              </div>
+            <div>
+              <label className="text-xs font-medium">Notes</label>
+              <Input {...register("notes")} />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button
