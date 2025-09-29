@@ -470,7 +470,25 @@ function Transactions() {
                 </div>
                 <div>
                   <label className="text-xs font-medium">Plateforme</label>
-                  <Input {...register("platform")} />
+                  <Select
+                    onValueChange={(v) => {
+                      if (v === "__add__") return addLookup("platforms", "plateforme", (name) => setValue("platform", name));
+                      setValue("platform", v);
+                    }}
+                    value={watch("platform")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choisir" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {lookups.platforms.map((op) => (
+                        <SelectItem key={op} value={op}>
+                          {op}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__add__">+ Ajouter une plateforme…</SelectItem>
+                    </SelectContent>
+                  </Select>
                   {errors.platform && (
                     <p className="text-xs text-red-600">
                       {errors.platform.message}
