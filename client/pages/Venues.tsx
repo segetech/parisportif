@@ -29,6 +29,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import LookupDialog from "@/components/common/LookupDialog";
 import { venueFormSchema, VenueFormValues } from "@/schemas/venue";
 import {
   listVenues,
