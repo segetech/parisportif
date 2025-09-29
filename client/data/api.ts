@@ -56,6 +56,8 @@ export interface Venue {
   gps_lat?: number;
   gps_lng?: number;
   notes?: string;
+  created_at: string; // ISO
+  created_by: string; // user id
 }
 
 export type LookupKey =
@@ -265,9 +267,11 @@ export const venues = {
     await delay();
     return [...store.venues];
   },
-  async create(input: Omit<Venue, "id">): Promise<Venue> {
+  async create(
+    input: Omit<Venue, "id" | "created_at">,
+  ): Promise<Venue> {
     await delay();
-    const v: Venue = { ...input, id: uid("ven") };
+    const v: Venue = { ...input, id: uid("ven"), created_at: dayjs().toISOString() };
     store.venues.push(v);
     return v;
   },
