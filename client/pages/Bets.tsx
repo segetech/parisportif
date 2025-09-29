@@ -72,6 +72,7 @@ function Bets() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const [rows, setRows] = useState<Bet[]>([]);
+  const [filters, setFilters] = useState<{ operator: string }>({ operator: "" });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Bet | null>(null);
   const [lookups, setLookups] = useState<{
@@ -157,6 +158,37 @@ function Bets() {
   }, [open]);
 
   const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
+  // Compte global par opérateur
+  const operatorCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of rows) m[r.operator] = (m[r.operator] ?? 0) + 1;
+    return m;
+  }, [rows]);
+  // Rows filtrées par opérateur
+  const filteredRows = useMemo(
+    () => rows.filter((r) => !filters.operator || r.operator === filters.operator),
+    [rows, filters.operator],
+  );
+  // Tri Date+Heure
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const sortedRows = useMemo(() => {
+    const arr = [...filteredRows];
+    arr.sort((a, b) => {
+      const ca = (a.date + a.time);
+      const cb = (b.date + b.time);
+      const cmp = ca.localeCompare(cb);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [filteredRows, sortDir]);
+  // Numérotation par opérateur dans l'ordre d'affichage
+  const numberedRows = useMemo(() => {
+    const counts: Record<string, number> = {};
+    return sortedRows.map((r) => ({
+      ...r,
+      _no: (counts[r.operator] = (counts[r.operator] ?? 0) + 1),
+    } as any));
+  }, [sortedRows]);
   const [lkOpen, setLkOpen] = useState(false);
   const [lkSpec, setLkSpec] = useState<{
     key: keyof typeof api.store.lookups;
@@ -199,10 +231,54 @@ function Bets() {
           }}
         />
       )}
+      {/* Menu d'opérateurs */}
+      <div className="flex flex-wrap gap-2 mb-3 items-end">
+        <div className="flex gap-2 overflow-x-auto pb-1 pr-2">
+          <Button
+            variant={(!filters.operator || filters.operator === "") ? "default" : "outline"}
+            size="sm"
+            type="button"
+            onClick={() => setFilters({ operator: "" })}
+          >
+            Tous
+          </Button>
+          {lookups.operators.map((op) => (
+            <Button
+              key={op}
+              variant={filters.operator === op ? "default" : "outline"}
+              size="sm"
+              type="button"
+              onClick={() => setFilters({ operator: op })}
+            >
+              {op} ({operatorCounts[op] ?? 0})
+            </Button>
+          ))}
+        </div>
+        <div className="flex gap-2 ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            onClick={() => setSortDir("asc")}
+          >
+            Tri: Asc
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            onClick={() => setSortDir("desc")}
+          >
+            Tri: Desc
+          </Button>
+        </div>
+      </div>
+
       <div className="rounded-md border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>N°</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Heure</TableHead>
               <TableHead>Opérateur</TableHead>
@@ -215,9 +291,10 @@ function Bets() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.length ? (
-              rows.map((r) => (
+            {numberedRows.length ? (
+              numberedRows.map((r) => (
                 <TableRow key={r.id}>
+                  <TableCell>{(r as any)._no}</TableCell>
                   <TableCell>{r.date}</TableCell>
                   <TableCell>{r.time}</TableCell>
                   <TableCell>{r.operator}</TableCell>

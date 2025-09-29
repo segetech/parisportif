@@ -98,6 +98,8 @@ function Transactions() {
   const [filters, setFilters] = useState({ operator: "", reference: "" });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [viewing, setViewing] = useState<Transaction | null>(null);
   const [lookups, setLookups] = useState<{
     operators: string[];
     payment_operators: string[];
@@ -129,8 +131,33 @@ function Transactions() {
     if (ref) setFilters((f) => ({ ...f, reference: ref }));
   }
 
+  // Compte des lignes par opérateur (sur l'ensemble des lignes chargées)
+  const operatorCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of rows) m[r.operator] = (m[r.operator] ?? 0) + 1;
+    return m;
+  }, [rows]);
+
   const columns = useMemo<ColumnDef<Transaction>[]>(
     () => [
+      // Numérotation dans la vue filtrée/triée/paginée
+      {
+        id: "no",
+        header: "N°",
+        cell: ({ row, table }) => {
+          // Numérotation par opérateur dans la vue courante (après filtres, tri, pagination)
+          const currentOp = row.original.operator;
+          const rows = table.getRowModel()?.rows ?? [];
+          let count = 0;
+          for (const r of rows) {
+            const orig = (r as any).original as Transaction | undefined;
+            if (orig && orig.operator === currentOp) count++;
+            if (r.id === row.id) break;
+          }
+          return count;
+        },
+        enableSorting: false,
+      },
       { accessorKey: "date", header: "Date" },
       { accessorKey: "time", header: "Heure" },
       { accessorKey: "operator", header: "Opérateur" },
@@ -169,7 +196,10 @@ function Transactions() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 <DropdownMenuItem
-                  onClick={() => alert(JSON.stringify(row.original, null, 2))}
+                  onClick={() => {
+                    setViewing(row.original);
+                    setViewOpen(true);
+                  }}
                 >
                   Voir
                 </DropdownMenuItem>
@@ -224,7 +254,7 @@ function Transactions() {
     const copy: FormValues = { ...r, reference: r.reference + "-copy" };
     setEditing(null);
     setOpen(true);
-    setTimeout(() => form.reset(copy), 0);
+    setTimeout(() => resetForm(copy), 0);
   }
 
   async function removeRow(id: string) {
@@ -276,7 +306,10 @@ function Transactions() {
       if (editing) {
         await api.transactions.update(editing.id, values);
       } else {
-        await api.transactions.create({ ...values, created_by: user!.id });
+        await api.transactions.create({
+          ...(values as Omit<Transaction, "id" | "created_at">),
+          created_by: user!.id,
+        });
       }
       setOpen(false);
       toast.success("Transaction enregistrée.");
@@ -335,28 +368,33 @@ function Transactions() {
           />
         )}
         <div className="flex flex-wrap gap-2 mb-3 items-end">
-          <div>
-            <label className="text-xs font-medium">Opérateur</label>
-            <Select
-              value={filters.operator || "all"}
-              onValueChange={(v) => {
-                const val = v === "all" ? "" : v;
-                setFilters((f) => ({ ...f, operator: val }));
-                table.getColumn("operator")?.setFilterValue(val || undefined);
+          {/* Menu d'opérateurs */}
+          <div className="flex gap-2 overflow-x-auto pb-1 pr-2">
+            <Button
+              variant={(!filters.operator || filters.operator === "") ? "default" : "outline"}
+              size="sm"
+              type="button"
+              onClick={() => {
+                setFilters((f) => ({ ...f, operator: "" }));
+                table.getColumn("operator")?.setFilterValue(undefined);
               }}
             >
-              <SelectTrigger className="w-56">
-                <SelectValue placeholder="Tous" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous</SelectItem>
-                {lookups.operators.map((op) => (
-                  <SelectItem key={op} value={op}>
-                    {op}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              Tous
+            </Button>
+            {lookups.operators.map((op) => (
+              <Button
+                key={op}
+                variant={filters.operator === op ? "default" : "outline"}
+                size="sm"
+                type="button"
+                onClick={() => {
+                  setFilters((f) => ({ ...f, operator: op }));
+                  table.getColumn("operator")?.setFilterValue(op);
+                }}
+              >
+                {op} ({operatorCounts[op] ?? 0})
+              </Button>
+            ))}
           </div>
           <div>
             <label className="text-xs font-medium">Référence</label>
@@ -372,11 +410,34 @@ function Transactions() {
               className="w-56"
             />
           </div>
-          {isAdmin && (
-            <Button onClick={exportCsv} className="ml-auto">
-              Exporter CSV
+          {/* Contrôles de tri Date+Heure */}
+          <div className="flex gap-2 ml-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSorting([
+                { id: "date", desc: false },
+                { id: "time", desc: false },
+              ])}
+            >
+              Tri: Asc
             </Button>
-          )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSorting([
+                { id: "date", desc: true },
+                { id: "time", desc: true },
+              ])}
+            >
+              Tri: Desc
+            </Button>
+            {isAdmin && (
+              <Button onClick={exportCsv} className="">
+                Exporter CSV
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="rounded-md border overflow-hidden">
@@ -406,10 +467,8 @@ function Transactions() {
                   <TableRow key={r.id}>
                     {r.getVisibleCells().map((c) => (
                       <TableCell key={c.id}>
-                        {flexRender(
-                          c.column.columnDef.cell ?? c.column.columnDef.header,
-                          c.getContext(),
-                        )}
+                        {flexRender(c.column.columnDef.cell, c.getContext()) ??
+                          String(c.getValue() ?? "")}
                       </TableCell>
                     ))}
                   </TableRow>
@@ -427,7 +486,7 @@ function Transactions() {
             </TableBody>
           </Table>
           <div className="flex items-center justify-between p-2 text-sm">
-            <div>Rows: {table.getRowModel().rows.length}</div>
+            <div>Lignes: {table.getRowModel().rows.length}</div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -448,6 +507,102 @@ function Transactions() {
             </div>
           </div>
         </div>
+
+        {/* View details dialog */}
+        <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Détails de la transaction</DialogTitle>
+            </DialogHeader>
+            {viewing && (
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="text-muted-foreground">Date</div>
+                  <div className="font-medium">{viewing.date}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Heure</div>
+                  <div className="font-medium">{viewing.time}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Opérateur</div>
+                  <div className="font-medium">{viewing.operator}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Plateforme</div>
+                  <div className="font-medium">{viewing.platform}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Op. paiement</div>
+                  <div className="font-medium">{viewing.payment_operator}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Type</div>
+                  <div className="font-medium">{viewing.type}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Montant</div>
+                  <div className="font-medium">{formatFcfa(viewing.amount_fcfa)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Téléphone</div>
+                  <div className="font-medium">{viewing.phone ?? "-"}</div>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-muted-foreground">Référence</div>
+                  <div className="font-medium break-all">{viewing.reference}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Preuve</div>
+                  <div className="font-medium">{viewing.proof ? "Oui" : "Non"}</div>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-muted-foreground">Notes</div>
+                  <div className="font-medium whitespace-pre-wrap">{viewing.notes ?? "-"}</div>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-between pt-3">
+              <div className="flex gap-2">
+                {viewing && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setViewOpen(false);
+                        setEditing(viewing);
+                        setOpen(true);
+                      }}
+                    >
+                      Éditer
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setViewOpen(false);
+                        duplicateRow(viewing);
+                      }}
+                    >
+                      Dupliquer
+                    </Button>
+                    {(isAdmin || viewing.created_by === user!.id) && (
+                      <Button
+                        variant="destructive"
+                        onClick={() => {
+                          setViewOpen(false);
+                          removeRow(viewing.id);
+                        }}
+                      >
+                        Supprimer
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+              <Button variant="outline" onClick={() => setViewOpen(false)}>Fermer</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent>

@@ -56,8 +56,6 @@ export interface Venue {
   gps_lat?: number;
   gps_lng?: number;
   notes?: string;
-  created_at: string; // ISO
-  created_by: string; // user id
 }
 
 export type LookupKey =
@@ -76,20 +74,20 @@ const store = {
   bets: [] as Bet[],
   venues: [] as Venue[],
   lookups: {
-    operators: ["1xBet", "Bet223", "PremierBet", "MaliBet"],
+    operators: ["1xBet", "Betway", "PMU Mali"],
     supports: ["Mobile", "Web", "Salle de jeux"],
-    payment_operators: ["Orange Money", "Moov", "Carte", "Wave"],
+    payment_operators: ["Orange Money", "Moov", "Carte"],
     bet_types: ["Simple", "Combiné", "Système"],
     statuses: ["gagné", "perdu", "en attente"],
-    platforms: ["Web", "Mobile"],
+    platforms: ["Web", "Mobile", "Agence"],
   } as Lookups,
   settings: {
     agentCanManageVenues: false,
-    agentsCanAddLookups: false,
     matchingWindowMinutes: 30,
     amountTolerancePercent: 5,
     defaultDashboardPeriod: "today" as const,
     agentEditWindowMinutes: 60,
+    agentsCanAddLookups: false,
   },
 };
 
@@ -119,7 +117,6 @@ async function delay(ms = 80) {
 export const auth = {
   async login(email: string, password: string): Promise<User> {
     await delay();
-    // Simple mock: password 'admin' => ADMIN, 'agent' => AGENT, else reject
     const role: Role | null =
       password === "admin" ? "ADMIN" : password === "agent" ? "AGENT" : null;
     if (!role) throw new Error("Identifiants invalides");
@@ -130,7 +127,7 @@ export const auth = {
       user = { id: uid("u"), email, role };
       store.users.push(user);
     } else {
-      user.role = role; // allow switching role for demo
+      user.role = role;
     }
     return user;
   },
@@ -270,13 +267,9 @@ export const venues = {
     await delay();
     return [...store.venues];
   },
-  async create(input: Omit<Venue, "id" | "created_at">): Promise<Venue> {
+  async create(input: Omit<Venue, "id">): Promise<Venue> {
     await delay();
-    const v: Venue = {
-      ...input,
-      id: uid("ven"),
-      created_at: dayjs().toISOString(),
-    };
+    const v: Venue = { ...input, id: uid("ven") };
     store.venues.push(v);
     return v;
   },
@@ -298,7 +291,7 @@ export const lookups = {
   async all(): Promise<Lookups> {
     await delay();
     return JSON.parse(JSON.stringify(store.lookups));
-  },
+    },
   async add(key: LookupKey, value: string): Promise<void> {
     await delay();
     const normalized = value.trim().toLowerCase();
@@ -332,7 +325,6 @@ export const matching = {
     } = {},
   ): Promise<MatchSuggestion[]> {
     await delay();
-    // naive matching based on spec points
     const txs = await transactions.list(filters);
     const bs = await bets.list(filters);
     const res: MatchSuggestion[] = [];
