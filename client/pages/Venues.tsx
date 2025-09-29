@@ -178,6 +178,28 @@ function Venues() {
     else if (editing) reset(editing as any);
   }, [open]);
 
+  const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
+  async function addLookup(
+    key: keyof typeof api.store.lookups,
+    label: string,
+    onAdded?: (value: string) => void,
+  ) {
+    if (!canManageLookups) {
+      toast.error("Accès refusé : création réservée à l’admin.");
+      return;
+    }
+    const name = window.prompt(`Ajouter ${label} :`);
+    if (!name) return;
+    await api.lookups.add(key as any, name);
+    const l = await api.lookups.all();
+    setLookups({
+      operators: l.operators,
+      bet_types: l.bet_types,
+    });
+    onAdded?.(name);
+    toast.success(`${label} ajouté(e).`);
+  }
+
   return (
     <AppLayout
       onNew={!isAdmin && !canAgentManageVenues ? undefined : onNew}
