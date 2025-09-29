@@ -205,6 +205,21 @@ function Venues() {
       onNew={!isAdmin && !canAgentManageVenues ? undefined : onNew}
       newButtonLabel="+ Nouvelle salle"
     >
+      {lkSpec && (
+        <LookupDialog
+          open={lkOpen}
+          onOpenChange={setLkOpen}
+          title={`Ajouter ${lkSpec.label}`}
+          placeholder={`Nom ${lkSpec.label}`}
+          onConfirm={async (name) => {
+            await api.lookups.add(lkSpec.key as any, name);
+            const l = await api.lookups.all();
+            setLookups({ operators: l.operators, bet_types: l.bet_types });
+            lkSpec.onAdded?.(name);
+            toast.success(`${lkSpec.label} ajouté(e).`);
+          }}
+        />
+      )}
       {/* Filtres */}
       <div className="mb-3 grid grid-cols-1 md:grid-cols-4 gap-3">
         <div>
