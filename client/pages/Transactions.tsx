@@ -317,6 +317,25 @@ function Transactions() {
   return (
     <RequireAuth>
       <AppLayout onNew={onNew} newButtonLabel="+ Nouveau dépôt / retrait">
+        {lkSpec && (
+          <LookupDialog
+            open={lkOpen}
+            onOpenChange={setLkOpen}
+            title={`Ajouter ${lkSpec.label}`}
+            placeholder={`Nom ${lkSpec.label}`}
+            onConfirm={async (name) => {
+              await api.lookups.add(lkSpec.key as any, name);
+              const l = await api.lookups.all();
+              setLookups({
+                operators: l.operators,
+                payment_operators: l.payment_operators,
+                platforms: l.platforms,
+              });
+              lkSpec.onAdded?.(name);
+              toast.success(`${lkSpec.label} ajouté(e).`);
+            }}
+          />
+        )}
         <div className="flex flex-wrap gap-2 mb-3 items-end">
           <div>
             <label className="text-xs font-medium">Opérateur</label>
