@@ -49,6 +49,7 @@ import { toast } from "sonner";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import LookupDialog from "@/components/common/LookupDialog";
 
 function formatFcfa(n: number) {
   return new Intl.NumberFormat("fr-FR").format(n) + " F CFA";
