@@ -49,6 +49,7 @@ import { toast } from "sonner";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import LookupDialog from "@/components/common/LookupDialog";
 
 function formatFcfa(n: number) {
   return new Intl.NumberFormat("fr-FR").format(n) + " F CFA";
@@ -58,11 +59,9 @@ const schema = z.object({
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/g, { message: "Date au format AAAA-MM-JJ" }),
-  time: z
-    .string()
-    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
-      message: "L’heure doit être au format HH:MM (24h).",
-    }),
+  time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
+    message: "L’heure doit être au format HH:MM (24h).",
+  }),
   operator: z.string().min(1, { message: "Opérateur requis" }),
   platform: z.string().min(1, { message: "Plateforme requise" }),
   payment_operator: z
@@ -102,7 +101,8 @@ function Transactions() {
   const [lookups, setLookups] = useState<{
     operators: string[];
     payment_operators: string[];
-  }>({ operators: [], payment_operators: [] });
+    platforms: string[];
+  }>({ operators: [], payment_operators: [], platforms: [] });
 
   useEffect(() => {
     (async () => {
@@ -110,6 +110,7 @@ function Transactions() {
       setLookups({
         operators: l.operators,
         payment_operators: l.payment_operators,
+        platforms: l.platforms,
       });
     })();
   }, []);
@@ -290,9 +291,49 @@ function Transactions() {
     else if (editing) resetForm(editing);
   }, [open]);
 
+  const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
+  const [lkOpen, setLkOpen] = useState(false);
+  const [lkSpec, setLkSpec] = useState<{
+    key: keyof typeof api.store.lookups;
+    label: string;
+    onAdded?: (value: string) => void;
+  } | null>(null);
+
+  function addLookup(
+    key: keyof typeof api.store.lookups,
+    label: string,
+    onAdded?: (value: string) => void,
+  ) {
+    if (!canManageLookups) {
+      toast.error("Accès refusé : création réservée à l’admin.");
+      return;
+    }
+    setLkSpec({ key, label, onAdded });
+    setLkOpen(true);
+  }
+
   return (
     <RequireAuth>
       <AppLayout onNew={onNew} newButtonLabel="+ Nouveau dépôt / retrait">
+        {lkSpec && (
+          <LookupDialog
+            open={lkOpen}
+            onOpenChange={setLkOpen}
+            title={`Ajouter ${lkSpec.label}`}
+            placeholder={`Nom ${lkSpec.label}`}
+            onConfirm={async (name) => {
+              await api.lookups.add(lkSpec.key as any, name);
+              const l = await api.lookups.all();
+              setLookups({
+                operators: l.operators,
+                payment_operators: l.payment_operators,
+                platforms: l.platforms,
+              });
+              lkSpec.onAdded?.(name);
+              toast.success(`${lkSpec.label} ajouté(e).`);
+            }}
+          />
+        )}
         <div className="flex flex-wrap gap-2 mb-3 items-end">
           <div>
             <label className="text-xs font-medium">Opérateur</label>
@@ -442,7 +483,13 @@ function Transactions() {
                     Opérateur de jeux
                   </label>
                   <Select
-                    onValueChange={(v) => setValue("operator", v)}
+                    onValueChange={(v) => {
+                      if (v === "__add__")
+                        return addLookup("operators", "opérateur", (name) =>
+                          setValue("operator", name),
+                        );
+                      setValue("operator", v);
+                    }}
                     value={watch("operator")}
                   >
                     <SelectTrigger>
@@ -454,6 +501,9 @@ function Transactions() {
                           {op}
                         </SelectItem>
                       ))}
+                      <SelectItem value="__add__">
+                        + Ajouter un opérateur…
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   {errors.operator && (
@@ -464,7 +514,30 @@ function Transactions() {
                 </div>
                 <div>
                   <label className="text-xs font-medium">Plateforme</label>
-                  <Input {...register("platform")} />
+                  <Select
+                    onValueChange={(v) => {
+                      if (v === "__add__")
+                        return addLookup("platforms", "plateforme", (name) =>
+                          setValue("platform", name),
+                        );
+                      setValue("platform", v);
+                    }}
+                    value={watch("platform")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choisir" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {lookups.platforms.map((op) => (
+                        <SelectItem key={op} value={op}>
+                          {op}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__add__">
+                        + Ajouter une plateforme…
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                   {errors.platform && (
                     <p className="text-xs text-red-600">
                       {errors.platform.message}
@@ -478,7 +551,15 @@ function Transactions() {
                     Opérateur de paiement
                   </label>
                   <Select
-                    onValueChange={(v) => setValue("payment_operator", v)}
+                    onValueChange={(v) => {
+                      if (v === "__add__")
+                        return addLookup(
+                          "payment_operators",
+                          "opérateur de paiement",
+                          (name) => setValue("payment_operator", name),
+                        );
+                      setValue("payment_operator", v);
+                    }}
                     value={watch("payment_operator")}
                   >
                     <SelectTrigger>
@@ -490,6 +571,9 @@ function Transactions() {
                           {op}
                         </SelectItem>
                       ))}
+                      <SelectItem value="__add__">
+                        + Ajouter un opérateur de paiement…
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   {errors.payment_operator && (

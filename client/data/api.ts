@@ -65,7 +65,8 @@ export type LookupKey =
   | "supports"
   | "payment_operators"
   | "bet_types"
-  | "statuses";
+  | "statuses"
+  | "platforms";
 export type Lookups = Record<LookupKey, string[]>;
 
 // In-memory stores
@@ -75,14 +76,16 @@ const store = {
   bets: [] as Bet[],
   venues: [] as Venue[],
   lookups: {
-    operators: ["1xBet", "Betway", "PMU Mali"],
+    operators: ["1xBet", "Bet223", "PremierBet", "MaliBet"],
     supports: ["Mobile", "Web", "Salle de jeux"],
-    payment_operators: ["Orange Money", "Moov", "Carte"],
+    payment_operators: ["Orange Money", "Moov", "Carte", "Wave"],
     bet_types: ["Simple", "Combiné", "Système"],
     statuses: ["gagné", "perdu", "en attente"],
+    platforms: ["Web", "Mobile"],
   } as Lookups,
   settings: {
     agentCanManageVenues: false,
+    agentsCanAddLookups: false,
     matchingWindowMinutes: 30,
     amountTolerancePercent: 5,
     defaultDashboardPeriod: "today" as const,
@@ -267,11 +270,13 @@ export const venues = {
     await delay();
     return [...store.venues];
   },
-  async create(
-    input: Omit<Venue, "id" | "created_at">,
-  ): Promise<Venue> {
+  async create(input: Omit<Venue, "id" | "created_at">): Promise<Venue> {
     await delay();
-    const v: Venue = { ...input, id: uid("ven"), created_at: dayjs().toISOString() };
+    const v: Venue = {
+      ...input,
+      id: uid("ven"),
+      created_at: dayjs().toISOString(),
+    };
     store.venues.push(v);
     return v;
   },

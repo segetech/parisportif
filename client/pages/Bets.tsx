@@ -37,41 +37,26 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import LookupDialog from "@/components/common/LookupDialog";
 
-const schema = z
-  .object({
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/g, { message: "Date au format AAAA-MM-JJ" }),
-    time: z
-      .string()
-      .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
-        message: "L’heure doit être au format HH:MM (24h).",
-      }),
-    operator: z.string().min(1, { message: "Opérateur requis" }),
-    support: z.string().min(1, { message: "Support requis" }),
-    bet_type: z.string().min(1, { message: "Type de pari requis" }),
-    amount_fcfa: z.coerce
-      .number()
-      .int()
-      .positive({ message: "Le montant doit être un entier positif." }),
-    status: z.enum(["gagné", "perdu", "en attente"]),
-    amount_won_fcfa: z.coerce.number().int().nonnegative().optional(),
-    reference: z.string().min(1, { message: "Référence requise" }),
-    ticket_url: z
-      .string()
-      .url({ message: "URL invalide" })
-      .optional()
-      .or(z.literal("")),
-    notes: z.string().optional(),
-  })
-  .refine(
-    (data) => data.status !== "gagné" || (data.amount_won_fcfa ?? 0) > 0,
-    {
-      message: "Le montant gagné est requis quand le statut est ‘gagné’.",
-      path: ["amount_won_fcfa"],
-    },
-  );
+const schema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/g, { message: "Date au format AAAA-MM-JJ" }),
+  time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
+    message: "L’heure doit être au format HH:MM (24h).",
+  }),
+  operator: z.string().min(1, { message: "Opérateur requis" }),
+  support: z.string().min(1, { message: "Support requis" }),
+  bet_type: z.string().min(1, { message: "Type de pari requis" }),
+  amount_fcfa: z.coerce
+    .number()
+    .int()
+    .positive({ message: "Le montant doit être un entier positif." }),
+  status: z.enum(["gagné", "perdu", "en attente"]),
+  reference: z.string().min(1, { message: "Référence requise" }),
+  notes: z.string().optional(),
+});
 
 type FormValues = z.infer<typeof schema>;
 
@@ -171,8 +156,49 @@ function Bets() {
     else if (editing) reset(editing as any);
   }, [open]);
 
+  const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
+  const [lkOpen, setLkOpen] = useState(false);
+  const [lkSpec, setLkSpec] = useState<{
+    key: keyof typeof api.store.lookups;
+    label: string;
+    onAdded?: (value: string) => void;
+  } | null>(null);
+
+  function addLookup(
+    key: keyof typeof api.store.lookups,
+    label: string,
+    onAdded?: (value: string) => void,
+  ) {
+    if (!canManageLookups) {
+      toast.error("Accès refusé : création réservée à l’admin.");
+      return;
+    }
+    setLkSpec({ key, label, onAdded });
+    setLkOpen(true);
+  }
+
   return (
     <AppLayout onNew={onNew} newButtonLabel="+ Nouveau pari">
+      {lkSpec && (
+        <LookupDialog
+          open={lkOpen}
+          onOpenChange={setLkOpen}
+          title={`Ajouter ${lkSpec.label}`}
+          placeholder={`Nom ${lkSpec.label}`}
+          onConfirm={async (name) => {
+            await api.lookups.add(lkSpec.key as any, name);
+            const l = await api.lookups.all();
+            setLookups({
+              operators: l.operators,
+              supports: l.supports,
+              bet_types: l.bet_types,
+              statuses: l.statuses,
+            });
+            lkSpec.onAdded?.(name);
+            toast.success(`${lkSpec.label} ajouté(e).`);
+          }}
+        />
+      )}
       <div className="rounded-md border overflow-hidden">
         <Table>
           <TableHeader>
@@ -184,7 +210,6 @@ function Bets() {
               <TableHead>Type</TableHead>
               <TableHead>Montant</TableHead>
               <TableHead>Statut</TableHead>
-              <TableHead>Gain</TableHead>
               <TableHead>Référence</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
@@ -202,13 +227,6 @@ function Bets() {
                     {new Intl.NumberFormat("fr-FR").format(r.amount_fcfa)} F CFA
                   </TableCell>
                   <TableCell>{r.status}</TableCell>
-                  <TableCell>
-                    {r.amount_won_fcfa
-                      ? new Intl.NumberFormat("fr-FR").format(
-                          r.amount_won_fcfa,
-                        ) + " F CFA"
-                      : "-"}
-                  </TableCell>
                   <TableCell>{r.reference}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
@@ -303,7 +321,13 @@ function Bets() {
                 <label className="text-xs font-medium">Opérateur de jeux</label>
                 <Select
                   value={watch("operator")}
-                  onValueChange={(v) => setValue("operator", v)}
+                  onValueChange={(v) => {
+                    if (v === "__add__")
+                      return addLookup("operators", "opérateur", (name) =>
+                        setValue("operator", name),
+                      );
+                    setValue("operator", v);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choisir" />
@@ -314,6 +338,9 @@ function Bets() {
                         {op}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__add__">
+                      + Ajouter un opérateur…
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.operator && (
@@ -326,7 +353,13 @@ function Bets() {
                 <label className="text-xs font-medium">Support</label>
                 <Select
                   value={watch("support")}
-                  onValueChange={(v) => setValue("support", v)}
+                  onValueChange={(v) => {
+                    if (v === "__add__")
+                      return addLookup("supports", "support", (name) =>
+                        setValue("support", name),
+                      );
+                    setValue("support", v);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choisir" />
@@ -337,6 +370,9 @@ function Bets() {
                         {op}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__add__">
+                      + Ajouter un support…
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.support && (
@@ -351,7 +387,13 @@ function Bets() {
                 <label className="text-xs font-medium">Type de pari</label>
                 <Select
                   value={watch("bet_type")}
-                  onValueChange={(v) => setValue("bet_type", v)}
+                  onValueChange={(v) => {
+                    if (v === "__add__")
+                      return addLookup("bet_types", "type de pari", (name) =>
+                        setValue("bet_type", name),
+                      );
+                    setValue("bet_type", v);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choisir" />
@@ -362,6 +404,7 @@ function Bets() {
                         {op}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__add__">+ Ajouter un type…</SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.bet_type && (
@@ -385,41 +428,23 @@ function Bets() {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium">Statut</label>
-                <Select
-                  value={watch("status")}
-                  onValueChange={(v) => setValue("status", v as any)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {lookups.statuses.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs font-medium">
-                  Montant gagné (F CFA)
-                </label>
-                <Input
-                  type="number"
-                  step="1"
-                  min="0"
-                  {...register("amount_won_fcfa", { valueAsNumber: true })}
-                />
-                {errors.amount_won_fcfa && (
-                  <p className="text-xs text-red-600">
-                    {errors.amount_won_fcfa.message}
-                  </p>
-                )}
-              </div>
+            <div>
+              <label className="text-xs font-medium">Statut</label>
+              <Select
+                value={watch("status")}
+                onValueChange={(v) => setValue("status", v as any)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {lookups.statuses.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="text-xs font-medium">Référence (unique)</label>
@@ -430,17 +455,9 @@ function Bets() {
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium">
-                  Lien du ticket (URL)
-                </label>
-                <Input {...register("ticket_url")} />
-              </div>
-              <div>
-                <label className="text-xs font-medium">Notes</label>
-                <Input {...register("notes")} />
-              </div>
+            <div>
+              <label className="text-xs font-medium">Notes</label>
+              <Input {...register("notes")} />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button

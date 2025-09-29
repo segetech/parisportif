@@ -1,3 +1,4 @@
+import "./polyfills/resize-observer";
 import "./global.css";
 
 import { Toaster } from "@/components/ui/toaster";

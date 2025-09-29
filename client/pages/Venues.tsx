@@ -29,6 +29,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import LookupDialog from "@/components/common/LookupDialog";
 import { venueFormSchema, VenueFormValues } from "@/schemas/venue";
 import {
   listVenues,
@@ -135,7 +136,8 @@ function Venues() {
 
   async function removeRow(id: string) {
     if (!isAdmin) return;
-    if (!confirm("Supprimer cette salle ? Cette action est définitive.")) return;
+    if (!confirm("Supprimer cette salle ? Cette action est définitive."))
+      return;
     await deleteVenue(id);
     await load();
   }
@@ -178,11 +180,47 @@ function Venues() {
     else if (editing) reset(editing as any);
   }, [open]);
 
+  const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
+  const [lkOpen, setLkOpen] = useState(false);
+  const [lkSpec, setLkSpec] = useState<{
+    key: keyof typeof api.store.lookups;
+    label: string;
+    onAdded?: (value: string) => void;
+  } | null>(null);
+
+  function addLookup(
+    key: keyof typeof api.store.lookups,
+    label: string,
+    onAdded?: (value: string) => void,
+  ) {
+    if (!canManageLookups) {
+      toast.error("Accès refusé : création réservée à l’admin.");
+      return;
+    }
+    setLkSpec({ key, label, onAdded });
+    setLkOpen(true);
+  }
+
   return (
     <AppLayout
       onNew={!isAdmin && !canAgentManageVenues ? undefined : onNew}
       newButtonLabel="+ Nouvelle salle"
     >
+      {lkSpec && (
+        <LookupDialog
+          open={lkOpen}
+          onOpenChange={setLkOpen}
+          title={`Ajouter ${lkSpec.label}`}
+          placeholder={`Nom ${lkSpec.label}`}
+          onConfirm={async (name) => {
+            await api.lookups.add(lkSpec.key as any, name);
+            const l = await api.lookups.all();
+            setLookups({ operators: l.operators, bet_types: l.bet_types });
+            lkSpec.onAdded?.(name);
+            toast.success(`${lkSpec.label} ajouté(e).`);
+          }}
+        />
+      )}
       {/* Filtres */}
       <div className="mb-3 grid grid-cols-1 md:grid-cols-4 gap-3">
         <div>
@@ -190,14 +228,21 @@ function Venues() {
           <Input
             placeholder="Filtrer par quartier"
             value={filters.quartier ?? ""}
-            onChange={(e) => setFilters((f) => ({ ...f, quartier: e.target.value || undefined }))}
+            onChange={(e) =>
+              setFilters((f) => ({
+                ...f,
+                quartier: e.target.value || undefined,
+              }))
+            }
           />
         </div>
         <div>
           <label className="text-xs font-medium">Opérateur</label>
           <Select
             value={filters.operator ?? ""}
-            onValueChange={(v) => setFilters((f) => ({ ...f, operator: v || undefined }))}
+            onValueChange={(v) =>
+              setFilters((f) => ({ ...f, operator: v || undefined }))
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="Tous" />
@@ -215,7 +260,9 @@ function Venues() {
           <label className="text-xs font-medium">Type de pari</label>
           <Select
             value={filters.bet_type ?? ""}
-            onValueChange={(v) => setFilters((f) => ({ ...f, bet_type: v || undefined }))}
+            onValueChange={(v) =>
+              setFilters((f) => ({ ...f, bet_type: v || undefined }))
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="Tous" />
@@ -260,48 +307,104 @@ function Venues() {
           <TableHeader>
             <TableRow>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("quartier_no")}>
-                  N° quartier {sortKey === "quartier_no" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("quartier_no")}
+                >
+                  N° quartier{" "}
+                  {sortKey === "quartier_no"
+                    ? sortDir === "asc"
+                      ? "▲"
+                      : "▼"
+                    : ""}
                 </button>
               </TableHead>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("quartier")}>
-                  Quartier {sortKey === "quartier" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("quartier")}
+                >
+                  Quartier{" "}
+                  {sortKey === "quartier"
+                    ? sortDir === "asc"
+                      ? "▲"
+                      : "▼"
+                    : ""}
                 </button>
               </TableHead>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("operator")}>
-                  Opérateur {sortKey === "operator" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("operator")}
+                >
+                  Opérateur{" "}
+                  {sortKey === "operator"
+                    ? sortDir === "asc"
+                      ? "▲"
+                      : "▼"
+                    : ""}
                 </button>
               </TableHead>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("support")}>
-                  Support {sortKey === "support" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("support")}
+                >
+                  Support{" "}
+                  {sortKey === "support" ? (sortDir === "asc" ? "▲" : "▼") : ""}
                 </button>
               </TableHead>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("bet_type")}>
-                  Type de pari {sortKey === "bet_type" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("bet_type")}
+                >
+                  Type de pari{" "}
+                  {sortKey === "bet_type"
+                    ? sortDir === "asc"
+                      ? "▲"
+                      : "▼"
+                    : ""}
                 </button>
               </TableHead>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("address")}>
-                  Adresse {sortKey === "address" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("address")}
+                >
+                  Adresse{" "}
+                  {sortKey === "address" ? (sortDir === "asc" ? "▲" : "▼") : ""}
                 </button>
               </TableHead>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("contact_phone")}>
-                  Téléphone {sortKey === "contact_phone" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("contact_phone")}
+                >
+                  Téléphone{" "}
+                  {sortKey === "contact_phone"
+                    ? sortDir === "asc"
+                      ? "▲"
+                      : "▼"
+                    : ""}
                 </button>
               </TableHead>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("gps_lat")}>
-                  Latitude {sortKey === "gps_lat" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("gps_lat")}
+                >
+                  Latitude{" "}
+                  {sortKey === "gps_lat" ? (sortDir === "asc" ? "▲" : "▼") : ""}
                 </button>
               </TableHead>
               <TableHead>
-                <button className="underline-offset-2 hover:underline" onClick={() => toggleSort("gps_lng")}>
-                  Longitude {sortKey === "gps_lng" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                <button
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => toggleSort("gps_lng")}
+                >
+                  Longitude{" "}
+                  {sortKey === "gps_lng" ? (sortDir === "asc" ? "▲" : "▼") : ""}
                 </button>
               </TableHead>
               <TableHead>Actions</TableHead>
@@ -356,7 +459,9 @@ function Venues() {
                               } as any),
                             0,
                           );
-                          toast.info("Copie de la salle prête, vérifiez et enregistrez.");
+                          toast.info(
+                            "Copie de la salle prête, vérifiez et enregistrez.",
+                          );
                         }}
                       >
                         Dupliquer
@@ -439,7 +544,13 @@ function Venues() {
                 <label className="text-xs font-medium">Opérateur de jeux</label>
                 <Select
                   value={watch("operator")}
-                  onValueChange={(v) => setValue("operator", v)}
+                  onValueChange={(v) => {
+                    if (v === "__add__")
+                      return addLookup("operators", "opérateur", (name) =>
+                        setValue("operator", name),
+                      );
+                    setValue("operator", v);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choisir" />
@@ -450,6 +561,9 @@ function Venues() {
                         {op}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__add__">
+                      + Ajouter un opérateur…
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.operator && (
@@ -461,7 +575,11 @@ function Venues() {
               <div>
                 <label className="text-xs font-medium">Support</label>
                 {/* Hidden registration for RHF */}
-                <input type="hidden" value="Salle de jeux" {...register("support")} />
+                <input
+                  type="hidden"
+                  value="Salle de jeux"
+                  {...register("support")}
+                />
                 <Input value="Salle de jeux" readOnly />
               </div>
             </div>
@@ -470,7 +588,13 @@ function Venues() {
                 <label className="text-xs font-medium">Type de pari</label>
                 <Select
                   value={watch("bet_type")}
-                  onValueChange={(v) => setValue("bet_type", v)}
+                  onValueChange={(v) => {
+                    if (v === "__add__")
+                      return addLookup("bet_types", "type de pari", (name) =>
+                        setValue("bet_type", name),
+                      );
+                    setValue("bet_type", v);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choisir" />
@@ -481,6 +605,7 @@ function Venues() {
                         {op}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__add__">+ Ajouter un type…</SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.bet_type && (
@@ -537,7 +662,9 @@ function Venues() {
               >
                 Annuler
               </Button>
-              <Button type="submit" disabled={submitting}>Enregistrer</Button>
+              <Button type="submit" disabled={submitting}>
+                Enregistrer
+              </Button>
             </div>
           </form>
         </DialogContent>
