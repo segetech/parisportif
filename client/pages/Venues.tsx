@@ -496,7 +496,10 @@ function Venues() {
                 <label className="text-xs font-medium">Type de pari</label>
                 <Select
                   value={watch("bet_type")}
-                  onValueChange={(v) => setValue("bet_type", v)}
+                  onValueChange={(v) => {
+                    if (v === "__add__") return addLookup("bet_types", "type de pari", (name) => setValue("bet_type", name));
+                    setValue("bet_type", v);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choisir" />
