@@ -510,6 +510,7 @@ function Venues() {
                         {op}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__add__">+ Ajouter un type…</SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.bet_type && (
