@@ -65,7 +65,8 @@ export type LookupKey =
   | "supports"
   | "payment_operators"
   | "bet_types"
-  | "statuses";
+  | "statuses"
+  | "platforms";
 export type Lookups = Record<LookupKey, string[]>;
 
 // In-memory stores
@@ -77,12 +78,14 @@ const store = {
   lookups: {
     operators: ["1xBet", "Betway", "PMU Mali"],
     supports: ["Mobile", "Web", "Salle de jeux"],
-    payment_operators: ["Orange Money", "Moov", "Carte"],
+    payment_operators: ["Orange Money", "Moov", "Carte", "Wave"],
     bet_types: ["Simple", "Combiné", "Système"],
     statuses: ["gagné", "perdu", "en attente"],
+    platforms: ["Web", "Mobile"],
   } as Lookups,
   settings: {
     agentCanManageVenues: false,
+    agentsCanAddLookups: false,
     matchingWindowMinutes: 30,
     amountTolerancePercent: 5,
     defaultDashboardPeriod: "today" as const,
