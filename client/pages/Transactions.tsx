@@ -59,11 +59,9 @@ const schema = z.object({
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/g, { message: "Date au format AAAA-MM-JJ" }),
-  time: z
-    .string()
-    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
-      message: "L’heure doit être au format HH:MM (24h).",
-    }),
+  time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
+    message: "L’heure doit être au format HH:MM (24h).",
+  }),
   operator: z.string().min(1, { message: "Opérateur requis" }),
   platform: z.string().min(1, { message: "Plateforme requise" }),
   payment_operator: z
@@ -486,7 +484,10 @@ function Transactions() {
                   </label>
                   <Select
                     onValueChange={(v) => {
-                      if (v === "__add__") return addLookup("operators", "opérateur", (name) => setValue("operator", name));
+                      if (v === "__add__")
+                        return addLookup("operators", "opérateur", (name) =>
+                          setValue("operator", name),
+                        );
                       setValue("operator", v);
                     }}
                     value={watch("operator")}
@@ -500,7 +501,9 @@ function Transactions() {
                           {op}
                         </SelectItem>
                       ))}
-                      <SelectItem value="__add__">+ Ajouter un opérateur…</SelectItem>
+                      <SelectItem value="__add__">
+                        + Ajouter un opérateur…
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   {errors.operator && (
@@ -513,7 +516,10 @@ function Transactions() {
                   <label className="text-xs font-medium">Plateforme</label>
                   <Select
                     onValueChange={(v) => {
-                      if (v === "__add__") return addLookup("platforms", "plateforme", (name) => setValue("platform", name));
+                      if (v === "__add__")
+                        return addLookup("platforms", "plateforme", (name) =>
+                          setValue("platform", name),
+                        );
                       setValue("platform", v);
                     }}
                     value={watch("platform")}
@@ -527,7 +533,9 @@ function Transactions() {
                           {op}
                         </SelectItem>
                       ))}
-                      <SelectItem value="__add__">+ Ajouter une plateforme…</SelectItem>
+                      <SelectItem value="__add__">
+                        + Ajouter une plateforme…
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   {errors.platform && (
@@ -544,7 +552,12 @@ function Transactions() {
                   </label>
                   <Select
                     onValueChange={(v) => {
-                      if (v === "__add__") return addLookup("payment_operators", "opérateur de paiement", (name) => setValue("payment_operator", name));
+                      if (v === "__add__")
+                        return addLookup(
+                          "payment_operators",
+                          "opérateur de paiement",
+                          (name) => setValue("payment_operator", name),
+                        );
                       setValue("payment_operator", v);
                     }}
                     value={watch("payment_operator")}
@@ -558,7 +571,9 @@ function Transactions() {
                           {op}
                         </SelectItem>
                       ))}
-                      <SelectItem value="__add__">+ Ajouter un opérateur de paiement…</SelectItem>
+                      <SelectItem value="__add__">
+                        + Ajouter un opérateur de paiement…
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   {errors.payment_operator && (

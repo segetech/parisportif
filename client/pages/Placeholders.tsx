@@ -76,20 +76,36 @@ export function LookupsPage() {
               keys.map(({ key, title }) => (
                 <Card key={key}>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                    <CardTitle className="text-base font-semibold">{title}</CardTitle>
-                    <Button size="sm" onClick={() => setDlg({ key, mode: "add" })}>
+                    <CardTitle className="text-base font-semibold">
+                      {title}
+                    </CardTitle>
+                    <Button
+                      size="sm"
+                      onClick={() => setDlg({ key, mode: "add" })}
+                    >
                       <Plus className="h-4 w-4 mr-1" /> Ajouter
                     </Button>
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-2">
                       {lookups[key]
-                        .filter((v) => v.toLowerCase().includes(filter.toLowerCase()))
+                        .filter((v) =>
+                          v.toLowerCase().includes(filter.toLowerCase()),
+                        )
                         .map((v) => (
-                          <li key={v} className="flex items-center justify-between border rounded px-2 py-1">
+                          <li
+                            key={v}
+                            className="flex items-center justify-between border rounded px-2 py-1"
+                          >
                             <span>{v}</span>
                             <div className="flex items-center gap-1">
-                              <Button variant="ghost" size="icon" onClick={() => setDlg({ key, mode: "edit", initial: v })}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() =>
+                                  setDlg({ key, mode: "edit", initial: v })
+                                }
+                              >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                               <Button
@@ -118,7 +134,11 @@ export function LookupsPage() {
               title={dlg.mode === "add" ? `Ajouter` : `Modifier`}
               initialValue={dlg.initial}
               onConfirm={async (name) => {
-                if (dlg.mode === "edit" && dlg.initial && dlg.initial !== name) {
+                if (
+                  dlg.mode === "edit" &&
+                  dlg.initial &&
+                  dlg.initial !== name
+                ) {
                   await api.lookups.remove(dlg.key, dlg.initial);
                 }
                 await api.lookups.add(dlg.key, name);

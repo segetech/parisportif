@@ -39,27 +39,24 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import LookupDialog from "@/components/common/LookupDialog";
 
-const schema = z
-  .object({
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/g, { message: "Date au format AAAA-MM-JJ" }),
-    time: z
-      .string()
-      .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
-        message: "L’heure doit être au format HH:MM (24h).",
-      }),
-    operator: z.string().min(1, { message: "Opérateur requis" }),
-    support: z.string().min(1, { message: "Support requis" }),
-    bet_type: z.string().min(1, { message: "Type de pari requis" }),
-    amount_fcfa: z.coerce
-      .number()
-      .int()
-      .positive({ message: "Le montant doit être un entier positif." }),
-    status: z.enum(["gagné", "perdu", "en attente"]),
-    reference: z.string().min(1, { message: "Référence requise" }),
-    notes: z.string().optional(),
-  });
+const schema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/g, { message: "Date au format AAAA-MM-JJ" }),
+  time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
+    message: "L’heure doit être au format HH:MM (24h).",
+  }),
+  operator: z.string().min(1, { message: "Opérateur requis" }),
+  support: z.string().min(1, { message: "Support requis" }),
+  bet_type: z.string().min(1, { message: "Type de pari requis" }),
+  amount_fcfa: z.coerce
+    .number()
+    .int()
+    .positive({ message: "Le montant doit être un entier positif." }),
+  status: z.enum(["gagné", "perdu", "en attente"]),
+  reference: z.string().min(1, { message: "Référence requise" }),
+  notes: z.string().optional(),
+});
 
 type FormValues = z.infer<typeof schema>;
 
@@ -325,7 +322,10 @@ function Bets() {
                 <Select
                   value={watch("operator")}
                   onValueChange={(v) => {
-                    if (v === "__add__") return addLookup("operators", "opérateur", (name) => setValue("operator", name));
+                    if (v === "__add__")
+                      return addLookup("operators", "opérateur", (name) =>
+                        setValue("operator", name),
+                      );
                     setValue("operator", v);
                   }}
                 >
@@ -338,7 +338,9 @@ function Bets() {
                         {op}
                       </SelectItem>
                     ))}
-                    <SelectItem value="__add__">+ Ajouter un opérateur…</SelectItem>
+                    <SelectItem value="__add__">
+                      + Ajouter un opérateur…
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.operator && (
@@ -352,7 +354,10 @@ function Bets() {
                 <Select
                   value={watch("support")}
                   onValueChange={(v) => {
-                    if (v === "__add__") return addLookup("supports", "support", (name) => setValue("support", name));
+                    if (v === "__add__")
+                      return addLookup("supports", "support", (name) =>
+                        setValue("support", name),
+                      );
                     setValue("support", v);
                   }}
                 >
@@ -365,7 +370,9 @@ function Bets() {
                         {op}
                       </SelectItem>
                     ))}
-                    <SelectItem value="__add__">+ Ajouter un support…</SelectItem>
+                    <SelectItem value="__add__">
+                      + Ajouter un support…
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.support && (
@@ -381,7 +388,10 @@ function Bets() {
                 <Select
                   value={watch("bet_type")}
                   onValueChange={(v) => {
-                    if (v === "__add__") return addLookup("bet_types", "type de pari", (name) => setValue("bet_type", name));
+                    if (v === "__add__")
+                      return addLookup("bet_types", "type de pari", (name) =>
+                        setValue("bet_type", name),
+                      );
                     setValue("bet_type", v);
                   }}
                 >

@@ -270,11 +270,13 @@ export const venues = {
     await delay();
     return [...store.venues];
   },
-  async create(
-    input: Omit<Venue, "id" | "created_at">,
-  ): Promise<Venue> {
+  async create(input: Omit<Venue, "id" | "created_at">): Promise<Venue> {
     await delay();
-    const v: Venue = { ...input, id: uid("ven"), created_at: dayjs().toISOString() };
+    const v: Venue = {
+      ...input,
+      id: uid("ven"),
+      created_at: dayjs().toISOString(),
+    };
     store.venues.push(v);
     return v;
   },

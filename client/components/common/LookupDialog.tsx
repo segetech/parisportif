@@ -1,4 +1,11 @@
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
@@ -14,7 +21,16 @@ export interface LookupDialogProps {
   onConfirm: (value: string) => Promise<void> | void;
 }
 
-export default function LookupDialog({ open, title, description, initialValue = "", placeholder = "Nom", confirmLabel = "Enregistrer", onOpenChange, onConfirm, }: LookupDialogProps) {
+export default function LookupDialog({
+  open,
+  title,
+  description,
+  initialValue = "",
+  placeholder = "Nom",
+  confirmLabel = "Enregistrer",
+  onOpenChange,
+  onConfirm,
+}: LookupDialogProps) {
   const [value, setValue] = useState(initialValue);
   const [loading, setLoading] = useState(false);
 
@@ -40,7 +56,9 @@ export default function LookupDialog({ open, title, description, initialValue = 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description ? <DialogDescription>{description}</DialogDescription> : null}
+          {description ? (
+            <DialogDescription>{description}</DialogDescription>
+          ) : null}
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-3">
           <Input
@@ -50,7 +68,11 @@ export default function LookupDialog({ open, title, description, initialValue = 
             onChange={(e) => setValue(e.target.value)}
           />
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
               Annuler
             </Button>
             <Button type="submit" disabled={loading}>

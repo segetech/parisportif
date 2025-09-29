@@ -2,7 +2,10 @@
 // This mitigates "ResizeObserver loop completed with undelivered notifications" warnings in Chromium
 // without altering library usage sites.
 
-if (typeof window !== "undefined" && typeof window.ResizeObserver !== "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.ResizeObserver !== "undefined"
+) {
   const OriginalResizeObserver = window.ResizeObserver;
 
   class PatchedResizeObserver implements ResizeObserver {
@@ -35,17 +38,21 @@ if (typeof window !== "undefined" && typeof window.ResizeObserver !== "undefined
   }
 
   // Replace global ResizeObserver with the patched version
-  (window as any).ResizeObserver = PatchedResizeObserver as unknown as typeof OriginalResizeObserver;
+  (window as any).ResizeObserver =
+    PatchedResizeObserver as unknown as typeof OriginalResizeObserver;
 
   // Suppress the noisy browser-level error event specifically for this known benign case
   window.addEventListener(
     "error",
     (e) => {
-      if (typeof e.message === "string" && e.message.includes("ResizeObserver loop")) {
+      if (
+        typeof e.message === "string" &&
+        e.message.includes("ResizeObserver loop")
+      ) {
         e.stopImmediatePropagation();
         e.preventDefault();
       }
     },
-    true
+    true,
   );
 }
