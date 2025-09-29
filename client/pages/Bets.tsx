@@ -341,6 +341,7 @@ function Bets() {
                         {op}
                       </SelectItem>
                     ))}
+                    <SelectItem value="__add__">+ Ajouter un opérateur…</SelectItem>
                   </SelectContent>
                 </Select>
                 {errors.operator && (
