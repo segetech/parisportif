@@ -502,7 +502,10 @@ function Transactions() {
                     Opérateur de paiement
                   </label>
                   <Select
-                    onValueChange={(v) => setValue("payment_operator", v)}
+                    onValueChange={(v) => {
+                      if (v === "__add__") return addLookup("payment_operators", "opérateur de paiement", (name) => setValue("payment_operator", name));
+                      setValue("payment_operator", v);
+                    }}
                     value={watch("payment_operator")}
                   >
                     <SelectTrigger>
