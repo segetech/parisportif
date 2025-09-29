@@ -354,7 +354,10 @@ function Bets() {
                 <label className="text-xs font-medium">Support</label>
                 <Select
                   value={watch("support")}
-                  onValueChange={(v) => setValue("support", v)}
+                  onValueChange={(v) => {
+                    if (v === "__add__") return addLookup("supports", "support", (name) => setValue("support", name));
+                    setValue("support", v);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Choisir" />
