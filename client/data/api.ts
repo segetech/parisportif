@@ -76,7 +76,7 @@ const store = {
   bets: [] as Bet[],
   venues: [] as Venue[],
   lookups: {
-    operators: ["1xBet", "Betway", "PMU Mali"],
+    operators: ["1xBet", "Bet223", "PremierBet", "MaliBet"],
     supports: ["Mobile", "Web", "Salle de jeux"],
     payment_operators: ["Orange Money", "Moov", "Carte", "Wave"],
     bet_types: ["Simple", "Combiné", "Système"],
