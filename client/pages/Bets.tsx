@@ -160,7 +160,14 @@ function Bets() {
   }, [open]);
 
   const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
-  async function addLookup(
+  const [lkOpen, setLkOpen] = useState(false);
+  const [lkSpec, setLkSpec] = useState<{
+    key: keyof typeof api.store.lookups;
+    label: string;
+    onAdded?: (value: string) => void;
+  } | null>(null);
+
+  function addLookup(
     key: keyof typeof api.store.lookups,
     label: string,
     onAdded?: (value: string) => void,
@@ -169,22 +176,32 @@ function Bets() {
       toast.error("Accès refusé : création réservée à l’admin.");
       return;
     }
-    const name = window.prompt(`Ajouter ${label} :`);
-    if (!name) return;
-    await api.lookups.add(key as any, name);
-    const l = await api.lookups.all();
-    setLookups({
-      operators: l.operators,
-      supports: l.supports,
-      bet_types: l.bet_types,
-      statuses: l.statuses,
-    });
-    onAdded?.(name);
-    toast.success(`${label} ajouté(e).`);
+    setLkSpec({ key, label, onAdded });
+    setLkOpen(true);
   }
 
   return (
     <AppLayout onNew={onNew} newButtonLabel="+ Nouveau pari">
+      {lkSpec && (
+        <LookupDialog
+          open={lkOpen}
+          onOpenChange={setLkOpen}
+          title={`Ajouter ${lkSpec.label}`}
+          placeholder={`Nom ${lkSpec.label}`}
+          onConfirm={async (name) => {
+            await api.lookups.add(lkSpec.key as any, name);
+            const l = await api.lookups.all();
+            setLookups({
+              operators: l.operators,
+              supports: l.supports,
+              bet_types: l.bet_types,
+              statuses: l.statuses,
+            });
+            lkSpec.onAdded?.(name);
+            toast.success(`${lkSpec.label} ajouté(e).`);
+          }}
+        />
+      )}
       <div className="rounded-md border overflow-hidden">
         <Table>
           <TableHeader>
