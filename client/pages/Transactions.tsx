@@ -292,6 +292,29 @@ function Transactions() {
     else if (editing) resetForm(editing);
   }, [open]);
 
+  const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
+  async function addLookup(
+    key: keyof typeof api.store.lookups,
+    label: string,
+    onAdded?: (value: string) => void,
+  ) {
+    if (!canManageLookups) {
+      toast.error("Accès refusé : création réservée à l’admin.");
+      return;
+    }
+    const name = window.prompt(`Ajouter ${label} :`);
+    if (!name) return;
+    await api.lookups.add(key as any, name);
+    const l = await api.lookups.all();
+    setLookups({
+      operators: l.operators,
+      payment_operators: l.payment_operators,
+      platforms: l.platforms,
+    });
+    onAdded?.(name);
+    toast.success(`${label} ajouté(e).`);
+  }
+
   return (
     <RequireAuth>
       <AppLayout onNew={onNew} newButtonLabel="+ Nouveau dépôt / retrait">
