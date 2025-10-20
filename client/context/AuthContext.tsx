@@ -1,12 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import api, { Role, User } from "@/data/api";
 
 interface AuthState {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
+  logout: () => void;
 }
 
 const AuthCtx = createContext<AuthState | undefined>(undefined);
@@ -18,55 +17,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if there's an active session
-    const initAuth = async () => {
+    // Try to restore from localStorage
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) {
       try {
-        const session = await api.auth.getCurrentSession();
-        if (session?.user) {
-          const user = await api.auth.me(session.user.id);
-          if (user) {
-            setUser(user);
-            localStorage.setItem(LS_KEY, JSON.stringify(user));
-          }
-        } else {
-          // Try to restore from localStorage
-          const saved = localStorage.getItem(LS_KEY);
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved) as User;
-              setUser(parsed);
-            } catch {
-              localStorage.removeItem(LS_KEY);
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Auth initialization error:", error);
-        localStorage.removeItem(LS_KEY);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initAuth();
-
-    // Listen for auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const user = await api.auth.me(session.user.id);
-        if (user) {
-          setUser(user);
-          localStorage.setItem(LS_KEY, JSON.stringify(user));
-        }
-      } else {
-        setUser(null);
+        const parsed = JSON.parse(saved) as User;
+        setUser(parsed);
+      } catch {
         localStorage.removeItem(LS_KEY);
       }
-    });
-
-    return () => subscription?.unsubscribe();
+    }
+    setLoading(false);
   }, []);
 
   const value = useMemo<AuthState>(
