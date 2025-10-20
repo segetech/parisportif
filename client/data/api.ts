@@ -113,12 +113,12 @@ export const auth = {
       }),
     });
 
+    const data = await response.json();
+
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Erreur de connexion");
+      throw new Error(data.error || "Erreur de connexion");
     }
 
-    const data = await response.json();
     return data.user as User;
   },
 
