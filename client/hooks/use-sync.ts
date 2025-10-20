@@ -67,12 +67,14 @@ export function useSync(options: SyncHookOptions = {}) {
             }
           } catch (error) {
             console.error('[Sync Hook] Service worker registration failed:', error);
+            // Don't fail if service worker registration fails
           }
         }
 
         updateStatus();
       } catch (error) {
         console.error('[Sync Hook] Initialization failed:', error);
+        // Don't fail if sync initialization fails
       }
     };
 
