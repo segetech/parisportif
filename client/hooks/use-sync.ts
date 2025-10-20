@@ -27,6 +27,7 @@ interface SyncHookOptions {
  * Hook for monitoring sync status and managing offline operations
  */
 export function useSync(options: SyncHookOptions = {}) {
+  // Service worker is disabled due to body stream issues
   const { autoSync = true, syncInterval = 30000, enableServiceWorker = false } = options;
 
   const [status, setStatus] = useState<SyncStatus>({
