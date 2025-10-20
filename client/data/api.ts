@@ -204,8 +204,12 @@ export const auth = {
   },
 
   async getCurrentSession() {
-    const { data, error } = await supabase.auth.getSession();
-    return data.session;
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data.session;
+    } catch {
+      return null;
+    }
   },
 };
 
