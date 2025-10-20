@@ -17,7 +17,7 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - network first with cache fallback
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
+  // Only cache GET requests
   if (event.request.method !== 'GET') {
     return;
   }
@@ -30,8 +30,8 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cache successful responses
-        if (response.ok) {
+        // Only cache successful responses
+        if (response.ok && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, clone);
