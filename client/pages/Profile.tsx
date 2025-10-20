@@ -86,7 +86,10 @@ function ProfileForm() {
     try {
       const response = await fetch("/api/auth/change-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Id": user?.id || "",
+        },
         body: JSON.stringify({
           currentPassword,
           newPassword,
