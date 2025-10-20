@@ -131,7 +131,6 @@ function UsersTable() {
   const [roleOpen, setRoleOpen] = useState<null | User>(null);
   const [suspendOpen, setSuspendOpen] = useState<null | User>(null);
   const [deleteOpen, setDeleteOpen] = useState<null | User>(null);
-  const [resetOpen, setResetOpen] = useState<null | { user: User; url: string }>(null);
 
   // Invite
   const [invNom, setInvNom] = useState("");
@@ -452,7 +451,7 @@ function UsersTable() {
                           ? <DropdownMenuItem onClick={() => setSuspendOpen(r)}>Suspendre…</DropdownMenuItem>
                           : <DropdownMenuItem onClick={() => reactivate(r)}>Réactiver</DropdownMenuItem>)}
                         {isAdmin && <DropdownMenuItem className="text-red-600" onClick={() => setDeleteOpen(r)}>Supprimer…</DropdownMenuItem>}
-                        <DropdownMenuItem onClick={() => (window.location.href = `/journal?user=${encodeURIComponent(r.id)}`)}>Voir l’historique</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => (window.location.href = `/journal?user=${encodeURIComponent(r.id)}`)}>Voir l��historique</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
