@@ -15,11 +15,13 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
+      console.log("Login attempt:", email);
       await login(email, password);
+      console.log("Login successful");
       window.location.href = "/";
     } catch (err: any) {
+      console.error("Login error:", err);
       setError(err?.message ?? "Erreur de connexion");
-    } finally {
       setLoading(false);
     }
   }
