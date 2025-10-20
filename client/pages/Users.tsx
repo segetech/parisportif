@@ -600,7 +600,7 @@ function UsersTable() {
                 {isAdmin && (profileOpen.statut !== 'suspendu'
                   ? <Button variant="outline" onClick={() => { setProfileOpen(null); setSuspendOpen(profileOpen); }}>Suspendre…</Button>
                   : <Button variant="outline" onClick={() => reactivate(profileOpen)}>Réactiver</Button>)}
-                {isAdmin && <Button variant="outline" onClick={() => resetPassword(profileOpen)}>Reset MDP</Button>}
+                {isAdmin && <Button variant="outline" onClick={() => { setProfileOpen(null); setResetOpen({ user: profileOpen, url: "" }); }}>Reset MDP</Button>}
                 <Button variant="outline" onClick={() => openUserAudit(profileOpen)}>Voir l’historique</Button>
               </div>
             </div>
