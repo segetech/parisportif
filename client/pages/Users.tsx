@@ -258,12 +258,29 @@ function UsersTable() {
   }
 
   // Reset password
+  const [resetMethod, setResetMethod] = useState<"email" | "direct">("email");
+
   async function resetPassword(u: User) {
     try {
-      const { resetUrl } = await api.users.resetPassword(u.id);
-      setResetOpen({ user: u, url: resetUrl });
-      await navigator.clipboard.writeText(resetUrl);
-      toast.success("Lien de réinitialisation généré et copié.");
+      const response = await fetch(`/api/admin/users/${u.id}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sendEmail: resetMethod === "email" }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur");
+      }
+
+      if (resetMethod === "direct" && data.temporaryPassword) {
+        setResetOpen({ user: u, url: data.temporaryPassword, isPassword: true });
+        await navigator.clipboard.writeText(data.temporaryPassword);
+        toast.success("Mot de passe généré et copié.");
+      } else {
+        toast.success("Lien d'email envoyé à l'utilisateur.");
+      }
     } catch (e: any) {
       toast.error(e?.message || "Erreur");
     }
