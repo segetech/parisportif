@@ -2,17 +2,25 @@ import { RequestHandler } from "express";
 import { createClient } from "@supabase/supabase-js";
 import dayjs from "dayjs";
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+let supabase: ReturnType<typeof createClient> | null = null;
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error("Missing Supabase environment variables");
+function getSupabaseClient() {
+  if (!supabase) {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error("Missing Supabase environment variables");
+    }
+
+    supabase = createClient(supabaseUrl, supabaseServiceKey);
+  }
+  return supabase;
 }
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export const handleLogin: RequestHandler = async (req, res) => {
   try {
+    const supabaseClient = getSupabaseClient();
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -23,7 +31,7 @@ export const handleLogin: RequestHandler = async (req, res) => {
 
     // Try to sign in
     const { data: signInData, error: signInError } =
-      await supabase.auth.signInWithPassword({
+      await supabaseClient.auth.signInWithPassword({
         email: emailLower,
         password,
       });
@@ -40,7 +48,7 @@ export const handleLogin: RequestHandler = async (req, res) => {
     }
 
     // Get user record from users table
-    const { data: userRecord, error: userError } = await supabase
+    const { data: userRecord, error: userError } = await supabaseClient
       .from("users")
       .select("*")
       .eq("id", signInData.user.id)
@@ -51,7 +59,7 @@ export const handleLogin: RequestHandler = async (req, res) => {
     }
 
     // Update last login
-    await supabase
+    await supabaseClient
       .from("users")
       .update({ derniere_connexion: dayjs().toISOString() })
       .eq("id", signInData.user.id);
