@@ -27,12 +27,15 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-sm rounded-xl border bg-white p-6 shadow-sm"
       >
-        <h1 className="text-xl font-bold mb-4">Connexion</h1>
+        <div className="flex justify-center mb-6">
+          <img src="/logo.png" alt="Logo" className="h-20 w-auto" />
+        </div>
+        <h1 className="text-xl font-bold mb-4 text-center">Connexion</h1>
         <div className="space-y-3">
           <div>
             <label className="text-sm font-medium">Email</label>
