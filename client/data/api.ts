@@ -102,10 +102,17 @@ function withinPeriod(d: string, start: string, end: string) {
 // Authentication
 export const auth = {
   async login(email: string, password: string): Promise<User> {
-    const response = await fetch("/api/auth/login", {
+    // Add timestamp to bypass any caching
+    const timestamp = Date.now();
+
+    const response = await fetch(`/api/auth/login?t=${timestamp}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        // Additional headers to prevent caching
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
       },
       body: JSON.stringify({
         email: email.toLowerCase(),
@@ -114,12 +121,29 @@ export const auth = {
       cache: "no-store",
     });
 
-    // Parse response - only read body once
+    // First check if response object is valid
+    if (!response || typeof response !== "object") {
+      throw new Error("Invalid response from server");
+    }
+
+    // Clone response to ensure body can be read
+    const clonedResponse = response.clone();
+
+    // Parse response - only read body once from cloned response
     let data;
     try {
-      data = await response.json();
+      data = await clonedResponse.json();
     } catch (error) {
       console.error("Failed to parse response:", error);
+
+      // Try to read as text for debugging
+      try {
+        const textContent = await response.text();
+        console.error("Response content:", textContent);
+      } catch (textError) {
+        console.error("Could not read response as text:", textError);
+      }
+
       throw new Error("Invalid response from server");
     }
 
