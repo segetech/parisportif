@@ -447,7 +447,7 @@ function UsersTable() {
                         <DropdownMenuItem onClick={() => setProfileOpen(r)}>Voir le profil</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setEditOpen(r)}>Éditer…</DropdownMenuItem>
                         {isAdmin && <DropdownMenuItem onClick={() => setRoleOpen(r)}>Changer le rôle</DropdownMenuItem>}
-                        {isAdmin && <DropdownMenuItem onClick={() => resetPassword(r)}>Réinitialiser le mot de passe</DropdownMenuItem>}
+                        {isAdmin && <DropdownMenuItem onClick={() => setResetOpen({ user: r, url: "" })}>Réinitialiser le mot de passe</DropdownMenuItem>}
                         {isAdmin && (r.statut !== 'suspendu'
                           ? <DropdownMenuItem onClick={() => setSuspendOpen(r)}>Suspendre…</DropdownMenuItem>
                           : <DropdownMenuItem onClick={() => reactivate(r)}>Réactiver</DropdownMenuItem>)}
