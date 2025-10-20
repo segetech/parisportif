@@ -34,6 +34,7 @@ const App = () => (
       <AuthProvider>
         <SettingsProvider>
           <BrowserRouter>
+            <SyncStatus />
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
