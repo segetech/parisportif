@@ -46,6 +46,7 @@ export default function AppLayout({
   const [period, setPeriod] = useState<PeriodState>(getDefaultPeriod());
 
   const isAdmin = user?.role === "ADMIN";
+  const isController = user?.role === "CONTROLEUR";
 
   const menu = useMemo(
     () => [
@@ -74,7 +75,7 @@ export default function AppLayout({
             },
           ]
         : []),
-      ...(isAdmin
+      {...(isAdmin
         ? [
             {
               to: "/matching",
@@ -82,8 +83,8 @@ export default function AppLayout({
               icon: <Link2 className="h-4 w-4" />,
             },
           ]
-        : []),
-      ...(isAdmin
+        : [])},
+      {...(isAdmin
         ? [
             {
               to: "/exports",
@@ -91,11 +92,30 @@ export default function AppLayout({
               icon: <FileDown className="h-4 w-4" />,
             },
           ]
+        : [])},
+      // Journal d'audit: visible pour ADMIN et CONTROLEUR
+      ...((isAdmin || isController)
+        ? [
+            {
+              to: "/journal",
+              label: "Journal d’audit",
+              icon: <Book className="h-4 w-4" />,
+            },
+          ]
+        : []),
+      ...((isAdmin || isController)
+        ? [
+            {
+              to: "/utilisateurs",
+              label: "Utilisateurs",
+              icon: <Settings className="h-4 w-4" />,
+            },
+          ]
         : []),
       ...(isAdmin
         ? [
             {
-              to: "/settings",
+              to: "/parametres",
               label: "Paramètres",
               icon: <Settings className="h-4 w-4" />,
             },
@@ -142,7 +162,11 @@ export default function AppLayout({
         <div className="text-xs text-muted-foreground">
           Connecté en tant que{" "}
           <span className="font-medium">
-            {user?.role === "ADMIN" ? "Admin" : "Agent"}
+            {user?.role === "ADMIN"
+              ? "Admin"
+              : user?.role === "CONTROLEUR"
+              ? "Contrôleur"
+              : "Agent"}
           </span>
         </div>
         <Button variant="outline" onClick={logout} className="gap-2">

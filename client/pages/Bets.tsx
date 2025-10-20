@@ -71,6 +71,7 @@ export default function BetsPage() {
 function Bets() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const isController = user?.role === "CONTROLEUR";
   const [rows, setRows] = useState<Bet[]>([]);
   const [filters, setFilters] = useState<{ operator: string }>({ operator: "" });
   const [open, setOpen] = useState(false);
@@ -109,8 +110,9 @@ function Bets() {
   }
 
   async function removeRow(id: string) {
-    if (!isAdmin) return;
+    if (!(isAdmin || isController)) return;
     if (!confirm("Supprimer ce pari ?")) return;
+    await api.bets.delete(id);
     setRows((r) => r.filter((x) => x.id !== id));
   }
 
@@ -133,11 +135,8 @@ function Bets() {
   async function onSubmit(values: FormValues) {
     try {
       if (editing) {
-        setRows((prev) =>
-          prev.map((b) =>
-            b.id === editing.id ? ({ ...b, ...values } as any) : b,
-          ),
-        );
+        const updated = await api.bets.update(editing.id, values as any);
+        setRows((prev) => prev.map((b) => (b.id === editing.id ? updated : b)));
       } else {
         const row = await api.bets.create({
           ...(values as Omit<Bet, "id" | "created_at">),
@@ -287,13 +286,17 @@ function Bets() {
               <TableHead>Montant</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Référence</TableHead>
+              <TableHead>Contrôle</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {numberedRows.length ? (
               numberedRows.map((r) => (
-                <TableRow key={r.id}>
+                <TableRow key={r.id} className={
+                  r.review_status === 'valide' ? 'border-l-4 border-l-emerald-500' :
+                  r.review_status === 'rejete' ? 'border-l-4 border-l-red-500' : ''
+                }>
                   <TableCell>{(r as any)._no}</TableCell>
                   <TableCell>{r.date}</TableCell>
                   <TableCell>{r.time}</TableCell>
@@ -305,6 +308,17 @@ function Bets() {
                   </TableCell>
                   <TableCell>{r.status}</TableCell>
                   <TableCell>{r.reference}</TableCell>
+                  <TableCell>
+                    {r.review_status === 'valide' && (
+                      <span className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-700">Validé</span>
+                    )}
+                    {r.review_status === 'rejete' && (
+                      <span title={r.reject_reason} className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-red-100 text-red-700">Rejeté</span>
+                    )}
+                    {r.review_status === 'en_cours' && (
+                      <span className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-700">En cours</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
                       <DropdownMenu>
@@ -319,14 +333,19 @@ function Bets() {
                           >
                             Voir
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setEditing(r);
-                              setOpen(true);
-                            }}
-                          >
-                            Éditer
-                          </DropdownMenuItem>
+                          {(() => {
+                            const canEdit = isAdmin || isController || (user!.id === r.created_by && r.review_status !== 'valide');
+                            return canEdit ? (
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setEditing(r);
+                                  setOpen(true);
+                                }}
+                              >
+                                Éditer
+                              </DropdownMenuItem>
+                            ) : null;
+                          })()}
                           <DropdownMenuItem
                             onClick={() => {
                               setEditing(null);
@@ -343,12 +362,36 @@ function Bets() {
                           >
                             Dupliquer
                           </DropdownMenuItem>
-                          {isAdmin && (
+                          {(isAdmin || isController) && (
                             <DropdownMenuItem
                               className="text-red-600"
                               onClick={() => removeRow(r.id)}
                             >
                               Supprimer
+                            </DropdownMenuItem>
+                          )}
+                          {(isAdmin || isController) && r.review_status !== 'valide' && (
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                const updated = await api.bets.validate(r.id, user!);
+                                setRows((prev) => prev.map((x) => (x.id === r.id ? updated : x)));
+                                toast.success("Enregistrement validé.");
+                              }}
+                            >
+                              Valider
+                            </DropdownMenuItem>
+                          )}
+                          {(isAdmin || isController) && r.review_status !== 'rejete' && (
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                const reason = prompt("Motif du rejet ?");
+                                if (!reason) return;
+                                const updated = await api.bets.reject(r.id, user!, reason);
+                                setRows((prev) => prev.map((x) => (x.id === r.id ? updated : x)));
+                                toast.success("Enregistrement rejeté.");
+                              }}
+                            >
+                              Rejeter…
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>

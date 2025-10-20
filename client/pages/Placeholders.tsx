@@ -29,6 +29,8 @@ import { fetchExportData, exportToCSV, exportToExcel } from "@/lib/exports";
 import { toast } from "sonner";
 import api, { Lookups, LookupKey } from "@/data/api";
 import { Pencil, Trash, Plus } from "lucide-react";
+import { useSettings } from "@/lib/settings";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function LookupsPage() {
   const [lookups, setLookups] = useState<Lookups | null>(null);
@@ -720,11 +722,276 @@ export function ExportsPage() {
   );
 }
 export function SettingsPage() {
+  const { settings, setSettings, applyNormalization, reset, save } = useSettings();
+
   return (
     <RequireAuth>
       <RequireRole allow={["ADMIN"]}>
         <AppLayout>
-          <Placeholder title="Paramètres" />
+          <div className="max-w-4xl space-y-4">
+            <Tabs defaultValue="saisie">
+              <TabsList>
+                <TabsTrigger value="saisie">Saisie & qualité</TabsTrigger>
+                <TabsTrigger value="roles">Rôles & permissions</TabsTrigger>
+                <TabsTrigger value="matching">Matching</TabsTrigger>
+                <TabsTrigger value="exports">Exports</TabsTrigger>
+                <TabsTrigger value="systeme">Système</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="saisie">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Saisie & qualité</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-medium">Références uniques</label>
+                        <div className="flex items-center justify-between border rounded p-2 mt-1">
+                          <span>Transactions</span>
+                          <input type="checkbox" className="h-4 w-4" checked={settings.uniqueReferences.transactions} onChange={(e) => setSettings((s) => ({ ...s, uniqueReferences: { ...s.uniqueReferences, transactions: e.target.checked } }))} />
+                        </div>
+                        <div className="flex items-center justify-between border rounded p-2 mt-2">
+                          <span>Paris</span>
+                          <input type="checkbox" className="h-4 w-4" checked={settings.uniqueReferences.bets} onChange={(e) => setSettings((s) => ({ ...s, uniqueReferences: { ...s.uniqueReferences, bets: e.target.checked } }))} />
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between border rounded p-2">
+                          <span>Preuve requise (Transactions)</span>
+                          <input type="checkbox" className="h-4 w-4" checked={settings.requireProofTransactions} onChange={(e) => setSettings((s) => ({ ...s, requireProofTransactions: e.target.checked }))} />
+                        </div>
+                        <div className="flex items-center justify-between border rounded p-2">
+                          <span>Téléphone requis (Transactions)</span>
+                          <input type="checkbox" className="h-4 w-4" checked={settings.requirePhoneTransactions} onChange={(e) => setSettings((s) => ({ ...s, requirePhoneTransactions: e.target.checked }))} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                      <div>
+                        <label className="text-xs font-medium">Durée d’édition Agent (minutes)</label>
+                        <Input type="number" min={0} value={settings.agentEditWindowMinutes} onChange={(e) => setSettings((s) => ({ ...s, agentEditWindowMinutes: Number(e.target.value) || 0 }))} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Normalisation auto</label>
+                        <div className="flex items-center gap-3">
+                          <input type="checkbox" className="h-4 w-4" checked={settings.normalizationEnabled} onChange={(e) => setSettings((s) => ({ ...s, normalizationEnabled: e.target.checked }))} />
+                          <Button variant="outline" onClick={async () => { const n = await applyNormalization(); toast.success(`Normalisation exécutée : ${n} corrections`); }}>Appliquer maintenant</Button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end pt-2">
+                      <Button variant="outline" onClick={reset}>Réinitialiser</Button>
+                      <Button onClick={save}>Enregistrer</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="roles">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Rôles & permissions</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-medium">Portée du tableau de bord (Agent)</label>
+                        <select className="border rounded px-2 py-2 text-sm w-full" value={settings.dashboardScopeAgent} onChange={(e) => setSettings((s) => ({ ...s, dashboardScopeAgent: e.target.value as any }))}>
+                          <option value="self">Ses données</option>
+                          <option value="all">Toutes les données</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between border rounded p-2">
+                        <span>Agent peut exporter</span>
+                        <input type="checkbox" className="h-4 w-4" checked={settings.agentCanExport} onChange={(e) => setSettings((s) => ({ ...s, agentCanExport: e.target.checked }))} />
+                      </div>
+                      <div className="flex items-center justify-between border rounded p-2">
+                        <span>Agent peut gérer Salles</span>
+                        <input type="checkbox" className="h-4 w-4" checked={settings.agentCanManageVenues} onChange={(e) => setSettings((s) => ({ ...s, agentCanManageVenues: e.target.checked }))} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Contrôleur peut supprimer</label>
+                        <select className="border rounded px-2 py-2 text-sm w-full" value={settings.controllerCanDelete} onChange={(e) => setSettings((s) => ({ ...s, controllerCanDelete: e.target.value as any }))}>
+                          <option value="interdite">Interdite</option>
+                          <option value="autorisee">Autorisée</option>
+                        </select>
+                        <div className="flex items-center justify-between border rounded p-2 mt-2">
+                          <span>Motif requis</span>
+                          <input type="checkbox" className="h-4 w-4" checked={settings.controllerDeleteReasonRequired} onChange={(e) => setSettings((s) => ({ ...s, controllerDeleteReasonRequired: e.target.checked }))} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Suppression par Agent</label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <input type="checkbox" className="h-4 w-4" checked={settings.agentCanDelete.allowed} onChange={(e) => setSettings((s) => ({ ...s, agentCanDelete: { ...s.agentCanDelete, allowed: e.target.checked } }))} />
+                          <span>Autorisé ≤ N minutes</span>
+                          <Input type="number" className="w-28" min={0} value={settings.agentCanDelete.minutesLimit || 0} onChange={(e) => setSettings((s) => ({ ...s, agentCanDelete: { ...s.agentCanDelete, minutesLimit: Number(e.target.value) || 0 } }))} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end pt-2">
+                      <Button variant="outline" onClick={reset}>Réinitialiser</Button>
+                      <Button onClick={save}>Enregistrer</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="matching">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Matching</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="flex items-center justify-between border rounded p-2">
+                        <span>Activer le matching</span>
+                        <input type="checkbox" className="h-4 w-4" checked={settings.matchingEnabled} onChange={(e) => setSettings((s) => ({ ...s, matchingEnabled: e.target.checked }))} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Fenêtre horaire (± minutes)</label>
+                        <Input type="number" min={0} value={settings.matchingWindowMinutes} onChange={(e) => setSettings((s) => ({ ...s, matchingWindowMinutes: Number(e.target.value) || 0 }))} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Tolérance montant (± %)</label>
+                        <Input type="number" min={0} max={100} value={settings.amountTolerancePercent} onChange={(e) => setSettings((s) => ({ ...s, amountTolerancePercent: Number(e.target.value) || 0 }))} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-xs font-medium">Score minimal par défaut</label>
+                        <Input type="number" min={0} max={100} value={settings.defaultMinScore} onChange={(e) => setSettings((s) => ({ ...s, defaultMinScore: Number(e.target.value) || 0 }))} />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end pt-2">
+                      <Button variant="outline" onClick={reset}>Réinitialiser</Button>
+                      <Button onClick={save}>Enregistrer</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="exports">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Exports</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-medium">Format par défaut</label>
+                        <select className="border rounded px-2 py-2 text-sm w-full" value={settings.defaultExportFormat} onChange={(e) => setSettings((s) => ({ ...s, defaultExportFormat: e.target.value as any }))}>
+                          <option value="excel">Excel</option>
+                          <option value="csv">CSV</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Taille max export</label>
+                        <Input type="number" min={0} value={settings.exportsMaxRows} onChange={(e) => setSettings((s) => ({ ...s, exportsMaxRows: Number(e.target.value) || 0 }))} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex items-center justify-between border rounded p-2">
+                        <span>Inclure colonne « Numéro de téléphone » (Paris)</span>
+                        <input type="checkbox" className="h-4 w-4" checked={settings.includePhoneInBetsExport} onChange={(e) => setSettings((s) => ({ ...s, includePhoneInBetsExport: e.target.checked }))} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="font-medium text-sm">Styles Excel</div>
+                        <div className="flex items-center justify-between border rounded p-2">
+                          <span>Freeze ligne 1</span>
+                          <input type="checkbox" className="h-4 w-4" checked={settings.exportExcelStyles.freezeTopRow} onChange={(e) => setSettings((s) => ({ ...s, exportExcelStyles: { ...s.exportExcelStyles, freezeTopRow: e.target.checked } }))} />
+                        </div>
+                        <div className="flex items-center justify-between border rounded p-2">
+                          <span>AutoFilter</span>
+                          <input type="checkbox" className="h-4 w-4" checked={settings.exportExcelStyles.autoFilter} onChange={(e) => setSettings((s) => ({ ...s, exportExcelStyles: { ...s.exportExcelStyles, autoFilter: e.target.checked } }))} />
+                        </div>
+                        <div className="flex items-center justify-between border rounded p-2">
+                          <span>Couleur par opérateur (Paris)</span>
+                          <input type="checkbox" className="h-4 w-4" checked={settings.exportExcelStyles.colorByOperator} onChange={(e) => setSettings((s) => ({ ...s, exportExcelStyles: { ...s.exportExcelStyles, colorByOperator: e.target.checked } }))} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end pt-2">
+                      <Button variant="outline" onClick={reset}>Réinitialiser</Button>
+                      <Button onClick={save}>Enregistrer</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="systeme">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Système</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Locale</label>
+                        <div className="border rounded p-2">{settings.locale}</div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Fuseau</label>
+                        <div className="border rounded p-2">{settings.timezone}</div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Format date</label>
+                        <div className="border rounded p-2">{settings.dateFormat}</div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Format heure</label>
+                        <div className="border rounded p-2">{settings.timeFormat}</div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium">Rétention journal d’audit (jours)</label>
+                      <Input type="number" min={0} value={settings.auditRetentionDays} onChange={(e) => setSettings((s) => ({ ...s, auditRetentionDays: Number(e.target.value) || 0 }))} />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const blob = new Blob([JSON.stringify(settings, null, 2)], { type: "application/json" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = "config.json";
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                      >
+                        Télécharger configuration (JSON)
+                      </Button>
+                      <label className="inline-flex items-center gap-2 border rounded px-3 py-2 text-sm cursor-pointer">
+                        Importer configuration (JSON)
+                        <input type="file" accept="application/json" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const text = await file.text();
+                          try {
+                            const json = JSON.parse(text);
+                            setSettings((s) => ({ ...s, ...json }));
+                            toast.success("Configuration importée.");
+                          } catch {
+                            toast.error("Fichier invalide");
+                          }
+                        }} />
+                      </label>
+                      <Button variant="destructive" onClick={() => {
+                        if (!confirm("Réinitialiser toute la configuration ?")) return;
+                        reset();
+                        toast.success("Configuration réinitialisée.");
+                      }}>Réinitialiser</Button>
+                    </div>
+                    <div className="flex gap-2 justify-end pt-2">
+                      <Button onClick={save}>Enregistrer</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </div>
         </AppLayout>
       </RequireRole>
     </RequireAuth>

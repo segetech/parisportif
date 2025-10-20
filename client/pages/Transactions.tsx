@@ -94,6 +94,7 @@ export default function Page() {
 function Transactions() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const isController = user?.role === "CONTROLEUR";
   const [rows, setRows] = useState<Transaction[]>([]);
   const [filters, setFilters] = useState({ operator: "", reference: "" });
   const [open, setOpen] = useState(false);
@@ -258,6 +259,7 @@ function Transactions() {
   }
 
   async function removeRow(id: string) {
+    if (!(isAdmin || isController)) return;
     if (!confirm("Supprimer cette ligne ?")) return;
     await api.transactions.delete(id);
     await load();

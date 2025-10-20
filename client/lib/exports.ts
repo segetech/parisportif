@@ -37,21 +37,20 @@ export async function fetchExportData(
   }
 
   if (module === "bets") {
-    const createdByOnly = undefined; // exports are admin by default; enforce RBAC in the page if needed
+    const createdByOnly = undefined;
     const rows: Bet[] = await api.bets.list({ start: fromISO, end: toISO, operator, createdByOnly });
+    // tri: opérateur puis heure asc
+    rows.sort((a, b) => (a.operator.localeCompare(b.operator) || (a.time + a.date).localeCompare(b.time + b.date)));
     return rows.map((b) => ({
-      date: b.date,
-      time: b.time,
-      operator: b.operator,
-      support: b.support,
-      category: "", // placeholder if you later add category
-      forme: b.bet_type,
-      amount_fcfa: b.amount_fcfa,
-      status: b.status,
-      amount_won_fcfa: (b as any).amount_won_fcfa ?? "",
-      reference: b.reference,
-      ticket_url: (b as any).ticket_url ?? "",
-      notes: b.notes ?? "",
+      operator: b.operator, // Opérateur de jeux
+      support: b.support,   // Support
+      type_pari: "",        // Type de Pari (catégorie) – inconnu pour l'instant
+      montant_text: formatFcfaCompact(b.amount_fcfa), // Montant en texte "xxxxF"
+      heure_text: formatHeureH(b.time),               // Heure au format "HHHMM"
+      phone: "",                                       // Numéro de téléphone (vide)
+      reference: b.reference,                          // Référence
+      statut: b.status,                                // statut
+      montant_gagne_text: formatFcfaCompact((b as any).amount_won_fcfa), // montant gagné texte
     }));
   }
 
@@ -96,6 +95,20 @@ export async function exportToCSV(
   setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
 
+// Helpers
+export function formatFcfaCompact(n?: number) {
+  return (typeof n === "number" ? new Intl.NumberFormat("fr-FR").format(n) : "") + (n ? "F" : "");
+}
+
+export function formatHeureH(isoOrHHmm?: string) {
+  if (!isoOrHHmm) return "";
+  const s = isoOrHHmm.includes("T") ? isoOrHHmm.slice(11, 16) : isoOrHHmm;
+  if (/^\d{2}:\d{2}$/.test(s)) {
+    return `${s.slice(0, 2)}H${s.slice(3, 5)}`;
+  }
+  return isoOrHHmm;
+}
+
 async function loadExcelJsFromCdn(): Promise<any> {
   const url = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
   // already loaded?
@@ -131,20 +144,22 @@ export async function exportToExcel(
   const ws = wb.addWorksheet(sheetName);
 
   ws.views = [{ state: "frozen", ySplit: 1 }];
-  // If amounts use F CFA, prefer compact "F"
-  const adjustedHeaders = headers.map((h) => {
-    if (h.key.includes("amount_fcfa") && !h.numFmt) {
-      return { ...h, numFmt: "#,##0\"F\"" };
-    }
-    return h;
-  });
+  const adjustedHeaders = headers; // rows may already be formatted as text for full control
   ws.columns = adjustedHeaders.map((h) => ({ header: h.title, key: h.key, width: h.width ?? 16 }));
 
   // Header style
   const header = ws.getRow(1);
-  header.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  header.font = { bold: true, color: { argb: "FF111827" } }; // black text
   header.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
+  header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } }; // gray-200
+  header.eachCell((cell) => {
+    cell.border = {
+      top: { style: "medium", color: { argb: "FF111827" } },
+      left: { style: "medium", color: { argb: "FF111827" } },
+      bottom: { style: "medium", color: { argb: "FF111827" } },
+      right: { style: "medium", color: { argb: "FF111827" } },
+    };
+  });
 
   // Insert spacer rows between operator groups and color operator cells
   const keyIndex: Record<string, number> = {};
@@ -155,55 +170,54 @@ export async function exportToExcel(
     if (headerDef) keyIndex[headerDef.key] = colNumber;
   });
 
-  const opColIdx = keyIndex["operator"];
+  // Detect operator column by key or header title
+  const findOpIdx = () => {
+    if (keyIndex["operator"]) return keyIndex["operator"];
+    if (keyIndex["op"]) return keyIndex["op"];
+    // fallback by title match
+    let idx = 0;
+    ws.getRow(1).eachCell((cell, c) => {
+      const t = String(cell.value ?? "").toLowerCase();
+      if (t.includes("opérateur de jeux")) idx = c;
+    });
+    return idx || undefined;
+  };
+  const opColIdx = findOpIdx();
 
-  const colorMap: Record<string, string> = {
-    "1xBet": "FF1DA1F2",      // blue
-    "Bet223": "FFEA7E13",     // orange
-    "Bet224": "FFEA7E13",     // orange
-    "PremierBet": "FF2E7D32", // green
+  const colorMap: Record<string, { bg: string; fg: string }> = {
+    "1xBet": { bg: "FF1E88E5", fg: "FFFFFFFF" },
+    "Bet223": { bg: "FFF57C00", fg: "FFFFFFFF" },
+    "PremierBet": { bg: "FF2E7D32", fg: "FFFFFFFF" },
   };
 
-  // build grouped rows
+  // build rows (caller may have sorted already)
   const sorted = [...rows];
   let prevOp: string | undefined = undefined;
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i] as any;
     const curOp = r?.operator as string | undefined;
-    if (prevOp !== undefined && curOp !== prevOp) {
-      ws.addRow({}); // spacer row
-    }
     const excelRow = ws.addRow(r);
-    // amount formats per header definition
-    excelRow.eachCell((cell, c) => {
-      const def = adjustedHeaders[c - 1];
-      if (def?.numFmt) (cell as any).numFmt = def.numFmt;
-    });
     // operator color chip
     if (opColIdx && curOp) {
       const cell = excelRow.getCell(opColIdx);
-      const fill = colorMap[curOp] ?? "FF0EA5E9"; // cyan default
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } } as any;
-      cell.font = { color: { argb: "FFFFFFFF" }, bold: true } as any;
+      const m = colorMap[curOp] ?? { bg: "FFF3F4F6", fg: "FF111827" };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: m.bg } } as any;
+      cell.font = { color: { argb: m.fg }, bold: true } as any;
       cell.alignment = { horizontal: "left", vertical: "middle", wrapText: true } as any;
     }
     prevOp = curOp;
   }
 
   // Styles
-  ws.eachRow((row, rowNumber) => {
+  ws.eachRow((row) => {
     row.eachCell((cell) => {
       cell.border = {
-        top: { style: "thin", color: { argb: "FF000000" } },
-        left: { style: "thin", color: { argb: "FF000000" } },
-        bottom: { style: "thin", color: { argb: "FF000000" } },
-        right: { style: "thin", color: { argb: "FF000000" } },
+        top: { style: "medium", color: { argb: "FF111827" } },
+        left: { style: "medium", color: { argb: "FF111827" } },
+        bottom: { style: "medium", color: { argb: "FF111827" } },
+        right: { style: "medium", color: { argb: "FF111827" } },
       };
-      const col = adjustedHeaders.find((h) => h.key === (cell as any)._column?.key || h.title === cell.value);
-      if (col?.numFmt) cell.numFmt = col.numFmt;
-      // align: numbers right, others left
-      const isNumber = typeof cell.value === "number";
-      cell.alignment = { horizontal: isNumber ? "right" : "left", vertical: "middle", wrapText: true };
+      cell.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
     });
   });
 

@@ -12,15 +12,12 @@ import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import Transactions from "./pages/Transactions";
 import { AuthProvider } from "./context/AuthContext";
-import {
-  LookupsPage,
-  MatchingPage,
-  ExportsPage,
-  SettingsPage,
-} from "./pages/Placeholders";
+import { LookupsPage, MatchingPage, ExportsPage, SettingsPage } from "./pages/Placeholders";
 import BetsPage from "./pages/Bets";
 import VenuesPage from "./pages/Venues";
-import SallesPage from "./pages/Salles";
+import { SettingsProvider } from "@/lib/settings";
+import AuditLogPage from "./pages/Audit";
+import UsersPage from "./pages/Users";
 
 const queryClient = new QueryClient();
 
@@ -30,22 +27,25 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<Index />} />
-            <Route path="/transactions" element={<Transactions />} />
-            <Route path="/bets" element={<BetsPage />} />
-            <Route path="/venues" element={<VenuesPage />} />
-            <Route path="/salles" element={<SallesPage />} />
-            <Route path="/lookups" element={<LookupsPage />} />
-            <Route path="/matching" element={<MatchingPage />} />
-            <Route path="/exports" element={<ExportsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+        <SettingsProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/" element={<Index />} />
+              <Route path="/transactions" element={<Transactions />} />
+              <Route path="/bets" element={<BetsPage />} />
+              <Route path="/venues" element={<VenuesPage />} />
+              <Route path="/lookups" element={<LookupsPage />} />
+              <Route path="/matching" element={<MatchingPage />} />
+              <Route path="/exports" element={<ExportsPage />} />
+              <Route path="/utilisateurs" element={<UsersPage />} />
+              <Route path="/parametres" element={<SettingsPage />} />
+              <Route path="/journal" element={<AuditLogPage />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </SettingsProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
