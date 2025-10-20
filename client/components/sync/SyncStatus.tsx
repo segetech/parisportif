@@ -7,7 +7,7 @@ export function SyncStatus() {
   const { status, performSync, clearQueue, updateStatus } = useSync({
     autoSync: true,
     syncInterval: 30000,
-    enableServiceWorker: true,
+    enableServiceWorker: false, // Disabled due to body stream issues
   });
   const { isOnline } = useNetworkStatus();
   const [showDetails, setShowDetails] = useState(false);
