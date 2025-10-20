@@ -111,14 +111,26 @@ export const auth = {
         email: email.toLowerCase(),
         password,
       }),
+      cache: "no-store",
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Erreur de connexion");
+    // Clone IMMEDIATELY before anything else touches the response
+    const clonedResponse = response.clone();
+
+    // Parse from cloned response - ONLY source of truth
+    let data;
+    try {
+      data = await clonedResponse.json();
+    } catch (error) {
+      console.error("Login parse error:", error);
+      throw new Error("Invalid response from server");
     }
 
-    const data = await response.json();
+    // Check status using original response properties only
+    if (!response.ok) {
+      throw new Error(data?.error || "Erreur de connexion");
+    }
+
     return data.user as User;
   },
 
