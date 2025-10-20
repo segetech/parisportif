@@ -102,24 +102,48 @@ function withinPeriod(d: string, start: string, end: string) {
 // Authentication
 export const auth = {
   async login(email: string, password: string): Promise<User> {
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: email.toLowerCase(),
-        password,
-      }),
-    });
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.toLowerCase(),
+          password,
+        }),
+        cache: "no-store", // Prevent caching
+      });
 
-    const data = await response.json();
+      // Check if response is valid before reading body
+      if (!response) {
+        throw new Error("No response from server");
+      }
 
-    if (!response.ok) {
-      throw new Error(data.error || "Erreur de connexion");
+      // Check content-type to ensure we have JSON
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        throw new Error(`Invalid response format: ${text}`);
+      }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse JSON response:", jsonError);
+        throw new Error("Invalid JSON response from server");
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur de connexion");
+      }
+
+      return data.user as User;
+    } catch (error: any) {
+      console.error("Login error:", error);
+      throw error;
     }
-
-    return data.user as User;
   },
 
   async me(userId: string): Promise<User | null> {
