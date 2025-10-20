@@ -39,7 +39,10 @@ function ProfileForm() {
     try {
       const response = await fetch("/api/auth/update-profile", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Id": user?.id || "",
+        },
         body: JSON.stringify({
           nom: nom.trim(),
           prenom: prenom.trim() || null,
