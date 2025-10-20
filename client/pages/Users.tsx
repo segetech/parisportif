@@ -467,41 +467,71 @@ function UsersTable() {
       </div>
 
       {/* Modale: Inviter */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+      <Dialog open={inviteOpen} onOpenChange={(o) => {
+        if (!o) {
+          setInviteOpen(false);
+          setInvTempPassword(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Inviter un utilisateur</DialogTitle></DialogHeader>
           <div className="grid gap-3">
-            <div>
-              <label className="text-xs font-medium">Nom</label>
-              <Input value={invNom} onChange={(e) => setInvNom(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium">Prénom</label>
-              <Input value={invPrenom} onChange={(e) => setInvPrenom(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium">Email</label>
-              <Input type="email" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} placeholder="prenom.nom@exemple.com" />
-            </div>
-            <div>
-              <label className="text-xs font-medium">Rôle</label>
-              <select className="border rounded px-2 py-2 text-sm w-full" value={invRole} onChange={(e) => setInvRole(e.target.value as Role)}>
-                <option value="ADMIN">Admin</option>
-                <option value="CONTROLEUR">Contrôleur</option>
-                <option value="AGENT">Agent</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium">Statut initial</label>
-              <select className="border rounded px-2 py-2 text-sm w-full" value={invStatut} onChange={(e) => setInvStatut(e.target.value as UserStatus)}>
-                <option value="invitation_envoyee">Invitation envoyée</option>
-                <option value="actif">Actif</option>
-              </select>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setInviteOpen(false)}>Annuler</Button>
-              <Button onClick={inviteSubmit} disabled={!isAdmin || !invNom.trim() || !invEmail.trim()}>Envoyer</Button>
-            </div>
+            {!invTempPassword ? (
+              <>
+                <div>
+                  <label className="text-xs font-medium">Nom</label>
+                  <Input value={invNom} onChange={(e) => setInvNom(e.target.value)} disabled={invLoading} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Prénom</label>
+                  <Input value={invPrenom} onChange={(e) => setInvPrenom(e.target.value)} disabled={invLoading} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Email</label>
+                  <Input type="email" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} placeholder="prenom.nom@exemple.com" disabled={invLoading} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Rôle</label>
+                  <select className="border rounded px-2 py-2 text-sm w-full" value={invRole} onChange={(e) => setInvRole(e.target.value as Role)} disabled={invLoading}>
+                    <option value="ADMIN">Admin</option>
+                    <option value="CONTROLEUR">Contrôleur</option>
+                    <option value="AGENT">Agent</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Méthode de transmission du mot de passe</label>
+                  <select className="border rounded px-2 py-2 text-sm w-full" value={invMethod} onChange={(e) => setInvMethod(e.target.value as "email" | "direct")} disabled={invLoading}>
+                    <option value="email">Envoyer par email</option>
+                    <option value="direct">Afficher directement</option>
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setInviteOpen(false)} disabled={invLoading}>Annuler</Button>
+                  <Button onClick={inviteSubmit} disabled={!isAdmin || !invNom.trim() || !invEmail.trim() || invLoading}>
+                    {invLoading ? "Création…" : "Créer l'utilisateur"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-sm">Utilisateur créé avec succès!</div>
+                <div>
+                  <label className="text-xs font-medium">Mot de passe temporaire</label>
+                  <div className="border rounded p-3 bg-muted/30 font-mono text-sm break-all">{invTempPassword}</div>
+                  <p className="text-xs text-muted-foreground mt-1">L'utilisateur doit changer ce mot de passe à sa première connexion.</p>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={() => {
+                    setInviteOpen(false);
+                    setInvTempPassword(null);
+                    setInvNom("");
+                    setInvPrenom("");
+                    setInvEmail("");
+                    load();
+                  }}>Fermer</Button>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
