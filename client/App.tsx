@@ -12,6 +12,7 @@ import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import ProfilePage from "./pages/Profile";
 import Transactions from "./pages/Transactions";
 import { AuthProvider } from "./context/AuthContext";
 import { LookupsPage, MatchingPage, ExportsPage, SettingsPage } from "./pages/Placeholders";
