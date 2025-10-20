@@ -324,6 +324,7 @@ function UsersTable() {
   const [profileOpen, setProfileOpen] = useState<null | User>(null);
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditRows, setAuditRows] = useState<AuditEntry[]>([]);
+  const [resetOpen, setResetOpen] = useState<null | { user: User; url: string; isPassword?: boolean }>(null);
 
   async function openUserAudit(u: User) {
     const all = auditService.list({});
