@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import { handleDemo } from "./routes/demo";
 import { handleLogin } from "./routes/auth";
+import { handleDashboardData } from "./routes/dashboard";
 
 export function createServer() {
   const app = express();
@@ -22,6 +23,9 @@ export function createServer() {
 
   // Auth routes
   app.post("/api/auth/login", handleLogin);
+
+  // Dashboard routes
+  app.get("/api/dashboard/data", handleDashboardData);
 
   return app;
 }
