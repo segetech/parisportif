@@ -1,64 +1,34 @@
-// Service Worker for Background Sync and Push Notifications
+// Service Worker - DISABLED DUE TO BODY STREAM ISSUES
+// Do not use service worker for caching to avoid "body stream already read" errors
+// Service worker functionality is currently disabled
+
 const CACHE_NAME = 'fusion-app-v1';
 const SYNC_TAG = 'sync-transactions';
-const API_BASE = self.location.origin;
 
-// Install event - cache essential files
+// Install event
 self.addEventListener('install', (event) => {
-  console.log('[ServiceWorker] Installing...');
+  console.log('[ServiceWorker] Installing (disabled)');
   self.skipWaiting();
 });
 
-// Activate event - clean up old caches
+// Activate event - clean all caches
 self.addEventListener('activate', (event) => {
-  console.log('[ServiceWorker] Activating...');
-  event.waitUntil(self.clients.claim());
-});
-
-// Fetch event - network first with cache fallback
-self.addEventListener('fetch', (event) => {
-  // Only cache GET requests
-  if (event.request.method !== 'GET') {
-    return;
-  }
-
-  // Skip external requests
-  if (!event.request.url.includes(API_BASE)) {
-    return;
-  }
-
-  // Skip all API endpoints - let them handle their own caching
-  if (event.request.url.includes('/api/')) {
-    return;
-  }
-
-  // Only cache static assets (js, css, images, etc)
-  if (!event.request.url.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/i)) {
-    return;
-  }
-
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Only cache successful responses with status 200
-        if (response.ok && response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone).catch(() => {
-              // Ignore cache errors
-            });
-          });
-        }
-        return response;
-      })
-      .catch(() => {
-        // Return cached response if network fails
-        return caches.match(event.request).then((cachedResponse) => {
-          return cachedResponse || new Response('Offline', { status: 503 });
-        });
-      })
+  console.log('[ServiceWorker] Activating - cleaning caches');
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          console.log('[ServiceWorker] Deleting cache:', cacheName);
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(() => self.clients.claim())
   );
 });
+
+// Fetch event - DO NOT INTERCEPT (disabled)
+// Service worker fetch interception is disabled to prevent "body stream already read" errors
+// All requests will go directly to the server without service worker interference
 
 // Background sync event
 self.addEventListener('sync', (event) => {
