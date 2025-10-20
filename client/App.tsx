@@ -22,6 +22,7 @@ import { SettingsProvider } from "@/lib/settings";
 import AuditLogPage from "./pages/Audit";
 import UsersPage from "./pages/Users";
 import CacheSettingsPage from "./pages/CacheSettings";
+import { SyncStatus } from "@/components/sync/SyncStatus";
 
 const queryClient = new QueryClient();
 
