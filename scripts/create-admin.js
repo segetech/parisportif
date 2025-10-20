@@ -1,7 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://yjoowyjdtdpccrzolums.supabase.co";
-const SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlqb293eWpkdGRwY2Nyem9sdW1zIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDk1MTU3MCwiZXhwIjoyMDc2NTI3NTcwfQ.cwDwu_3CoPomOwOeZUhGDWL5EVBrn-4OSNih0Gi1-H8";
+const SERVICE_ROLE_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlqb293eWpkdGRwY2Nyem9sdW1zIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDk1MTU3MCwiZXhwIjoyMDc2NTI3NTcwfQ.cwDwu_3CoPomOwOeZUhGDWL5EVBrn-4OSNih0Gi1-H8";
 
 const ADMIN_EMAIL = "pari@buymore.ml";
 const ADMIN_PASSWORD = "Admin2024@Pari";
@@ -14,11 +15,12 @@ async function createAdmin() {
 
   try {
     // Create auth user
-    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
-      email_confirm: true, // Auto-confirm email
-    });
+    const { data: authUser, error: authError } =
+      await supabase.auth.admin.createUser({
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
+        email_confirm: true, // Auto-confirm email
+      });
 
     if (authError) {
       console.error("Error creating auth user:", authError.message);

@@ -19,7 +19,9 @@ export const handleDashboardData: RequestHandler = async (req, res) => {
 
     if (start && end) {
       txQuery = txQuery.gte("date", start as string).lte("date", end as string);
-      betsQuery = betsQuery.gte("date", start as string).lte("date", end as string);
+      betsQuery = betsQuery
+        .gte("date", start as string)
+        .lte("date", end as string);
     }
 
     // If agent, filter by creator

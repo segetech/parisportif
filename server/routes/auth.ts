@@ -22,10 +22,11 @@ export const handleLogin: RequestHandler = async (req, res) => {
     const emailLower = email.toLowerCase();
 
     // Try to sign in
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: emailLower,
-      password,
-    });
+    const { data: signInData, error: signInError } =
+      await supabase.auth.signInWithPassword({
+        email: emailLower,
+        password,
+      });
 
     if (signInError) {
       if (signInError.message.includes("Invalid login credentials")) {

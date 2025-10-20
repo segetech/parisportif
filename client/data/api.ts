@@ -170,7 +170,9 @@ export const roles = {
   },
   async setPermissions(role: Role, perms: Permission[]): Promise<void> {
     await delay();
-    const valid = perms.filter((p) => (ALL_PERMISSIONS as readonly string[]).includes(p));
+    const valid = perms.filter((p) =>
+      (ALL_PERMISSIONS as readonly string[]).includes(p),
+    );
     defaultRolePerms[role] = Array.from(new Set(valid));
   },
 };
@@ -205,7 +207,9 @@ export const transactions = {
       query = query.eq("created_by", filters.createdByOnly);
     }
 
-    const { data, error } = await query.order("date", { ascending: false }).order("time", { ascending: false });
+    const { data, error } = await query
+      .order("date", { ascending: false })
+      .order("time", { ascending: false });
 
     if (error) throw new Error(error.message);
     return (data as Transaction[]) || [];
@@ -244,7 +248,7 @@ export const transactions = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Transaction);
+    return data as Transaction;
   },
 
   async update(
@@ -284,7 +288,7 @@ export const transactions = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Transaction);
+    return data as Transaction;
   },
 
   async delete(id: string): Promise<void> {
@@ -309,10 +313,14 @@ export const transactions = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Transaction);
+    return data as Transaction;
   },
 
-  async reject(id: string, reviewer: User, reason: string): Promise<Transaction> {
+  async reject(
+    id: string,
+    reviewer: User,
+    reason: string,
+  ): Promise<Transaction> {
     if (!reason?.trim()) throw new Error("Motif requis");
 
     const now = dayjs().toISOString();
@@ -331,7 +339,7 @@ export const transactions = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Transaction);
+    return data as Transaction;
   },
 };
 
@@ -384,7 +392,7 @@ export const bets = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Bet);
+    return data as Bet;
   },
 
   async update(
@@ -410,7 +418,7 @@ export const bets = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Bet);
+    return data as Bet;
   },
 
   async get(id: string): Promise<Bet | null> {
@@ -446,7 +454,7 @@ export const bets = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Bet);
+    return data as Bet;
   },
 
   async reject(id: string, reviewer: User, reason: string): Promise<Bet> {
@@ -468,7 +476,7 @@ export const bets = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Bet);
+    return data as Bet;
   },
 };
 
@@ -488,7 +496,7 @@ export const venues = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Venue);
+    return data as Venue;
   },
 
   async update(id: string, input: Partial<Venue>): Promise<Venue> {
@@ -500,7 +508,7 @@ export const venues = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as Venue);
+    return data as Venue;
   },
 
   async delete(id: string): Promise<void> {
@@ -609,20 +617,30 @@ export const matching = {
 
 // Users management
 export const users = {
-  async list(params: {
-    q?: string;
-    role?: Role | "TOUS";
-    statut?: UserStatus | "TOUS";
-    page?: number;
-    size?: number;
-  } = {}): Promise<{ rows: User[]; total: number }> {
-    const { q = "", role = "TOUS", statut = "TOUS", page = 1, size = 10 } = params;
+  async list(
+    params: {
+      q?: string;
+      role?: Role | "TOUS";
+      statut?: UserStatus | "TOUS";
+      page?: number;
+      size?: number;
+    } = {},
+  ): Promise<{ rows: User[]; total: number }> {
+    const {
+      q = "",
+      role = "TOUS",
+      statut = "TOUS",
+      page = 1,
+      size = 10,
+    } = params;
 
     let query = supabase.from("users").select("*", { count: "exact" });
 
     if (q.trim()) {
       const qn = q.trim().toLowerCase();
-      query = query.or(`nom.ilike.%${qn}%,prenom.ilike.%${qn}%,email.ilike.%${qn}%`);
+      query = query.or(
+        `nom.ilike.%${qn}%,prenom.ilike.%${qn}%,email.ilike.%${qn}%`,
+      );
     }
 
     if (role !== "TOUS") {
@@ -653,7 +671,7 @@ export const users = {
       .single();
 
     if (error) throw new Error("Introuvable");
-    return (data as User);
+    return data as User;
   },
 
   async create(
@@ -673,11 +691,12 @@ export const users = {
     const now = dayjs().toISOString();
 
     // Create Supabase auth user
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password: `temp_${Math.random().toString(36).slice(2, 10)}`,
-      user_metadata: { nom: u.nom, role: u.role },
-    });
+    const { data: authData, error: authError } =
+      await supabase.auth.admin.createUser({
+        email,
+        password: `temp_${Math.random().toString(36).slice(2, 10)}`,
+        user_metadata: { nom: u.nom, role: u.role },
+      });
 
     if (authError) throw new Error(authError.message);
 
@@ -698,7 +717,7 @@ export const users = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as User);
+    return data as User;
   },
 
   async update(id: string, patch: Partial<User>): Promise<User> {
@@ -724,7 +743,7 @@ export const users = {
       .single();
 
     if (error) throw new Error(error.message);
-    return (data as User);
+    return data as User;
   },
 
   async changeRole(id: string, role: Role): Promise<User> {
@@ -739,7 +758,9 @@ export const users = {
         .neq("id", id);
 
       if (error || !data || data.length === 0) {
-        throw new Error("Au moins un Administrateur actif doit rester dans le système.");
+        throw new Error(
+          "Au moins un Administrateur actif doit rester dans le système.",
+        );
       }
     }
 
@@ -786,9 +807,13 @@ export const users = {
         .eq("role", "ADMIN")
         .eq("statut", "actif");
 
-      const remainingAdmins = (data || []).filter((u) => !ids.includes(u.id)).length;
+      const remainingAdmins = (data || []).filter(
+        (u) => !ids.includes(u.id),
+      ).length;
       if (remainingAdmins === 0) {
-        throw new Error("Au moins un Administrateur actif doit rester dans le système.");
+        throw new Error(
+          "Au moins un Administrateur actif doit rester dans le système.",
+        );
       }
     }
 
