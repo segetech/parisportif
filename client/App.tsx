@@ -23,6 +23,10 @@ import AuditLogPage from "./pages/Audit";
 import UsersPage from "./pages/Users";
 import CacheSettingsPage from "./pages/CacheSettings";
 import { SyncStatus } from "@/components/sync/SyncStatus";
+import { initializeApp } from "@/lib/init";
+
+// Initialize app (clean up service workers and caches)
+initializeApp().catch(console.error);
 
 const queryClient = new QueryClient();
 
