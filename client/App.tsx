@@ -47,6 +47,7 @@ const App = () => (
               <Route path="/exports" element={<ExportsPage />} />
               <Route path="/utilisateurs" element={<UsersPage />} />
               <Route path="/parametres" element={<SettingsPage />} />
+              <Route path="/cache" element={<CacheSettingsPage />} />
               <Route path="/journal" element={<AuditLogPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
