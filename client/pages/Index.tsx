@@ -32,21 +32,35 @@ function Dashboard() {
     tx: Awaited<ReturnType<typeof api.transactions.list>>;
     bets: Awaited<ReturnType<typeof api.bets.list>>;
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     load();
   }, [user?.id]);
 
   async function load() {
-    const params = new URLSearchParams(window.location.search);
-    const start = params.get("start") ?? dayjs().format(DATE_FORMAT);
-    const end = params.get("end") ?? dayjs().format(DATE_FORMAT);
-    const createdByOnly = user?.role === "AGENT" ? user.id : undefined;
-    const [tx, bets] = await Promise.all([
-      api.transactions.list({ start, end, createdByOnly }),
-      api.bets.list({ start, end, createdByOnly }),
-    ]);
-    setRows({ tx, bets });
+    try {
+      setLoading(true);
+      const params = new URLSearchParams(window.location.search);
+      const start = params.get("start") ?? dayjs().format(DATE_FORMAT);
+      const end = params.get("end") ?? dayjs().format(DATE_FORMAT);
+
+      // Use backend endpoint for faster loading
+      const queryParams = new URLSearchParams({
+        start,
+        end,
+        role: user?.role ?? "AGENT",
+        userId: user?.id ?? "",
+      });
+
+      const response = await fetch(`/api/dashboard/data?${queryParams}`);
+      if (!response.ok) throw new Error("Failed to load dashboard data");
+
+      const data = await response.json();
+      setRows({ tx: data.transactions, bets: data.bets });
+    } finally {
+      setLoading(false);
+    }
   }
 
   const kpis = useMemo(() => {
@@ -76,6 +90,21 @@ function Dashboard() {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, v]) => ({ date, ...v }));
   }, [rows]);
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent mb-4"></div>
+            <p className="text-sm text-muted-foreground">
+              Chargement des données...
+            </p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>

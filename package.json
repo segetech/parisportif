@@ -21,6 +21,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.76.0",
     "@tanstack/react-table": "^8.21.3",
     "dayjs": "^1.11.18",
     "dotenv": "^17.2.1",

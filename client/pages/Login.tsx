@@ -15,22 +15,27 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
+      console.log("Login attempt:", email);
       await login(email, password);
+      console.log("Login successful");
       window.location.href = "/";
     } catch (err: any) {
+      console.error("Login error:", err);
       setError(err?.message ?? "Erreur de connexion");
-    } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen grid place-items-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-sm rounded-xl border bg-white p-6 shadow-sm"
       >
-        <h1 className="text-xl font-bold mb-4">Connexion</h1>
+        <div className="flex justify-center mb-6">
+          <img src="/logo.png" alt="Logo" className="h-20 w-auto" />
+        </div>
+        <h1 className="text-xl font-bold mb-4 text-center">Connexion</h1>
         <div className="space-y-3">
           <div>
             <label className="text-sm font-medium">Email</label>
@@ -48,11 +53,11 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="admin ou agent"
+              placeholder="Entrez votre mot de passe"
               required
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Astuce: utilisez « admin » ou « agent » comme mot de passe.
+              Note: Utilisez un mot de passe fort avec au moins 6 caractères.
             </p>
           </div>
           {error && <div className="text-sm text-red-600">{error}</div>}

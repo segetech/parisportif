@@ -17,10 +17,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Try to restore from localStorage
     const saved = localStorage.getItem(LS_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved) as User;
-      setUser(parsed);
+      try {
+        const parsed = JSON.parse(saved) as User;
+        setUser(parsed);
+      } catch {
+        localStorage.removeItem(LS_KEY);
+      }
     }
     setLoading(false);
   }, []);
