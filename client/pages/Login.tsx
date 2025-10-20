@@ -48,11 +48,11 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="admin ou agent"
+              placeholder="Entrez votre mot de passe"
               required
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Astuce: utilisez « admin » ou « agent » comme mot de passe.
+              Note: Utilisez un mot de passe fort avec au moins 6 caractères.
             </p>
           </div>
           {error && <div className="text-sm text-red-600">{error}</div>}
