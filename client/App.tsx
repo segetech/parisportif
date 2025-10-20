@@ -21,6 +21,7 @@ import VenuesPage from "./pages/Venues";
 import { SettingsProvider } from "@/lib/settings";
 import AuditLogPage from "./pages/Audit";
 import UsersPage from "./pages/Users";
+import CacheSettingsPage from "./pages/CacheSettings";
 
 const queryClient = new QueryClient();
 
