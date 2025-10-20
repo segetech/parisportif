@@ -748,7 +748,7 @@ function UsersTable() {
       </Dialog>
 
       {/* Modale: Méthode de réinitialisation */}
-      <Dialog open={!!resetOpen?.user && !resetOpen?.url} onOpenChange={(o) => {
+      <Dialog open={!!resetOpen?.user && resetOpen?.url === ""} onOpenChange={(o) => {
         if (!o) {
           setResetOpen(null);
           setResetMethod("email");
@@ -776,7 +776,11 @@ function UsersTable() {
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setResetOpen(null)}>Annuler</Button>
-              <Button onClick={() => resetOpen?.user && resetPassword(resetOpen.user)}>
+              <Button onClick={() => {
+                if (resetOpen?.user) {
+                  resetPassword(resetOpen.user);
+                }
+              }}>
                 Continuer
               </Button>
             </div>
