@@ -27,13 +27,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip auth endpoints completely
-  if (event.request.url.includes('/api/auth/')) {
+  // Skip all API endpoints - let them handle their own caching
+  if (event.request.url.includes('/api/')) {
     return;
   }
 
-  // Skip admin endpoints
-  if (event.request.url.includes('/api/admin/')) {
+  // Only cache static assets (js, css, images, etc)
+  if (!event.request.url.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/i)) {
     return;
   }
 
