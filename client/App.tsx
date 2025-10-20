@@ -27,6 +27,7 @@ import { SettingsProvider } from "@/lib/settings";
 import AuditLogPage from "./pages/Audit";
 import UsersPage from "./pages/Users";
 import CacheSettingsPage from "./pages/CacheSettings";
+import IllegalActivitiesPage from "./pages/IllegalActivities";
 import { SyncStatus } from "@/components/sync/SyncStatus";
 import { initializeApp } from "@/lib/init";
 
@@ -60,6 +61,7 @@ const App = () => (
               <Route path="/parametres" element={<SettingsPage />} />
               <Route path="/cache" element={<CacheSettingsPage />} />
               <Route path="/journal" element={<AuditLogPage />} />
+              <Route path="/illegal" element={<IllegalActivitiesPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

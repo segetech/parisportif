@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   Plus,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,6 +67,15 @@ export default function AppLayout({
         label: "Salles",
         icon: <Building2 className="h-4 w-4" />,
       },
+      ...((isAdmin || isController)
+        ? [
+            {
+              to: "/illegal",
+              label: "Activités Illégales",
+              icon: <AlertTriangle className="h-4 w-4" />,
+            },
+          ]
+        : []),
       ...(isAdmin
         ? [
             {
@@ -75,7 +85,7 @@ export default function AppLayout({
             },
           ]
         : []),
-      {...(isAdmin
+      ...(isAdmin
         ? [
             {
               to: "/matching",
@@ -83,8 +93,8 @@ export default function AppLayout({
               icon: <Link2 className="h-4 w-4" />,
             },
           ]
-        : [])},
-      {...(isAdmin
+        : []),
+      ...(isAdmin
         ? [
             {
               to: "/exports",
@@ -92,7 +102,7 @@ export default function AppLayout({
               icon: <FileDown className="h-4 w-4" />,
             },
           ]
-        : [])},
+        : []),
       // Journal d'audit: visible pour ADMIN et CONTROLEUR
       ...((isAdmin || isController)
         ? [
@@ -122,7 +132,7 @@ export default function AppLayout({
           ]
         : []),
     ],
-    [isAdmin],
+    [isAdmin, isController],
   );
 
   function handleSearch(e: React.FormEvent) {
