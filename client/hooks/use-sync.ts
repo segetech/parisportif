@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   initializeSync,
   queueSyncItem,
@@ -6,8 +6,8 @@ import {
   syncAll,
   getSyncQueueSize,
   clearSyncQueue,
-} from '@/lib/sync';
-import { toast } from 'sonner';
+} from "@/lib/sync";
+import { toast } from "sonner";
 
 export interface SyncStatus {
   isOnline: boolean;
@@ -28,7 +28,11 @@ interface SyncHookOptions {
  */
 export function useSync(options: SyncHookOptions = {}) {
   // Service worker is disabled due to body stream issues
-  const { autoSync = true, syncInterval = 30000, enableServiceWorker = false } = options;
+  const {
+    autoSync = true,
+    syncInterval = 30000,
+    enableServiceWorker = false,
+  } = options;
 
   const [status, setStatus] = useState<SyncStatus>({
     isOnline: navigator.onLine,
@@ -46,35 +50,41 @@ export function useSync(options: SyncHookOptions = {}) {
     const init = async () => {
       try {
         await initializeSync();
-        console.log('[Sync Hook] Initialized');
+        console.log("[Sync Hook] Initialized");
 
         // Register service worker if enabled
-        if (enableServiceWorker && 'serviceWorker' in navigator) {
+        if (enableServiceWorker && "serviceWorker" in navigator) {
           try {
             swRef.current = navigator.serviceWorker;
-            const registration = await swRef.current.register('/service-worker.js', {
-              scope: '/',
-            });
-            console.log('[Sync Hook] Service worker registered');
+            const registration = await swRef.current.register(
+              "/service-worker.js",
+              {
+                scope: "/",
+              },
+            );
+            console.log("[Sync Hook] Service worker registered");
 
             // Listen for messages from service worker
             if (swRef.current) {
-              swRef.current.addEventListener('message', (event) => {
-                if (event.data.type === 'SYNC_COMPLETE') {
-                  console.log('[Sync Hook] Sync complete:', event.data.count);
+              swRef.current.addEventListener("message", (event) => {
+                if (event.data.type === "SYNC_COMPLETE") {
+                  console.log("[Sync Hook] Sync complete:", event.data.count);
                   updateStatus();
                 }
               });
             }
           } catch (error) {
-            console.error('[Sync Hook] Service worker registration failed:', error);
+            console.error(
+              "[Sync Hook] Service worker registration failed:",
+              error,
+            );
             // Don't fail if service worker registration fails
           }
         }
 
         updateStatus();
       } catch (error) {
-        console.error('[Sync Hook] Initialization failed:', error);
+        console.error("[Sync Hook] Initialization failed:", error);
         // Don't fail if sync initialization fails
       }
     };
@@ -100,14 +110,14 @@ export function useSync(options: SyncHookOptions = {}) {
         queueSize,
       }));
     } catch (error) {
-      console.error('[Sync Hook] Error updating status:', error);
+      console.error("[Sync Hook] Error updating status:", error);
     }
   }, []);
 
   // Listen for online/offline events
   useEffect(() => {
     const handleOnline = () => {
-      console.log('[Sync Hook] Online');
+      console.log("[Sync Hook] Online");
       setStatus((prev) => ({ ...prev, isOnline: true }));
       // Attempt sync when coming back online
       if (autoSync) {
@@ -116,17 +126,17 @@ export function useSync(options: SyncHookOptions = {}) {
     };
 
     const handleOffline = () => {
-      console.log('[Sync Hook] Offline');
+      console.log("[Sync Hook] Offline");
       setStatus((prev) => ({ ...prev, isOnline: false }));
-      toast.warning('You are offline. Changes will be synced when online.');
+      toast.warning("You are offline. Changes will be synced when online.");
     };
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, [autoSync]);
 
@@ -150,13 +160,19 @@ export function useSync(options: SyncHookOptions = {}) {
         clearTimeout(syncTimeoutRef.current);
       }
     };
-  }, [autoSync, status.isOnline, status.pendingCount, syncInterval, updateStatus]);
+  }, [
+    autoSync,
+    status.isOnline,
+    status.pendingCount,
+    syncInterval,
+    updateStatus,
+  ]);
 
   // Perform sync
   const performSync = useCallback(async () => {
     if (status.isSyncing) return;
     if (!status.isOnline) {
-      toast.error('Cannot sync while offline');
+      toast.error("Cannot sync while offline");
       return;
     }
 
@@ -180,8 +196,8 @@ export function useSync(options: SyncHookOptions = {}) {
         queueSize: result.remaining,
       }));
     } catch (error) {
-      console.error('[Sync Hook] Sync failed:', error);
-      toast.error('Sync failed. Will retry automatically.');
+      console.error("[Sync Hook] Sync failed:", error);
+      toast.error("Sync failed. Will retry automatically.");
     } finally {
       setStatus((prev) => ({ ...prev, isSyncing: false }));
     }
@@ -189,19 +205,24 @@ export function useSync(options: SyncHookOptions = {}) {
 
   // Queue an operation
   const queueOperation = useCallback(
-    async (url: string, method: string, data: any, headers?: Record<string, string>) => {
+    async (
+      url: string,
+      method: string,
+      data: any,
+      headers?: Record<string, string>,
+    ) => {
       try {
         const id = await queueSyncItem(url, method, data, headers);
-        toast.info('Operation queued for sync');
+        toast.info("Operation queued for sync");
         await updateStatus();
         return id;
       } catch (error) {
-        console.error('[Sync Hook] Failed to queue operation:', error);
-        toast.error('Failed to queue operation');
+        console.error("[Sync Hook] Failed to queue operation:", error);
+        toast.error("Failed to queue operation");
         throw error;
       }
     },
-    [updateStatus]
+    [updateStatus],
   );
 
   // Clear queue
@@ -209,10 +230,10 @@ export function useSync(options: SyncHookOptions = {}) {
     try {
       await clearSyncQueue();
       await updateStatus();
-      toast.success('Sync queue cleared');
+      toast.success("Sync queue cleared");
     } catch (error) {
-      console.error('[Sync Hook] Failed to clear queue:', error);
-      toast.error('Failed to clear queue');
+      console.error("[Sync Hook] Failed to clear queue:", error);
+      toast.error("Failed to clear queue");
     }
   }, [updateStatus]);
 
@@ -235,12 +256,12 @@ export function useNetworkStatus() {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -260,7 +281,7 @@ export function useSyncMonitor() {
       const items = await getPendingSyncItems();
       setPendingItems(items);
     } catch (error) {
-      console.error('[Sync Monitor] Error:', error);
+      console.error("[Sync Monitor] Error:", error);
     } finally {
       setIsLoading(false);
     }

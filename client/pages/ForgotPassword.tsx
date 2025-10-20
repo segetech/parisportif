@@ -6,7 +6,10 @@ import { ArrowLeft } from "lucide-react";
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,7 +58,9 @@ export default function ForgotPassword() {
           Retour à la connexion
         </a>
 
-        <h1 className="text-xl font-bold mb-2 text-center">Mot de passe oublié</h1>
+        <h1 className="text-xl font-bold mb-2 text-center">
+          Mot de passe oublié
+        </h1>
         <p className="text-sm text-muted-foreground text-center mb-6">
           Entrez votre adresse email pour recevoir un lien de réinitialisation.
         </p>

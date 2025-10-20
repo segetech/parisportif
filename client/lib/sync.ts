@@ -12,8 +12,8 @@ interface PendingSyncItem {
   maxRetries: number;
 }
 
-const DB_NAME = 'fusionApp';
-const STORE_NAME = 'pending';
+const DB_NAME = "fusionApp";
+const STORE_NAME = "pending";
 const MAX_RETRIES = 3;
 
 let db: IDBDatabase | null = null;
@@ -24,21 +24,21 @@ export async function initializeSync(): Promise<void> {
     const request = indexedDB.open(DB_NAME, 1);
 
     request.onerror = () => {
-      console.error('Failed to open IndexedDB:', request.error);
+      console.error("Failed to open IndexedDB:", request.error);
       reject(request.error);
     };
 
     request.onsuccess = () => {
       db = request.result;
-      console.log('[Sync] IndexedDB initialized');
+      console.log("[Sync] IndexedDB initialized");
       resolve();
     };
 
     request.onupgradeneeded = (event) => {
       const database = (event.target as IDBOpenDBRequest).result;
       if (!database.objectStoreNames.contains(STORE_NAME)) {
-        database.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        console.log('[Sync] Created pending store');
+        database.createObjectStore(STORE_NAME, { keyPath: "id" });
+        console.log("[Sync] Created pending store");
       }
     };
   });
@@ -49,7 +49,7 @@ export async function queueSyncItem(
   url: string,
   method: string,
   data: any,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
 ): Promise<string> {
   if (!db) await initializeSync();
 
@@ -66,17 +66,17 @@ export async function queueSyncItem(
   };
 
   return new Promise((resolve, reject) => {
-    const tx = db!.transaction(STORE_NAME, 'readwrite');
+    const tx = db!.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const request = store.add(item);
 
     request.onsuccess = () => {
-      console.log('[Sync] Item queued:', id);
+      console.log("[Sync] Item queued:", id);
       resolve(id);
     };
 
     request.onerror = () => {
-      console.error('[Sync] Failed to queue item:', request.error);
+      console.error("[Sync] Failed to queue item:", request.error);
       reject(request.error);
     };
   });
@@ -87,7 +87,7 @@ export async function getPendingSyncItems(): Promise<PendingSyncItem[]> {
   if (!db) await initializeSync();
 
   return new Promise((resolve, reject) => {
-    const tx = db!.transaction(STORE_NAME, 'readonly');
+    const tx = db!.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
     const request = store.getAll();
 
@@ -107,12 +107,12 @@ export async function removePendingSyncItem(id: string): Promise<void> {
   if (!db) await initializeSync();
 
   return new Promise((resolve, reject) => {
-    const tx = db!.transaction(STORE_NAME, 'readwrite');
+    const tx = db!.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const request = store.delete(id);
 
     request.onsuccess = () => {
-      console.log('[Sync] Item removed:', id);
+      console.log("[Sync] Item removed:", id);
       resolve();
     };
 
@@ -123,31 +123,34 @@ export async function removePendingSyncItem(id: string): Promise<void> {
 }
 
 // Update item in sync queue
-export async function updatePendingSyncItem(id: string, updates: Partial<PendingSyncItem>): Promise<void> {
+export async function updatePendingSyncItem(
+  id: string,
+  updates: Partial<PendingSyncItem>,
+): Promise<void> {
   if (!db) await initializeSync();
 
   return new Promise(async (resolve, reject) => {
     try {
       // Get the item
-      const tx1 = db!.transaction(STORE_NAME, 'readonly');
+      const tx1 = db!.transaction(STORE_NAME, "readonly");
       const store1 = tx1.objectStore(STORE_NAME);
       const getRequest = store1.get(id);
 
       getRequest.onsuccess = () => {
         const item = getRequest.result as PendingSyncItem;
         if (!item) {
-          reject(new Error('Item not found'));
+          reject(new Error("Item not found"));
           return;
         }
 
         // Update and save
         const updated = { ...item, ...updates };
-        const tx2 = db!.transaction(STORE_NAME, 'readwrite');
+        const tx2 = db!.transaction(STORE_NAME, "readwrite");
         const store2 = tx2.objectStore(STORE_NAME);
         const putRequest = store2.put(updated);
 
         putRequest.onsuccess = () => {
-          console.log('[Sync] Item updated:', id);
+          console.log("[Sync] Item updated:", id);
           resolve();
         };
 
@@ -176,12 +179,12 @@ export async function clearSyncQueue(): Promise<void> {
   if (!db) await initializeSync();
 
   return new Promise((resolve, reject) => {
-    const tx = db!.transaction(STORE_NAME, 'readwrite');
+    const tx = db!.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const request = store.clear();
 
     request.onsuccess = () => {
-      console.log('[Sync] Queue cleared');
+      console.log("[Sync] Queue cleared");
       resolve();
     };
 
@@ -192,8 +195,12 @@ export async function clearSyncQueue(): Promise<void> {
 }
 
 // Attempt to sync all pending items
-export async function syncAll(): Promise<{ synced: number; failed: number; remaining: number }> {
-  console.log('[Sync] Starting sync...');
+export async function syncAll(): Promise<{
+  synced: number;
+  failed: number;
+  remaining: number;
+}> {
+  console.log("[Sync] Starting sync...");
   const items = await getPendingSyncItems();
   let synced = 0;
   let failed = 0;
@@ -203,7 +210,7 @@ export async function syncAll(): Promise<{ synced: number; failed: number; remai
       const response = await fetch(item.url, {
         method: item.method,
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           ...item.headers,
         },
         body: JSON.stringify(item.data),
@@ -212,21 +219,21 @@ export async function syncAll(): Promise<{ synced: number; failed: number; remai
       if (response.ok) {
         await removePendingSyncItem(item.id);
         synced++;
-        console.log('[Sync] Synced:', item.id);
+        console.log("[Sync] Synced:", item.id);
       } else {
         // Increment retry count
         const retries = item.retries + 1;
         if (retries > item.maxRetries) {
           await removePendingSyncItem(item.id);
           failed++;
-          console.log('[Sync] Max retries exceeded:', item.id);
+          console.log("[Sync] Max retries exceeded:", item.id);
         } else {
           await updatePendingSyncItem(item.id, { retries });
-          console.log('[Sync] Retry needed:', item.id);
+          console.log("[Sync] Retry needed:", item.id);
         }
       }
     } catch (error) {
-      console.error('[Sync] Error syncing item:', item.id, error);
+      console.error("[Sync] Error syncing item:", item.id, error);
       // Increment retry count
       const retries = item.retries + 1;
       if (retries > item.maxRetries) {
@@ -239,20 +246,27 @@ export async function syncAll(): Promise<{ synced: number; failed: number; remai
   }
 
   const remaining = await getSyncQueueSize();
-  console.log('[Sync] Complete. Synced:', synced, 'Failed:', failed, 'Remaining:', remaining);
+  console.log(
+    "[Sync] Complete. Synced:",
+    synced,
+    "Failed:",
+    failed,
+    "Remaining:",
+    remaining,
+  );
 
   return { synced, failed, remaining };
 }
 
 // Request service worker to sync
 export async function requestBackgroundSync(): Promise<void> {
-  if ('serviceWorker' in navigator && 'SyncManager' in window) {
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
     try {
       const registration = await navigator.serviceWorker.ready;
-      await (registration as any).sync.register('sync-transactions');
-      console.log('[Sync] Background sync registered');
+      await (registration as any).sync.register("sync-transactions");
+      console.log("[Sync] Background sync registered");
     } catch (error) {
-      console.error('[Sync] Failed to register background sync:', error);
+      console.error("[Sync] Failed to register background sync:", error);
     }
   }
 }

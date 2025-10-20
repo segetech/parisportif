@@ -3,6 +3,7 @@
 ## Overview
 
 The application includes a complete offline-first system with:
+
 1. **Service Worker** - Background sync and offline support
 2. **IndexedDB Queue** - Persistent storage of offline operations
 3. **Push Notifications** - Real-time updates about cache and sync
@@ -14,11 +15,13 @@ The application includes a complete offline-first system with:
 ### Service Worker (`public/service-worker.js`)
 
 Manages:
+
 - **Offline Cache**: Stores API responses for offline access
 - **Background Sync**: Syncs queued operations when online
 - **Push Notifications**: Shows notifications about updates
 
 **Key Events:**
+
 - `install` - Set up service worker
 - `activate` - Clean old caches
 - `fetch` - Intercept network requests (network-first strategy)
@@ -28,6 +31,7 @@ Manages:
 ### IndexedDB Queue (`client/lib/sync.ts`)
 
 Stores pending operations that failed or occurred offline:
+
 - Queue structure: `{ id, url, method, data, headers, timestamp, retries }`
 - Automatic retry logic with max retries
 - Timestamp-based ordering
@@ -111,7 +115,7 @@ function Dashboard() {
       <p>Pending: {status.pendingCount}</p>
       <p>Syncing: {status.isSyncing ? 'Yes' : 'No'}</p>
       <p>Last Sync: {new Date(status.lastSyncTime).toLocaleString()}</p>
-      
+
       <button onClick={performSync} disabled={status.isSyncing}>
         Sync Now
       </button>
@@ -138,24 +142,28 @@ function Settings() {
 ### 5. Show Custom Notifications
 
 ```typescript
-import { showNotification, notifyCacheUpdate, notifyError } from '@/lib/notifications';
+import {
+  showNotification,
+  notifyCacheUpdate,
+  notifyError,
+} from "@/lib/notifications";
 
 // Show cache update
-await notifyCacheUpdate('transactions', 5);
+await notifyCacheUpdate("transactions", 5);
 
 // Show sync complete
 await notifySyncComplete(10, 2);
 
 // Show error
-await notifyError('Sync Failed', 'Could not sync transaction #123');
+await notifyError("Sync Failed", "Could not sync transaction #123");
 
 // Custom notification
 await showNotification({
-  title: 'Data Updated',
-  body: 'Your changes have been saved',
-  icon: '/logo.png',
-  tag: 'custom-update',
-  requireInteraction: false
+  title: "Data Updated",
+  body: "Your changes have been saved",
+  icon: "/logo.png",
+  tag: "custom-update",
+  requireInteraction: false,
 });
 ```
 
@@ -222,18 +230,21 @@ POST /api/notifications/send
 ### Browser Notification Types
 
 **Cache Updates**
+
 ```
 Title: ✅ Cache Updated
 Body: Transactions have been updated. Tap to refresh.
 ```
 
 **Sync Complete**
+
 ```
 Title: ✅ Sync Complete
 Body: 5 item(s) synced, 0 failed
 ```
 
 **Errors**
+
 ```
 Title: ⚠️ Error
 Body: Failed to sync transaction #123
@@ -241,6 +252,7 @@ Action: Tap to retry
 ```
 
 **Status Changes**
+
 ```
 Title: 🔴 You are Offline
 Body: Your changes will be synced when online.
@@ -251,7 +263,7 @@ Body: Your changes will be synced when online.
 ### Registering a Sync
 
 ```typescript
-import { requestBackgroundSync } from '@/lib/sync';
+import { requestBackgroundSync } from "@/lib/sync";
 
 // Register a background sync task
 await requestBackgroundSync();
@@ -293,12 +305,13 @@ Show notification
 ```typescript
 const { status, performSync } = useSync({
   autoSync: true,
-  syncInterval: 30000,  // 30 seconds
-  enableServiceWorker: true
+  syncInterval: 30000, // 30 seconds
+  enableServiceWorker: true,
 });
 ```
 
 **Recommended values:**
+
 - Frequent updates: 10-15 seconds
 - Normal: 30-60 seconds
 - Slow connection: 2-5 minutes
@@ -307,20 +320,22 @@ const { status, performSync } = useSync({
 
 ```typescript
 // Development (no service worker)
-useSync({ enableServiceWorker: false })
+useSync({ enableServiceWorker: false });
 
 // Production (with service worker)
-useSync({ enableServiceWorker: true })
+useSync({ enableServiceWorker: true });
 ```
 
 ### Configure Push Notifications
 
 Set VAPID public key in `.env`:
+
 ```
 REACT_APP_VAPID_PUBLIC_KEY=your_vapid_public_key_here
 ```
 
 To generate VAPID keys:
+
 ```bash
 # Install web-push globally
 npm install -g web-push
@@ -334,7 +349,7 @@ web-push generate-vapid-keys
 ### Check Sync Status
 
 ```typescript
-import { useSync } from '@/hooks/use-sync';
+import { useSync } from "@/hooks/use-sync";
 
 const { status } = useSync();
 console.log({
@@ -342,23 +357,23 @@ console.log({
   isSyncing: status.isSyncing,
   pendingCount: status.pendingCount,
   lastSyncTime: new Date(status.lastSyncTime),
-  queueSize: status.queueSize
+  queueSize: status.queueSize,
 });
 ```
 
 ### Monitor Pending Items
 
 ```typescript
-import { useSyncMonitor } from '@/hooks/use-sync';
+import { useSyncMonitor } from "@/hooks/use-sync";
 
 const { pendingItems, isLoading } = useSyncMonitor();
 
-pendingItems.forEach(item => {
+pendingItems.forEach((item) => {
   console.log({
     id: item.id,
     operation: `${item.method} ${item.url}`,
     age: Date.now() - item.timestamp,
-    retries: item.retries
+    retries: item.retries,
   });
 });
 ```
@@ -371,8 +386,8 @@ pendingItems.forEach(item => {
 // Firefox: about:debugging#/runtime/this-firefox
 
 // Check if registered
-navigator.serviceWorker.ready.then(reg => {
-  console.log('Service Worker registered:', reg);
+navigator.serviceWorker.ready.then((reg) => {
+  console.log("Service Worker registered:", reg);
 });
 ```
 
@@ -383,11 +398,12 @@ navigator.serviceWorker.ready.then(reg => {
 **Issue:** Service worker not syncing
 
 **Solution:**
+
 ```typescript
 // Clear service worker
-if ('serviceWorker' in navigator) {
+if ("serviceWorker" in navigator) {
   const registrations = await navigator.serviceWorker.getRegistrations();
-  registrations.forEach(reg => reg.unregister());
+  registrations.forEach((reg) => reg.unregister());
 }
 
 // Restart browser
@@ -398,6 +414,7 @@ if ('serviceWorker' in navigator) {
 **Issue:** No notifications appearing
 
 **Solution:**
+
 1. Check permission: `Notification.permission` should be "granted"
 2. Check service worker: Must be registered
 3. Request permission: `await requestNotificationPermission()`
@@ -407,8 +424,9 @@ if ('serviceWorker' in navigator) {
 **Issue:** Items not syncing despite being online
 
 **Solution:**
+
 ```typescript
-import { useSync } from '@/hooks/use-sync';
+import { useSync } from "@/hooks/use-sync";
 
 const { performSync } = useSync();
 
@@ -425,6 +443,7 @@ await clearQueue();
 **Issue:** App using too much memory
 
 **Solution:**
+
 ```typescript
 // Clear expired cache (older than 7 days)
 const cache = useCache();
@@ -435,32 +454,35 @@ cache.clearAll();
 
 // Unregister service worker
 const registrations = await navigator.serviceWorker.getRegistrations();
-registrations.forEach(reg => reg.unregister());
+registrations.forEach((reg) => reg.unregister());
 ```
 
 ## Browser Compatibility
 
-| Feature | Chrome | Firefox | Safari | Edge |
-|---------|--------|---------|--------|------|
-| Service Worker | ✅ | ✅ | ⚠️ 11.1+ | ✅ |
-| IndexedDB | ✅ | ✅ | ✅ | ✅ |
-| Notifications | ✅ | ✅ | ✅ | ✅ |
-| Background Sync | ✅ | ⚠️ | ❌ | ✅ |
-| Push API | ✅ | ✅ | ❌ | ✅ |
+| Feature         | Chrome | Firefox | Safari   | Edge |
+| --------------- | ------ | ------- | -------- | ---- |
+| Service Worker  | ✅     | ✅      | ⚠️ 11.1+ | ✅   |
+| IndexedDB       | ✅     | ✅      | ✅       | ✅   |
+| Notifications   | ✅     | ✅      | ✅       | ✅   |
+| Background Sync | ✅     | ⚠️      | ❌       | ✅   |
+| Push API        | ✅     | ✅      | ❌       | ✅   |
 
 ## Performance Impact
 
 ### Memory Usage
+
 - Service Worker: ~500KB
 - IndexedDB: Depends on cached data (5-50MB)
 - Notifications: Minimal
 
 ### Network
+
 - Reduced requests: 60-70% fewer API calls
 - Bandwidth savings: ~60-70%
 - Faster perceived performance
 
 ### Battery (Mobile)
+
 - Auto-sync reduces battery drain
 - Background sync is efficient (batched)
 - Periodic checks: ~1-2% per hour
@@ -470,6 +492,7 @@ registrations.forEach(reg => reg.unregister());
 ### 1. Always Handle Offline Errors
 
 ✅ **Good:**
+
 ```typescript
 try {
   await createTransaction(data);
@@ -483,6 +506,7 @@ try {
 ```
 
 ❌ **Bad:**
+
 ```typescript
 // No offline handling
 await createTransaction(data);
@@ -491,15 +515,17 @@ await createTransaction(data);
 ### 2. Respect User Preferences
 
 ✅ **Good:**
+
 ```typescript
 // Ask before enabling notifications
 const permission = await requestNotificationPermission();
-if (permission === 'granted') {
+if (permission === "granted") {
   enableNotifications();
 }
 ```
 
 ❌ **Bad:**
+
 ```typescript
 // Forcefully enable
 navigator.serviceWorker.register(...);
@@ -508,6 +534,7 @@ navigator.serviceWorker.register(...);
 ### 3. Provide Feedback
 
 ✅ **Good:**
+
 ```typescript
 // Show sync status
 <SyncStatus />
@@ -517,6 +544,7 @@ toast.success('Synced successfully');
 ```
 
 ❌ **Bad:**
+
 ```typescript
 // Silent background sync
 // User doesn't know if it worked
@@ -525,15 +553,17 @@ toast.success('Synced successfully');
 ### 4. Monitor Sync Health
 
 ✅ **Good:**
+
 ```typescript
 const { status } = useSync();
 
 if (status.pendingCount > 50) {
-  alertUser('Many pending items, check connection');
+  alertUser("Many pending items, check connection");
 }
 ```
 
 ❌ **Bad:**
+
 ```typescript
 // Ignore sync issues
 // Queue grows unbounded

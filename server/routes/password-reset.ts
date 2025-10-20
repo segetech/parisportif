@@ -1,6 +1,10 @@
 import { RequestHandler } from "express";
 import { createClient } from "@supabase/supabase-js";
-import { sendEmail, generatePasswordResetToken, generatePasswordResetLink } from "../lib/email";
+import {
+  sendEmail,
+  generatePasswordResetToken,
+  generatePasswordResetLink,
+} from "../lib/email";
 
 let supabase: ReturnType<typeof createClient> | null = null;
 
@@ -45,7 +49,8 @@ export const handleForgotPassword: RequestHandler = async (req, res) => {
     if (error || !user) {
       // Don't reveal if email exists for security
       return res.json({
-        message: "Si cet email existe, un lien de réinitialisation sera envoyé.",
+        message:
+          "Si cet email existe, un lien de réinitialisation sera envoyé.",
       });
     }
 
@@ -75,7 +80,8 @@ export const handleForgotPassword: RequestHandler = async (req, res) => {
     });
 
     res.json({
-      message: "Un lien de réinitialisation a été envoyé à votre adresse email.",
+      message:
+        "Un lien de réinitialisation a été envoyé à votre adresse email.",
     });
   } catch (error: any) {
     console.error("Forgot password error:", error);
@@ -111,10 +117,10 @@ export const handleResetPassword: RequestHandler = async (req, res) => {
     }
 
     // Update password in Supabase auth
-    const { error: updateError } = await supabaseClient.auth.admin.updateUserById(
-      tokenData.userId,
-      { password }
-    );
+    const { error: updateError } =
+      await supabaseClient.auth.admin.updateUserById(tokenData.userId, {
+        password,
+      });
 
     if (updateError) {
       throw updateError;

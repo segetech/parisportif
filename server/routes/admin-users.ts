@@ -29,7 +29,10 @@ function generateTemporaryPassword(): string {
   return crypto.randomBytes(8).toString("hex").toUpperCase();
 }
 
-export const handleCreateUserWithPassword: RequestHandler = async (req, res) => {
+export const handleCreateUserWithPassword: RequestHandler = async (
+  req,
+  res,
+) => {
   try {
     const supabaseClient = getSupabaseClient();
     const { nom, prenom, email, role, sendEmail: shouldSendEmail } = req.body;
@@ -152,10 +155,10 @@ export const handleResetUserPassword: RequestHandler = async (req, res) => {
     const temporaryPassword = generateTemporaryPassword();
 
     // Update password in Supabase
-    const { error: updateError } = await supabaseClient.auth.admin.updateUserById(
-      userId,
-      { password: temporaryPassword }
-    );
+    const { error: updateError } =
+      await supabaseClient.auth.admin.updateUserById(userId, {
+        password: temporaryPassword,
+      });
 
     if (updateError) {
       return res.status(400).json({ error: updateError.message });

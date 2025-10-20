@@ -20,22 +20,22 @@ interface NotificationAction {
  * Request notification permission
  */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
-  if (!('Notification' in window)) {
-    console.log('[Notifications] Notifications not supported');
-    return 'denied';
+  if (!("Notification" in window)) {
+    console.log("[Notifications] Notifications not supported");
+    return "denied";
   }
 
-  if (Notification.permission !== 'default') {
+  if (Notification.permission !== "default") {
     return Notification.permission;
   }
 
   try {
     const permission = await Notification.requestPermission();
-    console.log('[Notifications] Permission requested:', permission);
+    console.log("[Notifications] Permission requested:", permission);
     return permission;
   } catch (error) {
-    console.error('[Notifications] Permission request failed:', error);
-    return 'denied';
+    console.error("[Notifications] Permission request failed:", error);
+    return "denied";
   }
 }
 
@@ -43,26 +43,28 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  * Check if notifications are enabled
  */
 export function areNotificationsEnabled(): boolean {
-  return 'Notification' in window && Notification.permission === 'granted';
+  return "Notification" in window && Notification.permission === "granted";
 }
 
 /**
  * Show a local notification
  */
-export async function showNotification(options: NotificationOptions): Promise<Notification | null> {
+export async function showNotification(
+  options: NotificationOptions,
+): Promise<Notification | null> {
   if (!areNotificationsEnabled()) {
-    console.log('[Notifications] Notifications not enabled');
+    console.log("[Notifications] Notifications not enabled");
     return null;
   }
 
   try {
     // Try to use service worker if available
-    if ('serviceWorker' in navigator) {
+    if ("serviceWorker" in navigator) {
       const registration = await navigator.serviceWorker.ready;
       return registration.showNotification(options.title, {
         body: options.body,
-        icon: options.icon || '/logo.png',
-        tag: options.tag || 'default',
+        icon: options.icon || "/logo.png",
+        tag: options.tag || "default",
         requireInteraction: options.requireInteraction || false,
         data: options.data,
       });
@@ -70,13 +72,13 @@ export async function showNotification(options: NotificationOptions): Promise<No
       // Fallback to basic Notification API
       return new Notification(options.title, {
         body: options.body,
-        icon: options.icon || '/logo.png',
-        tag: options.tag || 'default',
+        icon: options.icon || "/logo.png",
+        tag: options.tag || "default",
         requireInteraction: options.requireInteraction || false,
       });
     }
   } catch (error) {
-    console.error('[Notifications] Failed to show notification:', error);
+    console.error("[Notifications] Failed to show notification:", error);
     return null;
   }
 }
@@ -84,18 +86,22 @@ export async function showNotification(options: NotificationOptions): Promise<No
 /**
  * Show cache update notification
  */
-export async function notifyCacheUpdate(type: string, count: number): Promise<void> {
-  const typeLabel = {
-    transactions: 'Transactions',
-    bets: 'Bets',
-    venues: 'Venues',
-    users: 'Users',
-  }[type] || type;
+export async function notifyCacheUpdate(
+  type: string,
+  count: number,
+): Promise<void> {
+  const typeLabel =
+    {
+      transactions: "Transactions",
+      bets: "Bets",
+      venues: "Venues",
+      users: "Users",
+    }[type] || type;
 
   await showNotification({
-    title: '✅ Cache Updated',
+    title: "✅ Cache Updated",
     body: `${typeLabel} have been updated. Tap to refresh.`,
-    icon: '/logo.png',
+    icon: "/logo.png",
     tag: `cache-update-${type}`,
     data: { type, count },
   });
@@ -104,17 +110,20 @@ export async function notifyCacheUpdate(type: string, count: number): Promise<vo
 /**
  * Show sync complete notification
  */
-export async function notifySyncComplete(synced: number, failed: number): Promise<void> {
+export async function notifySyncComplete(
+  synced: number,
+  failed: number,
+): Promise<void> {
   let message = `${synced} item(s) synced`;
   if (failed > 0) {
     message += `, ${failed} failed`;
   }
 
   await showNotification({
-    title: '✅ Sync Complete',
+    title: "✅ Sync Complete",
     body: message,
-    icon: '/logo.png',
-    tag: 'sync-complete',
+    icon: "/logo.png",
+    tag: "sync-complete",
   });
 }
 
@@ -123,10 +132,10 @@ export async function notifySyncComplete(synced: number, failed: number): Promis
  */
 export async function notifyOffline(): Promise<void> {
   await showNotification({
-    title: '⚠️ You are Offline',
-    body: 'Your changes will be synced when online.',
-    icon: '/logo.png',
-    tag: 'offline-status',
+    title: "⚠️ You are Offline",
+    body: "Your changes will be synced when online.",
+    icon: "/logo.png",
+    tag: "offline-status",
   });
 }
 
@@ -135,22 +144,25 @@ export async function notifyOffline(): Promise<void> {
  */
 export async function notifyOnline(): Promise<void> {
   await showNotification({
-    title: '✅ You are Online',
-    body: 'Syncing changes...',
-    icon: '/logo.png',
-    tag: 'online-status',
+    title: "✅ You are Online",
+    body: "Syncing changes...",
+    icon: "/logo.png",
+    tag: "online-status",
   });
 }
 
 /**
  * Show error notification
  */
-export async function notifyError(title: string, message: string): Promise<void> {
+export async function notifyError(
+  title: string,
+  message: string,
+): Promise<void> {
   await showNotification({
     title,
     body: message,
-    icon: '/logo.png',
-    tag: 'error',
+    icon: "/logo.png",
+    tag: "error",
     requireInteraction: true,
   });
 }
@@ -159,7 +171,7 @@ export async function notifyError(title: string, message: string): Promise<void>
  * Close notification
  */
 export async function closeNotification(tag: string): Promise<void> {
-  if ('serviceWorker' in navigator) {
+  if ("serviceWorker" in navigator) {
     const registration = await navigator.serviceWorker.ready;
     const notifications = await registration.getNotifications({ tag });
     notifications.forEach((notification) => notification.close());
@@ -170,7 +182,7 @@ export async function closeNotification(tag: string): Promise<void> {
  * Get all active notifications
  */
 export async function getActiveNotifications(): Promise<Notification[]> {
-  if ('serviceWorker' in navigator) {
+  if ("serviceWorker" in navigator) {
     const registration = await navigator.serviceWorker.ready;
     return registration.getNotifications();
   }
@@ -180,9 +192,11 @@ export async function getActiveNotifications(): Promise<Notification[]> {
 /**
  * Subscribe to push notifications
  */
-export async function subscribeToPushNotifications(vapidPublicKey: string): Promise<PushSubscription | null> {
-  if (!('serviceWorker' in navigator && 'PushManager' in window)) {
-    console.log('[Notifications] Push notifications not supported');
+export async function subscribeToPushNotifications(
+  vapidPublicKey: string,
+): Promise<PushSubscription | null> {
+  if (!("serviceWorker" in navigator && "PushManager" in window)) {
+    console.log("[Notifications] Push notifications not supported");
     return null;
   }
 
@@ -193,10 +207,10 @@ export async function subscribeToPushNotifications(vapidPublicKey: string): Prom
       applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
     });
 
-    console.log('[Notifications] Push subscription successful');
+    console.log("[Notifications] Push subscription successful");
     return subscription;
   } catch (error) {
-    console.error('[Notifications] Push subscription failed:', error);
+    console.error("[Notifications] Push subscription failed:", error);
     return null;
   }
 }
@@ -205,7 +219,7 @@ export async function subscribeToPushNotifications(vapidPublicKey: string): Prom
  * Check if already subscribed to push
  */
 export async function getPushSubscription(): Promise<PushSubscription | null> {
-  if (!('serviceWorker' in navigator && 'PushManager' in window)) {
+  if (!("serviceWorker" in navigator && "PushManager" in window)) {
     return null;
   }
 
@@ -213,7 +227,7 @@ export async function getPushSubscription(): Promise<PushSubscription | null> {
     const registration = await navigator.serviceWorker.ready;
     return registration.pushManager.getSubscription();
   } catch (error) {
-    console.error('[Notifications] Failed to get subscription:', error);
+    console.error("[Notifications] Failed to get subscription:", error);
     return null;
   }
 }
@@ -226,12 +240,12 @@ export async function unsubscribeFromPush(): Promise<boolean> {
     const subscription = await getPushSubscription();
     if (subscription) {
       await subscription.unsubscribe();
-      console.log('[Notifications] Unsubscribed from push');
+      console.log("[Notifications] Unsubscribed from push");
       return true;
     }
     return false;
   } catch (error) {
-    console.error('[Notifications] Unsubscribe failed:', error);
+    console.error("[Notifications] Unsubscribe failed:", error);
     return false;
   }
 }
@@ -240,8 +254,10 @@ export async function unsubscribeFromPush(): Promise<boolean> {
  * Utility: Convert VAPID key from base64 to Uint8Array
  */
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, "+")
+    .replace(/_/g, "/");
 
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);

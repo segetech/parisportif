@@ -30,10 +30,15 @@ export async function sendEmail(options: SendEmailOptions) {
 }
 
 export function generatePasswordResetToken(): string {
-  return Math.random().toString(36).substring(2, 15) +
-    Math.random().toString(36).substring(2, 15);
+  return (
+    Math.random().toString(36).substring(2, 15) +
+    Math.random().toString(36).substring(2, 15)
+  );
 }
 
-export function generatePasswordResetLink(token: string, baseUrl: string): string {
+export function generatePasswordResetLink(
+  token: string,
+  baseUrl: string,
+): string {
   return `${baseUrl}/reset-password?token=${token}`;
 }

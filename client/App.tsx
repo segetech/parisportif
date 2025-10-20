@@ -15,7 +15,12 @@ import ResetPassword from "./pages/ResetPassword";
 import ProfilePage from "./pages/Profile";
 import Transactions from "./pages/Transactions";
 import { AuthProvider } from "./context/AuthContext";
-import { LookupsPage, MatchingPage, ExportsPage, SettingsPage } from "./pages/Placeholders";
+import {
+  LookupsPage,
+  MatchingPage,
+  ExportsPage,
+  SettingsPage,
+} from "./pages/Placeholders";
 import BetsPage from "./pages/Bets";
 import VenuesPage from "./pages/Venues";
 import { SettingsProvider } from "@/lib/settings";

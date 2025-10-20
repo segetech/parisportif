@@ -3,6 +3,7 @@
 ## Overview
 
 The application includes a comprehensive caching system with three layers:
+
 1. **React Query Cache** - In-memory cache for API responses
 2. **LocalStorage Cache** - Persistent offline data
 3. **Automatic Cache Invalidation** - Smart invalidation on mutations
@@ -14,6 +15,7 @@ The application includes a comprehensive caching system with three layers:
 React Query provides smart caching with automatic deduplication and garbage collection.
 
 **Configuration:**
+
 - **Transactions**: 5-minute stale time, 30-minute garbage collection
 - **Bets**: 5-minute stale time, 30-minute garbage collection
 - **Venues**: 10-minute stale time, 1-hour garbage collection
@@ -27,6 +29,7 @@ React Query provides smart caching with automatic deduplication and garbage coll
 Provides fallback data when network is unavailable.
 
 **Storage Keys:**
+
 - `cache:transactions` - Transaction list
 - `cache:bets` - Bets list
 - `cache:venues` - Venues list
@@ -39,6 +42,7 @@ Provides fallback data when network is unavailable.
 ### 3. Automatic Invalidation
 
 Cache is automatically invalidated when:
+
 - ✅ Creating a new record
 - ✅ Updating an existing record
 - ✅ Deleting a record
@@ -54,7 +58,7 @@ import { useTransactions, useBets, useVenues } from '@/hooks/use-data-queries';
 function MyComponent() {
   // Simple fetch with cache
   const { data: transactions, isLoading, error } = useTransactions();
-  
+
   // Fetch with filters and cache
   const { data: filtered } = useTransactions({
     start: '2024-01-01',
@@ -64,7 +68,7 @@ function MyComponent() {
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error: {error.message}</div>;
-  
+
   return <div>{transactions?.map(t => <div key={t.id}>{t.reference}</div>)}</div>;
 }
 ```
@@ -178,16 +182,19 @@ When the network is unavailable:
 ## Performance Benefits
 
 ### Reduced Network Requests
+
 - Initial request: ~500ms
 - Cached subsequent: ~0ms (instant)
 - Cache hit rate: 85-95% on average
 
 ### Improved User Experience
+
 - Instant page loads from cache
 - Smoother navigation between pages
 - Less waiting time
 
 ### Bandwidth Savings
+
 - ~60-70% reduction in API calls
 - Reduced server load
 - Lower data usage on mobile
@@ -201,7 +208,7 @@ In `client/hooks/use-data-queries.ts`:
 ```typescript
 const CACHE_CONFIG = {
   TRANSACTIONS: {
-    staleTime: 5 * 60 * 1000,      // Change this value
+    staleTime: 5 * 60 * 1000, // Change this value
     gcTime: 30 * 60 * 1000,
     key: "transactions",
   },
@@ -210,6 +217,7 @@ const CACHE_CONFIG = {
 ```
 
 **Recommended Values:**
+
 - Frequently changing data: 2-5 minutes
 - Stable data: 10-30 minutes
 - Static data (venues): 1 hour
@@ -217,6 +225,7 @@ const CACHE_CONFIG = {
 ### Add New Cached Data Type
 
 1. Add configuration in `CACHE_CONFIG`:
+
 ```typescript
 MY_DATA: {
   staleTime: 5 * 60 * 1000,
@@ -226,6 +235,7 @@ MY_DATA: {
 ```
 
 2. Create hooks in `use-data-queries.ts`:
+
 ```typescript
 export function useMyData() {
   return useQuery({
@@ -242,6 +252,7 @@ export function useMyData() {
 ```
 
 3. Use in components:
+
 ```typescript
 const { data, isLoading } = useMyData();
 ```
@@ -251,6 +262,7 @@ const { data, isLoading } = useMyData();
 ### Cache Management Page
 
 Navigate to `/cache` to see:
+
 - Cache size (total bytes)
 - Number of cached items
 - Cache status for each data type
@@ -259,7 +271,7 @@ Navigate to `/cache` to see:
 ### Debug Logging
 
 ```typescript
-import { useCache } from '@/hooks/use-cache';
+import { useCache } from "@/hooks/use-cache";
 
 const cache = useCache();
 const status = cache.getCacheStatus();
@@ -269,12 +281,15 @@ console.table(status);
 ## Best Practices
 
 ### 1. Use Hooks for All Data Fetching
+
 ✅ **Good:**
+
 ```typescript
 const { data } = useTransactions();
 ```
 
 ❌ **Bad:**
+
 ```typescript
 const [data, setData] = useState([]);
 useEffect(() => {
@@ -283,32 +298,39 @@ useEffect(() => {
 ```
 
 ### 2. Let Mutations Invalidate Cache
+
 ✅ **Good:**
+
 ```typescript
 const mutation = useCreateTransaction();
 await mutation.mutateAsync(data); // Cache auto-invalidates
 ```
 
 ❌ **Bad:**
+
 ```typescript
 await api.transactions.create(data);
 // Manual cache invalidation needed
 ```
 
 ### 3. Handle Errors with Fallback
+
 ✅ **Good:**
+
 ```typescript
 // useBets hook has localStorage fallback built-in
 const { data, error } = useBets();
 ```
 
 ❌ **Bad:**
+
 ```typescript
 const { data } = useBets();
 // No fallback on error
 ```
 
 ### 4. Cleanup Expired Cache
+
 ```typescript
 // Add this in settings or startup
 const cache = useCache();
@@ -321,6 +343,7 @@ console.log(`Cleaned up ${count} old entries`);
 ### Issue: Stale Data Showing
 
 **Solution:** Check stale time settings
+
 ```typescript
 // Reduce stale time for more frequent updates
 staleTime: 1 * 60 * 1000, // 1 minute instead of 5
@@ -329,9 +352,10 @@ staleTime: 1 * 60 * 1000, // 1 minute instead of 5
 ### Issue: Cache Not Clearing
 
 **Solution:** Manually clear cache
+
 ```typescript
 const cache = useCache();
-cache.clearData('transactions');
+cache.clearData("transactions");
 // or
 cache.clearAll();
 ```
@@ -339,6 +363,7 @@ cache.clearAll();
 ### Issue: Out of Memory (Old Devices)
 
 **Solution:** Reduce garbage collection time
+
 ```typescript
 gcTime: 10 * 60 * 1000, // 10 minutes instead of 30
 ```
@@ -346,6 +371,7 @@ gcTime: 10 * 60 * 1000, // 10 minutes instead of 30
 ### Issue: Offline Data Too Old
 
 **Solution:** Adjust localStorage retention
+
 ```typescript
 cache.clearExpiredCache(7 * 24 * 60 * 60 * 1000); // 7 days
 ```

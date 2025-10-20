@@ -1,6 +1,12 @@
 import { useSync, useNetworkStatus } from "@/hooks/use-sync";
 import { Button } from "@/components/ui/button";
-import { Wifi, WifiOff, RotateCcw, AlertCircle, CheckCircle } from "lucide-react";
+import {
+  Wifi,
+  WifiOff,
+  RotateCcw,
+  AlertCircle,
+  CheckCircle,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 export function SyncStatus() {
@@ -97,7 +103,9 @@ export function SyncStatus() {
               size="sm"
               variant="outline"
               onClick={performSync}
-              disabled={status.isSyncing || !isOnline || status.pendingCount === 0}
+              disabled={
+                status.isSyncing || !isOnline || status.pendingCount === 0
+              }
               className="flex-1"
             >
               <RotateCcw className="w-3 h-3 mr-1" />

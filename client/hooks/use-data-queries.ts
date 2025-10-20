@@ -28,7 +28,10 @@ const CACHE_CONFIG = {
 // Utility: Save to localStorage
 function saveToCache<T>(key: string, data: T): void {
   try {
-    localStorage.setItem(`cache:${key}`, JSON.stringify({ data, timestamp: Date.now() }));
+    localStorage.setItem(
+      `cache:${key}`,
+      JSON.stringify({ data, timestamp: Date.now() }),
+    );
   } catch {}
 }
 
@@ -55,7 +58,9 @@ export function useTransactions(filters?: ListFilters) {
         return data;
       } catch (error) {
         // Fallback to cached data on error
-        const cached = getFromCache<Transaction[]>(CACHE_CONFIG.TRANSACTIONS.key);
+        const cached = getFromCache<Transaction[]>(
+          CACHE_CONFIG.TRANSACTIONS.key,
+        );
         if (cached) return cached;
         throw error;
       }
@@ -84,7 +89,9 @@ export function useCreateTransaction() {
       api.transactions.create(input),
     onSuccess: (newTransaction) => {
       // Invalidate transactions list
-      queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.TRANSACTIONS.key] });
+      queryClient.invalidateQueries({
+        queryKey: [CACHE_CONFIG.TRANSACTIONS.key],
+      });
       // Add to cache for immediate access
       saveToCache(CACHE_CONFIG.TRANSACTIONS.key, newTransaction);
     },
@@ -98,13 +105,23 @@ export function useUpdateTransaction() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Parameters<typeof api.transactions.update>[1] }) =>
-      api.transactions.update(id, input),
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: Parameters<typeof api.transactions.update>[1];
+    }) => api.transactions.update(id, input),
     onSuccess: (updatedTransaction, { id }) => {
       // Update query cache
-      queryClient.setQueryData([CACHE_CONFIG.TRANSACTIONS.key, id], updatedTransaction);
+      queryClient.setQueryData(
+        [CACHE_CONFIG.TRANSACTIONS.key, id],
+        updatedTransaction,
+      );
       // Invalidate list
-      queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.TRANSACTIONS.key] });
+      queryClient.invalidateQueries({
+        queryKey: [CACHE_CONFIG.TRANSACTIONS.key],
+      });
       saveToCache(CACHE_CONFIG.TRANSACTIONS.key, updatedTransaction);
     },
   });
@@ -117,8 +134,12 @@ export function useDeleteTransaction() {
     mutationFn: (id: string) => api.transactions.delete(id),
     onSuccess: (_result, id) => {
       // Invalidate both single item and list
-      queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.TRANSACTIONS.key, id] });
-      queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.TRANSACTIONS.key] });
+      queryClient.invalidateQueries({
+        queryKey: [CACHE_CONFIG.TRANSACTIONS.key, id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [CACHE_CONFIG.TRANSACTIONS.key],
+      });
     },
   });
 }
@@ -158,7 +179,8 @@ export function useCreateBet() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: Parameters<typeof api.bets.create>[0]) => api.bets.create(input),
+    mutationFn: (input: Parameters<typeof api.bets.create>[0]) =>
+      api.bets.create(input),
     onSuccess: (newBet) => {
       queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.BETS.key] });
       saveToCache(CACHE_CONFIG.BETS.key, newBet);
@@ -170,8 +192,13 @@ export function useUpdateBet() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Parameters<typeof api.bets.update>[1] }) =>
-      api.bets.update(id, input),
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: Parameters<typeof api.bets.update>[1];
+    }) => api.bets.update(id, input),
     onSuccess: (updatedBet, { id }) => {
       queryClient.setQueryData([CACHE_CONFIG.BETS.key, id], updatedBet);
       queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.BETS.key] });
@@ -217,7 +244,8 @@ export function useCreateVenue() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: Parameters<typeof api.venues.create>[0]) => api.venues.create(input),
+    mutationFn: (input: Parameters<typeof api.venues.create>[0]) =>
+      api.venues.create(input),
     onSuccess: (newVenue) => {
       queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.VENUES.key] });
       saveToCache(CACHE_CONFIG.VENUES.key, newVenue);
@@ -229,8 +257,13 @@ export function useUpdateVenue() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Parameters<typeof api.venues.update>[1] }) =>
-      api.venues.update(id, input),
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: Parameters<typeof api.venues.update>[1];
+    }) => api.venues.update(id, input),
     onSuccess: (updatedVenue, { id }) => {
       queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.VENUES.key] });
       saveToCache(CACHE_CONFIG.VENUES.key, updatedVenue);
@@ -277,7 +310,9 @@ export function useClearCache() {
   return {
     clearAll: () => queryClient.clear(),
     clearTransactions: () =>
-      queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.TRANSACTIONS.key] }),
+      queryClient.invalidateQueries({
+        queryKey: [CACHE_CONFIG.TRANSACTIONS.key],
+      }),
     clearBets: () =>
       queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.BETS.key] }),
     clearVenues: () =>

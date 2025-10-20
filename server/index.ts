@@ -4,8 +4,15 @@ import cors from "cors";
 import { handleDemo } from "./routes/demo";
 import { handleLogin } from "./routes/auth";
 import { handleDashboardData } from "./routes/dashboard";
-import { handleForgotPassword, handleResetPassword } from "./routes/password-reset";
-import { handleUpdateProfile, handleChangePassword, requireAuth } from "./routes/profile";
+import {
+  handleForgotPassword,
+  handleResetPassword,
+} from "./routes/password-reset";
+import {
+  handleUpdateProfile,
+  handleChangePassword,
+  requireAuth,
+} from "./routes/profile";
 import {
   handleCreateUserWithPassword,
   handleResetUserPassword,

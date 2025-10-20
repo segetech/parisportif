@@ -103,7 +103,10 @@ function CacheManagement() {
         <h2 className="text-lg font-semibold">Cache Status</h2>
         <div className="space-y-3">
           {Object.entries(cacheStatus).map(([name, status]) => (
-            <div key={name} className="flex items-center justify-between p-3 bg-muted/30 rounded">
+            <div
+              key={name}
+              className="flex items-center justify-between p-3 bg-muted/30 rounded"
+            >
               <div>
                 <div className="font-medium">{name}</div>
                 <div className="text-xs text-muted-foreground">
@@ -160,20 +163,23 @@ function CacheManagement() {
         <h3 className="font-semibold text-blue-900">About Cache</h3>
         <div className="text-sm text-blue-800 space-y-2">
           <p>
-            <strong>React Query Cache:</strong> Stores API responses in memory for fast access. 
-            Data becomes stale after 5-10 minutes and is automatically refreshed on next access.
+            <strong>React Query Cache:</strong> Stores API responses in memory
+            for fast access. Data becomes stale after 5-10 minutes and is
+            automatically refreshed on next access.
           </p>
           <p>
-            <strong>LocalStorage Cache:</strong> Provides offline support. Cached data is available 
-            even when the network is unavailable.
+            <strong>LocalStorage Cache:</strong> Provides offline support.
+            Cached data is available even when the network is unavailable.
           </p>
           <p>
-            <strong>Cache Invalidation:</strong> When you create, update, or delete data, 
-            related caches are automatically invalidated and will refresh on next access.
+            <strong>Cache Invalidation:</strong> When you create, update, or
+            delete data, related caches are automatically invalidated and will
+            refresh on next access.
           </p>
           <p>
-            <strong>Performance:</strong> Caching significantly reduces network requests and 
-            improves app responsiveness, especially on slower connections.
+            <strong>Performance:</strong> Caching significantly reduces network
+            requests and improves app responsiveness, especially on slower
+            connections.
           </p>
         </div>
       </div>
@@ -183,8 +189,8 @@ function CacheManagement() {
         <h3 className="font-semibold text-amber-900">Offline Support</h3>
         <div className="text-sm text-amber-800 space-y-2">
           <p>
-            When you lose internet connection, the app will automatically use cached data 
-            from localStorage for viewing. You can:
+            When you lose internet connection, the app will automatically use
+            cached data from localStorage for viewing. You can:
           </p>
           <ul className="list-disc list-inside space-y-1 ml-2">
             <li>View previously cached transactions and bets</li>
@@ -192,7 +198,8 @@ function CacheManagement() {
             <li>See your user profile and settings</li>
           </ul>
           <p className="mt-2">
-            <strong>Note:</strong> Create, update, and delete operations require internet connection.
+            <strong>Note:</strong> Create, update, and delete operations require
+            internet connection.
           </p>
         </div>
       </div>

@@ -71,7 +71,9 @@ export const handleChangePassword: RequestHandler = async (req, res) => {
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: "Current and new password required" });
+      return res
+        .status(400)
+        .json({ error: "Current and new password required" });
     }
 
     if (newPassword.length < 6) {
@@ -92,20 +94,22 @@ export const handleChangePassword: RequestHandler = async (req, res) => {
     }
 
     // Verify current password by attempting to sign in
-    const { error: signInError } = await supabaseClient.auth.signInWithPassword({
-      email: userData.email,
-      password: currentPassword,
-    });
+    const { error: signInError } = await supabaseClient.auth.signInWithPassword(
+      {
+        email: userData.email,
+        password: currentPassword,
+      },
+    );
 
     if (signInError) {
       return res.status(401).json({ error: "Current password is incorrect" });
     }
 
     // Update password
-    const { error: updateError } = await supabaseClient.auth.admin.updateUserById(
-      userId,
-      { password: newPassword }
-    );
+    const { error: updateError } =
+      await supabaseClient.auth.admin.updateUserById(userId, {
+        password: newPassword,
+      });
 
     if (updateError) {
       return res.status(400).json({ error: updateError.message });

@@ -13,7 +13,10 @@ export default function ResetPassword() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
   const [isValid, setIsValid] = useState(true);
 
   useEffect(() => {
@@ -104,7 +107,9 @@ export default function ResetPassword() {
         onSubmit={handleSubmit}
         className="w-full max-w-sm rounded-xl border bg-white p-6 shadow-sm"
       >
-        <h1 className="text-xl font-bold mb-2 text-center">Réinitialiser le mot de passe</h1>
+        <h1 className="text-xl font-bold mb-2 text-center">
+          Réinitialiser le mot de passe
+        </h1>
         <p className="text-sm text-muted-foreground text-center mb-6">
           Entrez un nouveau mot de passe.
         </p>
@@ -138,7 +143,9 @@ export default function ResetPassword() {
           </div>
 
           <div>
-            <label className="text-sm font-medium">Confirmer le mot de passe</label>
+            <label className="text-sm font-medium">
+              Confirmer le mot de passe
+            </label>
             <div className="relative">
               <Input
                 type={showConfirmPassword ? "text" : "password"}
@@ -180,7 +187,9 @@ export default function ResetPassword() {
           )}
 
           <Button className="w-full" disabled={loading}>
-            {loading ? "Réinitialisation en cours…" : "Réinitialiser le mot de passe"}
+            {loading
+              ? "Réinitialisation en cours…"
+              : "Réinitialiser le mot de passe"}
           </Button>
 
           <a

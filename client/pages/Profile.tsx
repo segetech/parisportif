@@ -77,7 +77,9 @@ function ProfileForm() {
     }
 
     if (newPassword.length < 6) {
-      toast.error("Le nouveau mot de passe doit contenir au moins 6 caractères");
+      toast.error(
+        "Le nouveau mot de passe doit contenir au moins 6 caractères",
+      );
       return;
     }
 
@@ -99,7 +101,9 @@ function ProfileForm() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Erreur lors du changement de mot de passe");
+        throw new Error(
+          data.error || "Erreur lors du changement de mot de passe",
+        );
       }
 
       toast.success("Mot de passe changé avec succès");
@@ -122,13 +126,17 @@ function ProfileForm() {
     <div className="max-w-2xl mx-auto space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-bold">Mon Profil</h1>
-        <p className="text-muted-foreground">Gérez vos informations personnelles</p>
+        <p className="text-muted-foreground">
+          Gérez vos informations personnelles
+        </p>
       </div>
 
       {/* Informations personnelles */}
       <div className="rounded-lg border p-6 space-y-4">
         <div>
-          <h2 className="text-lg font-semibold mb-4">Informations personnelles</h2>
+          <h2 className="text-lg font-semibold mb-4">
+            Informations personnelles
+          </h2>
         </div>
 
         <form onSubmit={handleProfileUpdate} className="space-y-4">
@@ -173,7 +181,8 @@ function ProfileForm() {
                     ? "Invitation envoyée"
                     : user.statut === "desactive"
                       ? "Désactivé"
-                      : user.statut.charAt(0).toUpperCase() + user.statut.slice(1)
+                      : user.statut.charAt(0).toUpperCase() +
+                        user.statut.slice(1)
                 }
                 disabled
                 className="bg-muted"
@@ -200,7 +209,8 @@ function ProfileForm() {
             <div>
               <p className="text-sm">Mot de passe</p>
               <p className="text-xs text-muted-foreground">
-                Changez votre mot de passe régulièrement pour sécuriser votre compte
+                Changez votre mot de passe régulièrement pour sécuriser votre
+                compte
               </p>
             </div>
             <Button
@@ -241,7 +251,9 @@ function ProfileForm() {
             </div>
 
             <div>
-              <label className="text-sm font-medium">Nouveau mot de passe</label>
+              <label className="text-sm font-medium">
+                Nouveau mot de passe
+              </label>
               <div className="relative">
                 <Input
                   type={showNewPassword ? "text" : "password"}
@@ -271,7 +283,9 @@ function ProfileForm() {
             </div>
 
             <div>
-              <label className="text-sm font-medium">Confirmer le nouveau mot de passe</label>
+              <label className="text-sm font-medium">
+                Confirmer le nouveau mot de passe
+              </label>
               <div className="relative">
                 <Input
                   type={showConfirmPassword ? "text" : "password"}
