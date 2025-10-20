@@ -4,6 +4,7 @@ import cors from "cors";
 import { handleDemo } from "./routes/demo";
 import { handleLogin } from "./routes/auth";
 import { handleDashboardData } from "./routes/dashboard";
+import { handleForgotPassword, handleResetPassword } from "./routes/password-reset";
 
 export function createServer() {
   const app = express();
@@ -23,6 +24,8 @@ export function createServer() {
 
   // Auth routes
   app.post("/api/auth/login", handleLogin);
+  app.post("/api/auth/forgot-password", handleForgotPassword);
+  app.post("/api/auth/reset-password", handleResetPassword);
 
   // Dashboard routes
   app.get("/api/dashboard/data", handleDashboardData);
