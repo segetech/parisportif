@@ -102,90 +102,24 @@ function withinPeriod(d: string, start: string, end: string) {
 // Authentication
 export const auth = {
   async login(email: string, password: string): Promise<User> {
-    // Sign up or sign in with Supabase
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.toLowerCase(),
-      password,
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: email.toLowerCase(),
+        password,
+      }),
     });
 
-    if (error) {
-      // Try to sign up if user doesn't exist
-      if (error.message.includes("Invalid login credentials")) {
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: email.toLowerCase(),
-          password,
-        });
-
-        if (signUpError) throw new Error(signUpError.message);
-        if (!signUpData.user) throw new Error("Failed to create user");
-
-        // Create user record in users table
-        const now = dayjs().toISOString();
-        const nom = email.split("@")[0];
-
-        const { data: userRecord, error: userError } = await supabase
-          .from("users")
-          .insert({
-            id: signUpData.user.id,
-            nom,
-            prenom: "",
-            email: email.toLowerCase(),
-            role: "AGENT", // Default role
-            statut: "actif",
-            cree_le: now,
-            mis_a_jour_le: now,
-            mfa_active: false,
-          })
-          .select()
-          .single();
-
-        if (userError) throw new Error(userError.message);
-        return userRecord as User;
-      }
-      throw new Error(error.message);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Erreur de connexion");
     }
 
-    if (!data.user) throw new Error("Authentication failed");
-
-    // Get user record from users table
-    const { data: userRecord, error: userError } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", data.user.id)
-      .single();
-
-    if (userError) {
-      // User exists in auth but not in users table, create it
-      const now = dayjs().toISOString();
-      const nom = email.split("@")[0];
-
-      const { data: newUserRecord, error: createError } = await supabase
-        .from("users")
-        .insert({
-          id: data.user.id,
-          nom,
-          prenom: "",
-          email: email.toLowerCase(),
-          role: "AGENT",
-          statut: "actif",
-          cree_le: now,
-          mis_a_jour_le: now,
-          mfa_active: false,
-        })
-        .select()
-        .single();
-
-      if (createError) throw new Error(createError.message);
-      return newUserRecord as User;
-    }
-
-    // Update last login
-    await supabase
-      .from("users")
-      .update({ derniere_connexion: dayjs().toISOString() })
-      .eq("id", data.user.id);
-
-    return userRecord as User;
+    const data = await response.json();
+    return data.user as User;
   },
 
   async me(userId: string): Promise<User | null> {
