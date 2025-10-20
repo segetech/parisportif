@@ -1,21 +1,29 @@
 import { RequestHandler } from "express";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+let supabase: ReturnType<typeof createClient> | null = null;
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error("Missing Supabase environment variables");
+function getSupabaseClient() {
+  if (!supabase) {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error("Missing Supabase environment variables");
+    }
+
+    supabase = createClient(supabaseUrl, supabaseServiceKey);
+  }
+  return supabase;
 }
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export const handleDashboardData: RequestHandler = async (req, res) => {
   try {
+    const supabaseClient = getSupabaseClient();
     const { start, end, userId, role } = req.query;
 
-    let txQuery = supabase.from("transactions").select("*");
-    let betsQuery = supabase.from("bets").select("*");
+    let txQuery = supabaseClient.from("transactions").select("*");
+    let betsQuery = supabaseClient.from("bets").select("*");
 
     if (start && end) {
       txQuery = txQuery.gte("date", start as string).lte("date", end as string);
