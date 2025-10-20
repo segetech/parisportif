@@ -747,16 +747,65 @@ function UsersTable() {
         </DialogContent>
       </Dialog>
 
-      {/* Modale: Reset password */}
-      <Dialog open={!!resetOpen} onOpenChange={(o) => !o && setResetOpen(null)}>
+      {/* Modale: Méthode de réinitialisation */}
+      <Dialog open={!!resetOpen?.user && !resetOpen?.url} onOpenChange={(o) => {
+        if (!o) {
+          setResetOpen(null);
+          setResetMethod("email");
+        }
+      }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Lien de réinitialisation</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Réinitialiser le mot de passe</DialogTitle></DialogHeader>
+          <div className="grid gap-3">
+            <div className="text-sm">Comment voulez-vous transmettre le nouveau mot de passe?</div>
+            <div className="flex gap-2">
+              <Button
+                variant={resetMethod === "email" ? "default" : "outline"}
+                onClick={() => setResetMethod("email")}
+                className="flex-1"
+              >
+                Par email
+              </Button>
+              <Button
+                variant={resetMethod === "direct" ? "default" : "outline"}
+                onClick={() => setResetMethod("direct")}
+                className="flex-1"
+              >
+                Afficher directement
+              </Button>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setResetOpen(null)}>Annuler</Button>
+              <Button onClick={() => resetOpen?.user && resetPassword(resetOpen.user)}>
+                Continuer
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modale: Reset password - résultat */}
+      <Dialog open={!!resetOpen?.url} onOpenChange={(o) => !o && setResetOpen(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {resetOpen?.isPassword ? "Mot de passe temporaire" : "Lien de réinitialisation"}
+            </DialogTitle>
+          </DialogHeader>
           {resetOpen && (
             <div className="grid gap-3">
-              <div className="text-sm">Un lien a été généré. Il est copié dans votre presse-papiers.</div>
-              <div className="text-xs break-all border rounded p-2 bg-muted/30">{resetOpen.url}</div>
+              <div className="text-sm">
+                {resetOpen.isPassword
+                  ? "Un mot de passe temporaire a été généré et copié dans votre presse-papiers."
+                  : "Un email a été envoyé à l'utilisateur avec un lien de réinitialisation."}
+              </div>
+              {resetOpen.url && (
+                <div className="text-xs break-all border rounded p-2 bg-muted/30 font-mono">
+                  {resetOpen.url}
+                </div>
+              )}
               <div className="flex justify-end">
-                <Button variant="outline" onClick={() => setResetOpen(null)}>Fermer</Button>
+                <Button onClick={() => setResetOpen(null)}>Fermer</Button>
               </div>
             </div>
           )}
