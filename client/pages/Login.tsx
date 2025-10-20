@@ -1,9 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Eye, EyeOff } from "lucide-react";
-import { unregisterAllServiceWorkers } from "@/lib/service-worker-cleanup";
 
 export default function Login() {
   const { login } = useAuth();
@@ -12,11 +11,6 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
-  // Clean up service worker on login page load
-  useEffect(() => {
-    unregisterAllServiceWorkers().catch(console.error);
-  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
