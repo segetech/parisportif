@@ -27,14 +27,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Skip auth endpoints completely
+  if (event.request.url.includes('/api/auth/')) {
+    return;
+  }
+
+  // Skip admin endpoints
+  if (event.request.url.includes('/api/admin/')) {
+    return;
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Only cache successful responses
+        // Only cache successful responses with status 200
         if (response.ok && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
+            cache.put(event.request, clone).catch(() => {
+              // Ignore cache errors
+            });
           });
         }
         return response;
