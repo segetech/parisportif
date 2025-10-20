@@ -32,21 +32,27 @@ function Dashboard() {
     tx: Awaited<ReturnType<typeof api.transactions.list>>;
     bets: Awaited<ReturnType<typeof api.bets.list>>;
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     load();
   }, [user?.id]);
 
   async function load() {
-    const params = new URLSearchParams(window.location.search);
-    const start = params.get("start") ?? dayjs().format(DATE_FORMAT);
-    const end = params.get("end") ?? dayjs().format(DATE_FORMAT);
-    const createdByOnly = user?.role === "AGENT" ? user.id : undefined;
-    const [tx, bets] = await Promise.all([
-      api.transactions.list({ start, end, createdByOnly }),
-      api.bets.list({ start, end, createdByOnly }),
-    ]);
-    setRows({ tx, bets });
+    try {
+      setLoading(true);
+      const params = new URLSearchParams(window.location.search);
+      const start = params.get("start") ?? dayjs().format(DATE_FORMAT);
+      const end = params.get("end") ?? dayjs().format(DATE_FORMAT);
+      const createdByOnly = user?.role === "AGENT" ? user.id : undefined;
+      const [tx, bets] = await Promise.all([
+        api.transactions.list({ start, end, createdByOnly }),
+        api.bets.list({ start, end, createdByOnly }),
+      ]);
+      setRows({ tx, bets });
+    } finally {
+      setLoading(false);
+    }
   }
 
   const kpis = useMemo(() => {
