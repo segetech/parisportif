@@ -83,6 +83,19 @@ function Dashboard() {
       .map(([date, v]) => ({ date, ...v }));
   }, [rows]);
 
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent mb-4"></div>
+            <p className="text-sm text-muted-foreground">Chargement des données...</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
