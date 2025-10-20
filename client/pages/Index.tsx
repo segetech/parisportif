@@ -44,12 +44,20 @@ function Dashboard() {
       const params = new URLSearchParams(window.location.search);
       const start = params.get("start") ?? dayjs().format(DATE_FORMAT);
       const end = params.get("end") ?? dayjs().format(DATE_FORMAT);
-      const createdByOnly = user?.role === "AGENT" ? user.id : undefined;
-      const [tx, bets] = await Promise.all([
-        api.transactions.list({ start, end, createdByOnly }),
-        api.bets.list({ start, end, createdByOnly }),
-      ]);
-      setRows({ tx, bets });
+
+      // Use backend endpoint for faster loading
+      const queryParams = new URLSearchParams({
+        start,
+        end,
+        role: user?.role ?? "AGENT",
+        userId: user?.id ?? "",
+      });
+
+      const response = await fetch(`/api/dashboard/data?${queryParams}`);
+      if (!response.ok) throw new Error("Failed to load dashboard data");
+
+      const data = await response.json();
+      setRows({ tx: data.transactions, bets: data.bets });
     } finally {
       setLoading(false);
     }
