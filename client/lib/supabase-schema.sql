@@ -100,41 +100,61 @@ ALTER TABLE bets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE venues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies for users table
+-- RLS Policies for users table (simplified to avoid recursion)
 CREATE POLICY "Users can read their own data" ON users
-  FOR SELECT USING (auth.uid() = id OR EXISTS (
-    SELECT 1 FROM users WHERE id = auth.uid() AND role = 'ADMIN'
-  ));
+  FOR SELECT USING (auth.uid() = id);
 
 CREATE POLICY "Admins can read all users" ON users
-  FOR SELECT USING (EXISTS (
-    SELECT 1 FROM users WHERE id = auth.uid() AND role = 'ADMIN'
-  ));
+  FOR SELECT USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
 
 -- RLS Policies for transactions
 CREATE POLICY "Users can read their own transactions" ON transactions
-  FOR SELECT USING (created_by = auth.uid() OR EXISTS (
-    SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('ADMIN', 'CONTROLEUR')
-  ));
+  FOR SELECT USING (created_by = auth.uid());
+
+CREATE POLICY "Admins and controllers can read all transactions" ON transactions
+  FOR SELECT USING ((SELECT role FROM users WHERE id = auth.uid()) IN ('ADMIN', 'CONTROLEUR'));
 
 CREATE POLICY "Users can insert their own transactions" ON transactions
   FOR INSERT WITH CHECK (created_by = auth.uid());
 
+CREATE POLICY "Admins can update transactions" ON transactions
+  FOR UPDATE USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
+
+CREATE POLICY "Admins can delete transactions" ON transactions
+  FOR DELETE USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
+
 -- RLS Policies for bets
 CREATE POLICY "Users can read their own bets" ON bets
-  FOR SELECT USING (created_by = auth.uid() OR EXISTS (
-    SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('ADMIN', 'CONTROLEUR')
-  ));
+  FOR SELECT USING (created_by = auth.uid());
+
+CREATE POLICY "Admins and controllers can read all bets" ON bets
+  FOR SELECT USING ((SELECT role FROM users WHERE id = auth.uid()) IN ('ADMIN', 'CONTROLEUR'));
 
 CREATE POLICY "Users can insert their own bets" ON bets
   FOR INSERT WITH CHECK (created_by = auth.uid());
+
+CREATE POLICY "Admins can update bets" ON bets
+  FOR UPDATE USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
+
+CREATE POLICY "Admins can delete bets" ON bets
+  FOR DELETE USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
 
 -- RLS Policies for venues
 CREATE POLICY "Everyone can read venues" ON venues
   FOR SELECT USING (TRUE);
 
+CREATE POLICY "Admins can insert venues" ON venues
+  FOR INSERT USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
+
+CREATE POLICY "Admins can update venues" ON venues
+  FOR UPDATE USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
+
+CREATE POLICY "Admins can delete venues" ON venues
+  FOR DELETE USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
+
 -- RLS Policies for audit_logs
 CREATE POLICY "Admins can read audit logs" ON audit_logs
-  FOR SELECT USING (EXISTS (
-    SELECT 1 FROM users WHERE id = auth.uid() AND role = 'ADMIN'
-  ));
+  FOR SELECT USING ((SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN');
+
+CREATE POLICY "System can insert audit logs" ON audit_logs
+  FOR INSERT WITH CHECK (TRUE);
