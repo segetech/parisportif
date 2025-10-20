@@ -2,9 +2,10 @@
 export async function initializeApp(): Promise<void> {
   console.log('[Init] Starting app initialization');
 
-  // Clean up service workers
+  // Aggressively clear all service workers and caches
   if ('serviceWorker' in navigator) {
     try {
+      // Unregister all service workers
       const registrations = await navigator.serviceWorker.getRegistrations();
       console.log('[Init] Found SW registrations:', registrations.length);
 
@@ -18,46 +19,49 @@ export async function initializeApp(): Promise<void> {
           console.error('[Init] Failed to unregister SW:', error);
         }
       }
+
+      // Send skip waiting to any active controller
+      if (navigator.serviceWorker.controller) {
+        console.log('[Init] Forcing service worker to skip waiting');
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SKIP_WAITING',
+        });
+      }
     } catch (error) {
       console.error('[Init] Failed to get SW registrations:', error);
     }
   }
 
-  // Clear all caches
-  try {
-    const cacheNames = await caches.keys();
-    console.log('[Init] Found caches:', cacheNames);
+  // Clear all caches with retry
+  if ('caches' in window) {
+    try {
+      const cacheNames = await caches.keys();
+      console.log('[Init] Found caches:', cacheNames.length, cacheNames);
 
-    for (const cacheName of cacheNames) {
-      try {
-        const deleted = await caches.delete(cacheName);
-        if (deleted) {
-          console.log('[Init] Deleted cache:', cacheName);
+      // Delete each cache
+      for (const cacheName of cacheNames) {
+        try {
+          const deleted = await caches.delete(cacheName);
+          console.log('[Init] Cache deletion result:', cacheName, deleted);
+        } catch (error) {
+          console.error('[Init] Failed to delete cache:', cacheName, error);
         }
-      } catch (error) {
-        console.error('[Init] Failed to delete cache:', cacheName, error);
       }
+
+      // Verify deletion
+      const remainingCaches = await caches.keys();
+      console.log('[Init] Remaining caches after cleanup:', remainingCaches.length);
+    } catch (error) {
+      console.error('[Init] Failed to clear caches:', error);
     }
-  } catch (error) {
-    console.error('[Init] Failed to clear caches:', error);
   }
 
-  // Disable service worker controller
-  if ('serviceWorker' in navigator) {
-    try {
-      const controller = navigator.serviceWorker.controller;
-      if (controller) {
-        console.log('[Init] Service worker controller present, attempting to unload');
-        // Send message to service worker to uninstall
-        if (navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({
-            type: 'SKIP_WAITING',
-          });
-        }
-      }
-    } catch (error) {
-      console.error('[Init] Failed to handle SW controller:', error);
-    }
+  // Additional: Reload if service worker is present
+  if (navigator.serviceWorker?.controller) {
+    console.log('[Init] Service worker still active, will reload page');
+    setTimeout(() => {
+      window.location.reload();
+    }, 100);
   }
 
   console.log('[Init] App initialization complete');
