@@ -39,8 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(u);
         localStorage.setItem(LS_KEY, JSON.stringify(u));
       },
-      async logout() {
-        await api.auth.logout();
+      logout() {
         setUser(null);
         localStorage.removeItem(LS_KEY);
       },
