@@ -138,27 +138,47 @@ function UsersTable() {
   const [invPrenom, setInvPrenom] = useState("");
   const [invEmail, setInvEmail] = useState("");
   const [invRole, setInvRole] = useState<Role>("AGENT");
-  const [invStatut, setInvStatut] = useState<UserStatus>("invitation_envoyee");
+  const [invMethod, setInvMethod] = useState<"email" | "direct">("email");
+  const [invLoading, setInvLoading] = useState(false);
+  const [invTempPassword, setInvTempPassword] = useState<string | null>(null);
 
   async function inviteSubmit() {
     try {
-      const row = await api.users.create({
-        nom: invNom.trim(),
-        prenom: invPrenom.trim() || undefined,
-        email: invEmail.trim().toLowerCase(),
-        role: invRole,
-        statut: invStatut,
+      setInvLoading(true);
+      const response = await fetch("/api/admin/users/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nom: invNom.trim(),
+          prenom: invPrenom.trim() || undefined,
+          email: invEmail.trim().toLowerCase(),
+          role: invRole,
+          sendEmail: invMethod === "email",
+        }),
       });
-      toast.success(
-        invStatut === "invitation_envoyee" ? "Invitation envoyée." : "Utilisateur créé.",
-      );
-      setInviteOpen(false);
-      setInvNom("");
-      setInvPrenom("");
-      setInvEmail("");
-      await load();
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur");
+      }
+
+      if (invMethod === "direct" && data.temporaryPassword) {
+        setInvTempPassword(data.temporaryPassword);
+        await navigator.clipboard.writeText(data.temporaryPassword);
+        toast.success("Utilisateur créé. Mot de passe copié.");
+      } else {
+        toast.success("Invitation envoyée par email.");
+        setInviteOpen(false);
+        setInvNom("");
+        setInvPrenom("");
+        setInvEmail("");
+        await load();
+      }
     } catch (e: any) {
       toast.error(e?.message || "Erreur");
+    } finally {
+      setInvLoading(false);
     }
   }
 
