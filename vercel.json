@@ -5,7 +5,7 @@
       "destination": "/index.html"
     }
   ],
-  "buildCommand": "pnpm run build",
-  "outputDirectory": "dist",
+  "buildCommand": "pnpm run build:client",
+  "outputDirectory": "dist/spa",
   "installCommand": "pnpm install"
 }
