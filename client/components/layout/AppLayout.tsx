@@ -12,6 +12,8 @@ import {
   LogOut,
   Plus,
   AlertTriangle,
+  Users,
+  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { computePeriod, getDefaultPeriod, PeriodState } from "@/lib/period";
 
 function cls(active: boolean) {
@@ -76,6 +79,16 @@ export default function AppLayout({
             },
           ]
         : []),
+      // Validation: visible pour ADMIN et CONTROLEUR
+      ...((isAdmin || isController)
+        ? [
+            {
+              to: "/validation",
+              label: "Validation",
+              icon: <CheckSquare className="h-4 w-4" />,
+            },
+          ]
+        : []),
       ...(isAdmin
         ? [
             {
@@ -103,22 +116,23 @@ export default function AppLayout({
             },
           ]
         : []),
+      // Gestion utilisateurs: visible pour ADMIN uniquement
+      ...(isAdmin
+        ? [
+            {
+              to: "/users-management",
+              label: "Utilisateurs",
+              icon: <Users className="h-4 w-4" />,
+            },
+          ]
+        : []),
       // Journal d'audit: visible pour ADMIN et CONTROLEUR
       ...((isAdmin || isController)
         ? [
             {
               to: "/journal",
-              label: "Journal d’audit",
+              label: "Journal d'audit",
               icon: <Book className="h-4 w-4" />,
-            },
-          ]
-        : []),
-      ...((isAdmin || isController)
-        ? [
-            {
-              to: "/utilisateurs",
-              label: "Utilisateurs",
-              icon: <Settings className="h-4 w-4" />,
             },
           ]
         : []),
@@ -199,6 +213,7 @@ export default function AppLayout({
             </Button>
           </form>
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <Select value={period.kind} onValueChange={handlePeriodChange}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="Période" />

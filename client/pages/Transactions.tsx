@@ -5,22 +5,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -29,61 +16,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import api, { Transaction } from "@/data/api";
-import { useAuth, RequireAuth } from "@/context/AuthContext";
-import { DATE_FORMAT, TIME_FORMAT } from "@/lib/dayjs";
-import { buildCsv, downloadCsv } from "@/lib/csv";
-import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  SortingState,
-  useReactTable,
-} from "@tanstack/react-table";
-import dayjs from "dayjs";
+import { RequireAuth, useAuth } from "@/context/AuthContext";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import LookupDialog from "@/components/common/LookupDialog";
+import { Search, TrendingUp, TrendingDown, Plus } from "lucide-react";
+import { CreatableSelect } from "@/components/ui/creatable-select";
 
-function formatFcfa(n: number) {
-  return new Intl.NumberFormat("fr-FR").format(n) + " F CFA";
+interface Transaction {
+  id: string;
+  date: string;
+  time?: string;
+  type: string;
+  operator: string;
+  support: string;
+  amount_fcfa: number;
+  venue_id?: string;
+  notes?: string;
+  created_by?: string;
+  validation_status?: string;
 }
 
-const schema = z.object({
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/g, { message: "Date au format AAAA-MM-JJ" }),
-  time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, {
-    message: "L’heure doit être au format HH:MM (24h).",
-  }),
-  operator: z.string().min(1, { message: "Opérateur requis" }),
-  platform: z.string().min(1, { message: "Plateforme requise" }),
-  payment_operator: z
-    .string()
-    .min(1, { message: "Opérateur de paiement requis" }),
-  type: z.enum(["Dépôt", "Retrait"], {
-    errorMap: () => ({ message: "Type invalide" }),
-  }),
-  amount_fcfa: z.coerce
-    .number()
-    .int()
-    .positive({ message: "Le montant doit être un entier positif." }),
-  phone: z.string().optional(),
-  reference: z.string().min(1, { message: "Référence requise" }),
-  proof: z.boolean(),
-  notes: z.string().optional(),
-  proof_file: z.any().optional(),
-});
-
-type FormValues = z.infer<typeof schema>;
-
-export default function Page() {
+export default function TransactionsPage() {
   return (
     <RequireAuth>
       <Transactions />
@@ -93,742 +47,488 @@ export default function Page() {
 
 function Transactions() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
-  const isController = user?.role === "CONTROLEUR";
-  const [rows, setRows] = useState<Transaction[]>([]);
-  const [filters, setFilters] = useState({ operator: "", reference: "" });
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<Transaction | null>(null);
-  const [viewOpen, setViewOpen] = useState(false);
-  const [viewing, setViewing] = useState<Transaction | null>(null);
-  const [lookups, setLookups] = useState<{
-    operators: string[];
-    payment_operators: string[];
-    platforms: string[];
-  }>({ operators: [], payment_operators: [], platforms: [] });
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  
+  // Listes déroulantes
+  const [operators, setOperators] = useState<string[]>([]);
+  const [supports, setSupports] = useState<string[]>([]);
+  
+  // Formulaire
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split("T")[0],
+    time: new Date().toTimeString().slice(0, 5),
+    type: "Dépôt",
+    operator: "",
+    support: "",
+    amount_fcfa: 0,
+    notes: "",
+  });
 
   useEffect(() => {
-    (async () => {
-      const l = await api.lookups.all();
-      setLookups({
-        operators: l.operators,
-        payment_operators: l.payment_operators,
-        platforms: l.platforms,
-      });
-    })();
+    loadData();
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [user?.id]);
-  async function load() {
-    const params = new URLSearchParams(window.location.search);
-    const ref = params.get("ref") ?? undefined;
-    const data = await api.transactions.list({
-      reference: ref,
-      createdByOnly: user?.role === "AGENT" ? user.id : undefined,
-    });
-    setRows(data);
-    if (ref) setFilters((f) => ({ ...f, reference: ref }));
+  async function loadData() {
+    await Promise.all([loadTransactions(), loadOperators(), loadSupports()]);
   }
 
-  // Compte des lignes par opérateur (sur l'ensemble des lignes chargées)
-  const operatorCounts = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const r of rows) m[r.operator] = (m[r.operator] ?? 0) + 1;
-    return m;
-  }, [rows]);
-
-  const columns = useMemo<ColumnDef<Transaction>[]>(
-    () => [
-      // Numérotation dans la vue filtrée/triée/paginée
-      {
-        id: "no",
-        header: "N°",
-        cell: ({ row, table }) => {
-          // Numérotation par opérateur dans la vue courante (après filtres, tri, pagination)
-          const currentOp = row.original.operator;
-          const rows = table.getRowModel()?.rows ?? [];
-          let count = 0;
-          for (const r of rows) {
-            const orig = (r as any).original as Transaction | undefined;
-            if (orig && orig.operator === currentOp) count++;
-            if (r.id === row.id) break;
-          }
-          return count;
-        },
-        enableSorting: false,
-      },
-      { accessorKey: "date", header: "Date" },
-      { accessorKey: "time", header: "Heure" },
-      { accessorKey: "operator", header: "Opérateur" },
-      { accessorKey: "platform", header: "Plateforme" },
-      { accessorKey: "payment_operator", header: "Op. paiement" },
-      { accessorKey: "type", header: "Type" },
-      {
-        accessorKey: "amount_fcfa",
-        header: "Montant",
-        cell: ({ getValue }) => formatFcfa(getValue<number>()),
-      },
-      { accessorKey: "phone", header: "Téléphone" },
-      { accessorKey: "reference", header: "Référence" },
-      {
-        accessorKey: "proof",
-        header: "Preuve",
-        cell: ({ getValue }) => (getValue<boolean>() ? "Oui" : "Non"),
-      },
-      { accessorKey: "notes", header: "Notes" },
-      {
-        id: "actions",
-        header: "Actions",
-        cell: ({ row }) => {
-          const canEdit = isAdmin || row.original.created_by === user!.id;
-          const canDelete =
-            isAdmin ||
-            (row.original.created_by === user!.id &&
-              dayjs().diff(dayjs(row.original.created_at), "minute") <=
-                api.store.settings.agentEditWindowMinutes);
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  Actions
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem
-                  onClick={() => {
-                    setViewing(row.original);
-                    setViewOpen(true);
-                  }}
-                >
-                  Voir
-                </DropdownMenuItem>
-                {canEdit && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setEditing(row.original);
-                      setOpen(true);
-                    }}
-                  >
-                    Éditer
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => duplicateRow(row.original)}>
-                  Dupliquer
-                </DropdownMenuItem>
-                {canDelete && (
-                  <DropdownMenuItem
-                    className="text-red-600"
-                    onClick={() => removeRow(row.original.id)}
-                  >
-                    Supprimer
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-        },
-      },
-    ],
-    [isAdmin],
-  );
-
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: rows,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-  });
-
-  function onNew() {
-    setEditing(null);
-    setOpen(true);
-  }
-
-  async function duplicateRow(r: Transaction) {
-    const copy: FormValues = { ...r, reference: r.reference + "-copy" };
-    setEditing(null);
-    setOpen(true);
-    setTimeout(() => resetForm(copy), 0);
-  }
-
-  async function removeRow(id: string) {
-    if (!(isAdmin || isController)) return;
-    if (!confirm("Supprimer cette ligne ?")) return;
-    await api.transactions.delete(id);
-    await load();
-  }
-
-  function exportCsv() {
-    const csv = buildCsv(
-      rows.map((r) => ({
-        date: r.date,
-        heure: r.time,
-        operateur: r.operator,
-        plateforme: r.platform,
-        op_paiement: r.payment_operator,
-        type: r.type,
-        montant_fcfa: r.amount_fcfa,
-        telephone: r.phone ?? "",
-        reference: r.reference,
-        preuve: r.proof ? "Oui" : "Non",
-        notes: r.notes ?? "",
-      })),
-    );
-    downloadCsv(`transactions-${dayjs().format("YYYYMMDD-HHmm")}.csv`, csv);
-  }
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    reset: resetForm,
-    setValue,
-    watch,
-    control,
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      date: dayjs().format(DATE_FORMAT),
-      time: dayjs().format(TIME_FORMAT),
-      type: "Dépôt",
-      proof: false,
-      platform: "Web",
-    },
-  });
-
-  async function onSubmit(values: FormValues) {
+  async function loadTransactions() {
+    setLoading(true);
     try {
-      if (editing) {
-        await api.transactions.update(editing.id, values);
-      } else {
-        await api.transactions.create({
-          ...(values as Omit<Transaction, "id" | "created_at">),
-          created_by: user!.id,
-        });
-      }
-      setOpen(false);
-      toast.success("Transaction enregistrée.");
-      await load();
-    } catch (e: any) {
-      toast.error(e.message ?? "Erreur inconnue");
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .order("date", { ascending: false })
+        .order("time", { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+      if (data) setTransactions(data);
+    } catch (error: any) {
+      console.error("Erreur:", error);
+      toast.error("Erreur lors du chargement des transactions");
+    } finally {
+      setLoading(false);
     }
   }
 
-  useEffect(() => {
-    if (!open) resetForm();
-    else if (editing) resetForm(editing);
-  }, [open]);
+  async function loadOperators() {
+    const { data, error } = await supabase
+      .from("operators")
+      .select("name")
+      .eq("active", true)
+      .order("name");
+    
+    if (error) throw error;
+    if (data) setOperators(data.map(o => o.name));
+  }
 
-  const canManageLookups = isAdmin || api.store.settings.agentsCanAddLookups;
-  const [lkOpen, setLkOpen] = useState(false);
-  const [lkSpec, setLkSpec] = useState<{
-    key: keyof typeof api.store.lookups;
-    label: string;
-    onAdded?: (value: string) => void;
-  } | null>(null);
+  async function loadSupports() {
+    const { data, error } = await supabase
+      .from("supports")
+      .select("name")
+      .eq("active", true)
+      .order("name");
+    
+    if (error) throw error;
+    if (data) setSupports(data.map(s => s.name));
+  }
 
-  function addLookup(
-    key: keyof typeof api.store.lookups,
-    label: string,
-    onAdded?: (value: string) => void,
-  ) {
-    if (!canManageLookups) {
-      toast.error("Accès refusé : création réservée à l’admin.");
+  async function createOperator(name: string) {
+    const { error } = await supabase
+      .from("operators")
+      .insert([{ name }]);
+    
+    if (error) {
+      if (error.code === "23505") {
+        toast.error("Cet opérateur existe déjà");
+      } else {
+        toast.error("Erreur lors de la création");
+      }
+      throw error;
+    }
+    
+    await loadOperators();
+    toast.success(`Opérateur "${name}" créé avec succès`);
+  }
+
+  async function createSupport(name: string) {
+    const { error } = await supabase
+      .from("supports")
+      .insert([{ name }]);
+    
+    if (error) {
+      if (error.code === "23505") {
+        toast.error("Ce support existe déjà");
+      } else {
+        toast.error("Erreur lors de la création");
+      }
+      throw error;
+    }
+    
+    await loadSupports();
+    toast.success(`Support "${name}" créé avec succès`);
+  }
+
+  function openDialog() {
+    setEditingTransaction(null);
+    setFormData({
+      date: new Date().toISOString().split("T")[0],
+      time: new Date().toTimeString().slice(0, 5),
+      type: "Dépôt",
+      operator: "",
+      support: "",
+      amount_fcfa: 0,
+      notes: "",
+    });
+    setDialogOpen(true);
+  }
+
+  function openEditDialog(transaction: Transaction) {
+    setEditingTransaction(transaction);
+    setFormData({
+      date: transaction.date,
+      time: transaction.time || "",
+      type: transaction.type,
+      operator: transaction.operator,
+      support: transaction.support,
+      amount_fcfa: transaction.amount_fcfa,
+      notes: transaction.notes || "",
+    });
+    setDialogOpen(true);
+  }
+
+  async function handleSubmit() {
+    if (!formData.date || !formData.type || !formData.operator || !formData.amount_fcfa) {
+      toast.error("Veuillez remplir tous les champs obligatoires");
       return;
     }
-    setLkSpec({ key, label, onAdded });
-    setLkOpen(true);
+
+    try {
+      const transactionData = {
+        ...formData,
+        notes: formData.notes || null,
+      };
+
+      if (editingTransaction) {
+        // Mode édition
+        const { error } = await supabase
+          .from("transactions")
+          .update(transactionData)
+          .eq("id", editingTransaction.id);
+        
+        if (error) throw error;
+        toast.success("Transaction modifiée avec succès");
+      } else {
+        // Mode création
+        const isAgent = user?.role === "AGENT";
+        const newTransactionData = {
+          ...transactionData,
+          created_by: user?.id,
+          validation_status: isAgent ? "en_attente" : "valide",
+        };
+
+        const { error } = await supabase
+          .from("transactions")
+          .insert([newTransactionData]);
+        
+        if (error) throw error;
+        
+        toast.success(
+          isAgent
+            ? "Transaction créée avec succès. En attente de validation."
+            : "Transaction créée avec succès"
+        );
+      }
+      
+      setDialogOpen(false);
+      setEditingTransaction(null);
+      await loadTransactions();
+    } catch (error: any) {
+      console.error("Erreur:", error);
+      toast.error("Erreur lors de l'enregistrement");
+    }
+  }
+
+  const filteredTransactions = transactions.filter((tx) => {
+    if (typeFilter && tx.type !== typeFilter) return false;
+    if (!search) return true;
+    const searchLower = search.toLowerCase();
+    return (
+      tx.operator.toLowerCase().includes(searchLower) ||
+      tx.type.toLowerCase().includes(searchLower) ||
+      tx.notes?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const stats = {
+    depots: filteredTransactions
+      .filter((t) => t.type === "Dépôt")
+      .reduce((sum, t) => sum + t.amount_fcfa, 0),
+    retraits: filteredTransactions
+      .filter((t) => t.type === "Retrait")
+      .reduce((sum, t) => sum + t.amount_fcfa, 0),
+    totalDepots: filteredTransactions.filter((t) => t.type === "Dépôt").length,
+    totalRetraits: filteredTransactions.filter((t) => t.type === "Retrait")
+      .length,
+  };
+
+  const formatAmount = (amount: number) => {
+    return new Intl.NumberFormat("fr-FR").format(amount) + " F CFA";
+  };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-muted-foreground">Chargement...</div>
+        </div>
+      </AppLayout>
+    );
   }
 
   return (
-    <RequireAuth>
-      <AppLayout onNew={onNew} newButtonLabel="+ Nouveau dépôt / retrait">
-        {lkSpec && (
-          <LookupDialog
-            open={lkOpen}
-            onOpenChange={setLkOpen}
-            title={`Ajouter ${lkSpec.label}`}
-            placeholder={`Nom ${lkSpec.label}`}
-            onConfirm={async (name) => {
-              await api.lookups.add(lkSpec.key as any, name);
-              const l = await api.lookups.all();
-              setLookups({
-                operators: l.operators,
-                payment_operators: l.payment_operators,
-                platforms: l.platforms,
-              });
-              lkSpec.onAdded?.(name);
-              toast.success(`${lkSpec.label} ajouté(e).`);
-            }}
-          />
-        )}
-        <div className="flex flex-wrap gap-2 mb-3 items-end">
-          {/* Menu d'opérateurs */}
-          <div className="flex gap-2 overflow-x-auto pb-1 pr-2">
-            <Button
-              variant={(!filters.operator || filters.operator === "") ? "default" : "outline"}
-              size="sm"
-              type="button"
-              onClick={() => {
-                setFilters((f) => ({ ...f, operator: "" }));
-                table.getColumn("operator")?.setFilterValue(undefined);
-              }}
-            >
-              Tous
-            </Button>
-            {lookups.operators.map((op) => (
-              <Button
-                key={op}
-                variant={filters.operator === op ? "default" : "outline"}
-                size="sm"
-                type="button"
-                onClick={() => {
-                  setFilters((f) => ({ ...f, operator: op }));
-                  table.getColumn("operator")?.setFilterValue(op);
-                }}
-              >
-                {op} ({operatorCounts[op] ?? 0})
-              </Button>
-            ))}
-          </div>
+    <AppLayout>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
           <div>
-            <label className="text-xs font-medium">Référence</label>
+            <h1 className="text-2xl font-bold">Transactions</h1>
+            <p className="text-sm text-muted-foreground">
+              Historique des dépôts et retraits
+            </p>
+          </div>
+          <Button onClick={openDialog}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nouvelle transaction
+          </Button>
+        </div>
+
+        {/* Barre de recherche et filtres */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Rechercher…"
-              value={filters.reference}
-              onChange={(e) => {
-                setFilters((f) => ({ ...f, reference: e.target.value }));
-                table
-                  .getColumn("reference")
-                  ?.setFilterValue(e.target.value || undefined);
-              }}
-              className="w-56"
+              placeholder="Rechercher par opérateur, type..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10"
             />
           </div>
-          {/* Contrôles de tri Date+Heure */}
-          <div className="flex gap-2 ml-auto">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSorting([
-                { id: "date", desc: false },
-                { id: "time", desc: false },
-              ])}
+          <select
+            className="border rounded px-3 py-2 text-sm"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+          >
+            <option value="">Tous les types</option>
+            <option value="Dépôt">Dépôts</option>
+            <option value="Retrait">Retraits</option>
+          </select>
+          <Button variant="outline" onClick={loadTransactions}>
+            Actualiser
+          </Button>
+        </div>
+
+        {/* Statistiques rapides */}
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-4">
+          <div className="p-4 border rounded-lg bg-emerald-50">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-muted-foreground">Total Dépôts</p>
+              <TrendingUp className="h-4 w-4 text-emerald-600" />
+            </div>
+            <p className="text-2xl font-bold text-emerald-600">
+              {formatAmount(stats.depots)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.totalDepots} transaction(s)
+            </p>
+          </div>
+          <div className="p-4 border rounded-lg bg-red-50">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-muted-foreground">Total Retraits</p>
+              <TrendingDown className="h-4 w-4 text-red-600" />
+            </div>
+            <p className="text-2xl font-bold text-red-600">
+              {formatAmount(stats.retraits)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.totalRetraits} transaction(s)
+            </p>
+          </div>
+          <div className="p-4 border rounded-lg">
+            <p className="text-sm text-muted-foreground">Solde net</p>
+            <p
+              className={`text-2xl font-bold ${
+                stats.depots - stats.retraits >= 0
+                  ? "text-emerald-600"
+                  : "text-red-600"
+              }`}
             >
-              Tri: Asc
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSorting([
-                { id: "date", desc: true },
-                { id: "time", desc: true },
-              ])}
-            >
-              Tri: Desc
-            </Button>
-            {isAdmin && (
-              <Button onClick={exportCsv} className="">
-                Exporter CSV
-              </Button>
-            )}
+              {formatAmount(stats.depots - stats.retraits)}
+            </p>
+          </div>
+          <div className="p-4 border rounded-lg">
+            <p className="text-sm text-muted-foreground">Total transactions</p>
+            <p className="text-2xl font-bold">{filteredTransactions.length}</p>
           </div>
         </div>
 
-        <div className="rounded-md border overflow-hidden">
+        {/* Tableau */}
+        <div className="rounded-md border">
           <Table>
             <TableHeader>
-              {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id}>
-                  {hg.headers.map((h) => (
-                    <TableHead
-                      key={h.id}
-                      onClick={h.column.getToggleSortingHandler()}
-                      className={
-                        h.column.getCanSort()
-                          ? "cursor-pointer select-none"
-                          : ""
-                      }
-                    >
-                      {flexRender(h.column.columnDef.header, h.getContext())}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Heure</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Opérateur</TableHead>
+                <TableHead>Support</TableHead>
+                <TableHead className="text-right">Montant</TableHead>
+                <TableHead>Notes</TableHead>
+              </TableRow>
             </TableHeader>
             <TableBody>
-              {table.getRowModel().rows.length ? (
-                table.getRowModel().rows.map((r) => (
-                  <TableRow key={r.id}>
-                    {r.getVisibleCells().map((c) => (
-                      <TableCell key={c.id}>
-                        {flexRender(c.column.columnDef.cell, c.getContext()) ??
-                          String(c.getValue() ?? "")}
-                      </TableCell>
-                    ))}
+              {filteredTransactions.length > 0 ? (
+                filteredTransactions.map((tx) => (
+                  <TableRow 
+                    key={tx.id}
+                    className="cursor-pointer hover:bg-slate-50 transition-colors"
+                    onClick={() => openEditDialog(tx)}
+                  >
+                    <TableCell>
+                      {new Date(tx.date).toLocaleDateString("fr-FR")}
+                    </TableCell>
+                    <TableCell>{tx.time || "—"}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {tx.type === "Dépôt" ? (
+                          <TrendingUp className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <TrendingDown className="h-4 w-4 text-red-600" />
+                        )}
+                        <span
+                          className={
+                            tx.type === "Dépôt"
+                              ? "text-emerald-600 font-medium"
+                              : "text-red-600 font-medium"
+                          }
+                        >
+                          {tx.type}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">{tx.operator}</TableCell>
+                    <TableCell>{tx.support}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      <span
+                        className={
+                          tx.type === "Dépôt"
+                            ? "text-emerald-600"
+                            : "text-red-600"
+                        }
+                      >
+                        {tx.type === "Dépôt" ? "+" : "-"}
+                        {formatAmount(tx.amount_fcfa)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {tx.notes || "—"}
+                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={columns.length}
-                    className="text-center text-sm text-muted-foreground"
+                    colSpan={7}
+                    className="text-center text-sm text-muted-foreground py-8"
                   >
-                    Aucune donnée pour cette période.
+                    Aucune transaction trouvée
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
-          <div className="flex items-center justify-between p-2 text-sm">
-            <div>Lignes: {table.getRowModel().rows.length}</div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
+        </div>
+
+        <div className="text-sm text-muted-foreground">
+          Affichage de {filteredTransactions.length} transactions sur{" "}
+          {transactions.length} au total
+        </div>
+      </div>
+
+      {/* Dialog de création */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingTransaction ? "Modifier la transaction" : "Nouvelle transaction"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium">Date *</label>
+                <Input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium">Heure</label>
+                <Input
+                  type="time"
+                  value={formData.time}
+                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium">Type *</label>
+              <select
+                className="w-full border rounded px-3 py-2 text-sm"
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
               >
-                Précédent
+                <option value="Dépôt">Dépôt</option>
+                <option value="Retrait">Retrait</option>
+              </select>
+            </div>
+
+            <CreatableSelect
+              label="Opérateur"
+              required
+              value={formData.operator}
+              onChange={(value) => setFormData({ ...formData, operator: value })}
+              options={operators}
+              placeholder="Tapez pour rechercher ou créer..."
+              onCreateNew={createOperator}
+            />
+
+            <CreatableSelect
+              label="Support"
+              required
+              value={formData.support}
+              onChange={(value) => setFormData({ ...formData, support: value })}
+              options={supports}
+              placeholder="Tapez pour rechercher ou créer..."
+              onCreateNew={createSupport}
+            />
+
+            <div>
+              <label className="text-xs font-medium">Montant (F CFA) *</label>
+              <Input
+                type="number"
+                value={formData.amount_fcfa || ""}
+                onChange={(e) => setFormData({ ...formData, amount_fcfa: parseFloat(e.target.value) || 0 })}
+                placeholder="0"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium">Notes</label>
+              <Textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Notes additionnelles..."
+                rows={3}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                Annuler
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-              >
-                Suivant
+              <Button onClick={handleSubmit}>
+                Enregistrer
               </Button>
             </div>
           </div>
-        </div>
-
-        {/* View details dialog */}
-        <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Détails de la transaction</DialogTitle>
-            </DialogHeader>
-            {viewing && (
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <div className="text-muted-foreground">Date</div>
-                  <div className="font-medium">{viewing.date}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Heure</div>
-                  <div className="font-medium">{viewing.time}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Opérateur</div>
-                  <div className="font-medium">{viewing.operator}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Plateforme</div>
-                  <div className="font-medium">{viewing.platform}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Op. paiement</div>
-                  <div className="font-medium">{viewing.payment_operator}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Type</div>
-                  <div className="font-medium">{viewing.type}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Montant</div>
-                  <div className="font-medium">{formatFcfa(viewing.amount_fcfa)}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Téléphone</div>
-                  <div className="font-medium">{viewing.phone ?? "-"}</div>
-                </div>
-                <div className="col-span-2">
-                  <div className="text-muted-foreground">Référence</div>
-                  <div className="font-medium break-all">{viewing.reference}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Preuve</div>
-                  <div className="font-medium">{viewing.proof ? "Oui" : "Non"}</div>
-                </div>
-                <div className="col-span-2">
-                  <div className="text-muted-foreground">Notes</div>
-                  <div className="font-medium whitespace-pre-wrap">{viewing.notes ?? "-"}</div>
-                </div>
-              </div>
-            )}
-            <div className="flex justify-between pt-3">
-              <div className="flex gap-2">
-                {viewing && (
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setViewOpen(false);
-                        setEditing(viewing);
-                        setOpen(true);
-                      }}
-                    >
-                      Éditer
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setViewOpen(false);
-                        duplicateRow(viewing);
-                      }}
-                    >
-                      Dupliquer
-                    </Button>
-                    {(isAdmin || viewing.created_by === user!.id) && (
-                      <Button
-                        variant="destructive"
-                        onClick={() => {
-                          setViewOpen(false);
-                          removeRow(viewing.id);
-                        }}
-                      >
-                        Supprimer
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
-              <Button variant="outline" onClick={() => setViewOpen(false)}>Fermer</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {editing ? "Éditer" : "Nouvelle"} transaction
-              </DialogTitle>
-            </DialogHeader>
-            <form className="grid gap-3" onSubmit={handleSubmit(onSubmit)}>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium">Date</label>
-                  <Input type="date" {...register("date")} />
-                  {errors.date && (
-                    <p className="text-xs text-red-600">
-                      {errors.date.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium">Heure</label>
-                  <Input type="time" {...register("time")} />
-                  {errors.time && (
-                    <p className="text-xs text-red-600">
-                      {errors.time.message}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium">
-                    Opérateur de jeux
-                  </label>
-                  <Select
-                    onValueChange={(v) => {
-                      if (v === "__add__")
-                        return addLookup("operators", "opérateur", (name) =>
-                          setValue("operator", name),
-                        );
-                      setValue("operator", v);
-                    }}
-                    value={watch("operator")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choisir" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {lookups.operators.map((op) => (
-                        <SelectItem key={op} value={op}>
-                          {op}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="__add__">
-                        + Ajouter un opérateur…
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {errors.operator && (
-                    <p className="text-xs text-red-600">
-                      {errors.operator.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium">Plateforme</label>
-                  <Select
-                    onValueChange={(v) => {
-                      if (v === "__add__")
-                        return addLookup("platforms", "plateforme", (name) =>
-                          setValue("platform", name),
-                        );
-                      setValue("platform", v);
-                    }}
-                    value={watch("platform")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choisir" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {lookups.platforms.map((op) => (
-                        <SelectItem key={op} value={op}>
-                          {op}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="__add__">
-                        + Ajouter une plateforme…
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {errors.platform && (
-                    <p className="text-xs text-red-600">
-                      {errors.platform.message}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium">
-                    Opérateur de paiement
-                  </label>
-                  <Select
-                    onValueChange={(v) => {
-                      if (v === "__add__")
-                        return addLookup(
-                          "payment_operators",
-                          "opérateur de paiement",
-                          (name) => setValue("payment_operator", name),
-                        );
-                      setValue("payment_operator", v);
-                    }}
-                    value={watch("payment_operator")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choisir" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {lookups.payment_operators.map((op) => (
-                        <SelectItem key={op} value={op}>
-                          {op}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="__add__">
-                        + Ajouter un opérateur de paiement…
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {errors.payment_operator && (
-                    <p className="text-xs text-red-600">
-                      {errors.payment_operator.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium">Type</label>
-                  <Select
-                    onValueChange={(v) => setValue("type", v as any)}
-                    value={watch("type")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Dépôt">Dépôt</SelectItem>
-                      <SelectItem value="Retrait">Retrait</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium">Montant (F CFA)</label>
-                  <Input
-                    type="number"
-                    step="1"
-                    min="1"
-                    {...register("amount_fcfa", { valueAsNumber: true })}
-                  />
-                  {errors.amount_fcfa && (
-                    <p className="text-xs text-red-600">
-                      {errors.amount_fcfa.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium">
-                    Téléphone (optionnel)
-                  </label>
-                  <Input {...register("phone")} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium">
-                    Référence (unique)
-                  </label>
-                  <Input {...register("reference")} />
-                  {errors.reference && (
-                    <p className="text-xs text-red-600">
-                      {errors.reference.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium">Preuve</label>
-                  <Select
-                    onValueChange={(v) => setValue("proof", v === "Oui")}
-                    value={watch("proof") ? "Oui" : "Non"}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Oui">Oui</SelectItem>
-                      <SelectItem value="Non">Non</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium">Preuve (upload)</label>
-                  <Input type="file" {...register("proof_file")} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium">Notes</label>
-                  <Input {...register("notes")} />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOpen(false)}
-                >
-                  Annuler
-                </Button>
-                <Button type="submit">Enregistrer</Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </AppLayout>
-    </RequireAuth>
+        </DialogContent>
+      </Dialog>
+    </AppLayout>
   );
 }

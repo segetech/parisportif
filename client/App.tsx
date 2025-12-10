@@ -16,16 +16,17 @@ import ProfilePage from "./pages/Profile";
 import Transactions from "./pages/Transactions";
 import { AuthProvider } from "./context/AuthContext";
 import {
-  LookupsPage,
   MatchingPage,
   ExportsPage,
   SettingsPage,
 } from "./pages/Placeholders";
+import LookupsPage from "./pages/LookupsNew";
 import BetsPage from "./pages/Bets";
 import VenuesPage from "./pages/Venues";
 import { SettingsProvider } from "@/lib/settings";
 import AuditLogPage from "./pages/Audit";
-import UsersPage from "./pages/Users";
+import UsersManagementPage from "./pages/UsersManagement";
+import ValidationPage from "./pages/ValidationNew";
 import CacheSettingsPage from "./pages/CacheSettings";
 import IllegalActivitiesPage from "./pages/IllegalActivities";
 import { SyncStatus } from "@/components/sync/SyncStatus";
@@ -57,7 +58,8 @@ const App = () => (
               <Route path="/lookups" element={<LookupsPage />} />
               <Route path="/matching" element={<MatchingPage />} />
               <Route path="/exports" element={<ExportsPage />} />
-              <Route path="/utilisateurs" element={<UsersPage />} />
+              <Route path="/users-management" element={<UsersManagementPage />} />
+              <Route path="/validation" element={<ValidationPage />} />
               <Route path="/parametres" element={<SettingsPage />} />
               <Route path="/cache" element={<CacheSettingsPage />} />
               <Route path="/journal" element={<AuditLogPage />} />
