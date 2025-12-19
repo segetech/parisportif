@@ -177,6 +177,7 @@ export function MatchingPage() {
   const [rejected, setRejected] = useState<Set<string>>(new Set());
   const [viewTx, setViewTx] = useState<import("@/data/api").Transaction | null>(null);
   const [viewBet, setViewBet] = useState<import("@/data/api").Bet | null>(null);
+  const { settings } = useSettings();
 
   // Périodes rapides
   function applyPeriod(p: typeof period) {
@@ -215,11 +216,12 @@ export function MatchingPage() {
   }, []);
 
   // Service de matching local, strict sur l'opérateur
-  function suggest(): Suggestion[] {
-    const winMins = (api.store.settings as any).matchingWindowMinutes ?? 30;
-    const tolPct = (api.store.settings as any).amountTolerancePercent ?? 5;
-    const txs = api.store.transactions.filter((t) => (!start || t.date >= start) && (!end || t.date <= end));
-    const bs = api.store.bets.filter((b) => (!start || b.date >= start) && (!end || b.date <= end));
+  function suggest(
+    txs: import("@/data/api").Transaction[],
+    bs: import("@/data/api").Bet[],
+  ): Suggestion[] {
+    const winMins = settings?.matchingWindowMinutes ?? 30;
+    const tolPct = settings?.amountTolerancePercent ?? 5;
     const out: Suggestion[] = [];
     for (const t of txs) {
       for (const b of bs) {
@@ -265,7 +267,15 @@ export function MatchingPage() {
   }
 
   async function recalc() {
-    setRows(suggest());
+    const filters: Parameters<typeof api.transactions.list>[0] = {};
+    if (start) filters.start = start;
+    if (end) filters.end = end;
+    if (operator) filters.operator = operator;
+    const [txs, bs] = await Promise.all([
+      api.transactions.list(filters),
+      api.bets.list(filters),
+    ]);
+    setRows(suggest(txs, bs));
   }
 
   // Actions
@@ -277,8 +287,8 @@ export function MatchingPage() {
   }
   async function validateLink(betId: string, txId: string) {
     try {
-      const b = api.store.bets.find((x) => x.id === betId);
-      if (b) (b as any).linked_tx_id = txId;
+      // Update the bet with the linked transaction ID
+      await api.bets.update(betId, { linked_tx_id: txId } as any);
       await recalc();
       toast.success("Rapprochement validé.");
     } catch {
