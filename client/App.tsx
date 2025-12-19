@@ -7,6 +7,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
@@ -38,40 +39,42 @@ initializeApp().catch(console.error);
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <AuthProvider>
-        <SettingsProvider>
-          <BrowserRouter>
-            <SyncStatus />
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/profil" element={<ProfilePage />} />
-              <Route path="/" element={<Index />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/bets" element={<BetsPage />} />
-              <Route path="/venues" element={<VenuesPage />} />
-              <Route path="/lookups" element={<LookupsPage />} />
-              <Route path="/matching" element={<MatchingPage />} />
-              <Route path="/exports" element={<ExportsPage />} />
-              <Route path="/users-management" element={<UsersManagementPage />} />
-              <Route path="/validation" element={<ValidationPage />} />
-              <Route path="/parametres" element={<SettingsPage />} />
-              <Route path="/cache" element={<CacheSettingsPage />} />
-              <Route path="/journal" element={<AuditLogPage />} />
-              <Route path="/illegal" element={<IllegalActivitiesPage />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </SettingsProvider>
-      </AuthProvider>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <AuthProvider>
+          <SettingsProvider>
+            <BrowserRouter>
+              <SyncStatus />
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/profil" element={<ProfilePage />} />
+                <Route path="/" element={<Index />} />
+                <Route path="/transactions" element={<Transactions />} />
+                <Route path="/bets" element={<BetsPage />} />
+                <Route path="/venues" element={<VenuesPage />} />
+                <Route path="/lookups" element={<LookupsPage />} />
+                <Route path="/matching" element={<MatchingPage />} />
+                <Route path="/exports" element={<ExportsPage />} />
+                <Route path="/users-management" element={<UsersManagementPage />} />
+                <Route path="/validation" element={<ValidationPage />} />
+                <Route path="/parametres" element={<SettingsPage />} />
+                <Route path="/cache" element={<CacheSettingsPage />} />
+                <Route path="/journal" element={<AuditLogPage />} />
+                <Route path="/illegal" element={<IllegalActivitiesPage />} />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </SettingsProvider>
+        </AuthProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 createRoot(document.getElementById("root")!).render(<App />);
