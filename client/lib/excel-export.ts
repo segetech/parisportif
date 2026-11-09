@@ -77,26 +77,66 @@ export async function exportStyledExcel({
   let currentRow = 1;
 
   // ========================================================
-  // 1. BANDEAU DE TITRE CORPORATE (Lignes 1 et 2)
+  // 1. BANDEAU DE TITRE CORPORATE (Vert Émeraude Officiel #006B2D)
   // ========================================================
   const titleRow = worksheet.getRow(currentRow);
   titleRow.height = 36;
   worksheet.mergeCells(currentRow, 1, currentRow, numCols);
+
+  for (let c = 1; c <= numCols; c++) {
+    const cell = titleRow.getCell(c);
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF006B2D" }, // Vert Émeraude Officiel #006B2D
+    };
+    cell.border = {
+      top: { style: "medium", color: { argb: "FF004D20" } },
+      bottom: { style: "thin", color: { argb: "FFFFD000" } },
+      left: { style: "thin", color: { argb: "FF004D20" } },
+      right: { style: "thin", color: { argb: "FF004D20" } },
+    };
+  }
+
   const titleCell = titleRow.getCell(1);
   titleCell.value = title.toUpperCase();
-  titleCell.font = { name: "Segoe UI", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+  titleCell.font = { name: "Segoe UI", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
-  titleCell.fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FF0F172A" }, // Slate 900
-  };
   currentRow++;
 
-  // Ligne de sous-titre / Métadonnées
-  const subRow = worksheet.getRow(currentRow);
-  subRow.height = 24;
+  // Filet d'accentuation Or officiel (#FFD000)
+  const accentRow = worksheet.getRow(currentRow);
+  accentRow.height = 4;
   worksheet.mergeCells(currentRow, 1, currentRow, numCols);
+  for (let c = 1; c <= numCols; c++) {
+    const cell = accentRow.getCell(c);
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFD000" }, // Or officiel #FFD000
+    };
+  }
+  currentRow++;
+
+  // Ligne de sous-titre / Métadonnées en français intégral
+  const subRow = worksheet.getRow(currentRow);
+  subRow.height = 22;
+  worksheet.mergeCells(currentRow, 1, currentRow, numCols);
+
+  for (let c = 1; c <= numCols; c++) {
+    const cell = subRow.getCell(c);
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF004D20" }, // Vert forêt sombre #004D20
+    };
+    cell.border = {
+      bottom: { style: "medium", color: { argb: "FF003816" } },
+      left: { style: "thin", color: { argb: "FF003816" } },
+      right: { style: "thin", color: { argb: "FF003816" } },
+    };
+  }
+
   const subCell = subRow.getCell(1);
   const dateFormatted = new Date().toLocaleDateString("fr-FR", {
     day: "2-digit",
@@ -106,20 +146,29 @@ export async function exportStyledExcel({
     minute: "2-digit",
   });
 
+  const isAllOperators =
+    !operator ||
+    operator.toLowerCase() === "tous" ||
+    operator.toLowerCase() === "all" ||
+    operator.toLowerCase() === "tous les opérateurs";
+  const operatorText = isAllOperators ? "Tous les opérateurs" : operator;
+
+  const isAllPeriods =
+    !periodText ||
+    periodText.toLowerCase() === "all" ||
+    periodText.toLowerCase() === "tous" ||
+    periodText.toLowerCase().includes("toutes");
+  const periodDisplay = isAllPeriods ? "Toutes les dates" : periodText;
+
   const metadataParts = [
-    periodText ? `Période : ${periodText}` : "Période : Toutes",
-    operator && operator !== "tous" ? `Opérateur : ${operator}` : "Opérateur : Tous",
+    `Période : ${periodDisplay}`,
+    `Opérateur : ${operatorText}`,
     `Extrait le : ${dateFormatted}`,
     `Total : ${data.length} enregistrement(s)`,
   ];
   subCell.value = metadataParts.join("   •   ");
-  subCell.font = { name: "Segoe UI", size: 9, italic: true, color: { argb: "FF94A3B8" } }; // Slate 400
+  subCell.font = { name: "Segoe UI", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
   subCell.alignment = { horizontal: "center", vertical: "middle" };
-  subCell.fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FF1E293B" }, // Slate 800
-  };
   currentRow++;
 
   // Ligne d'espacement
@@ -133,58 +182,73 @@ export async function exportStyledExcel({
   if (hasCurrencyCol && data.length > 0) {
     let totalMise = 0;
     let totalGains = 0;
-    let nbGagnes = 0;
 
     data.forEach((item) => {
       totalMise += Number(item.amount_fcfa || item.montant || 0);
       totalGains += Number(item.amount_won_fcfa || item.gains || 0);
-      const st = String(item.status || item.statut || "").toLowerCase();
-      if (st.includes("gagn")) nbGagnes++;
     });
 
     const kpiRow = worksheet.getRow(currentRow);
     kpiRow.height = 30;
 
-    // Bloc 1: Total Engagé
+    const span1End = Math.max(2, Math.floor(numCols / 3));
+    const span2Start = span1End + 1;
+    const span2End = Math.max(span2Start + 1, Math.floor((numCols * 2) / 3));
+    const span3Start = span2End + 1;
+    const span3End = numCols;
+
+    if (span1End >= 2) worksheet.mergeCells(currentRow, 1, currentRow, span1End);
+    if (span2End >= span2Start) worksheet.mergeCells(currentRow, span2Start, currentRow, span2End);
+    if (span3End >= span3Start) worksheet.mergeCells(currentRow, span3Start, currentRow, span3End);
+
+    // Bloc 1: Total Engagé (Vert émeraude subtil)
+    for (let c = 1; c <= span1End; c++) {
+      const cell = kpiRow.getCell(c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFECFDF5" } };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFA7F3D0" } },
+        bottom: { style: "thin", color: { argb: "FFA7F3D0" } },
+        left: { style: "thin", color: { argb: "FFA7F3D0" } },
+        right: { style: "thin", color: { argb: "FFA7F3D0" } },
+      };
+    }
     const kpi1Cell = kpiRow.getCell(1);
     kpi1Cell.value = `Volume Misé : ${new Intl.NumberFormat("fr-FR").format(totalMise)} FCFA`;
     kpi1Cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF065F46" } };
-    kpi1Cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFECFDF5" } };
     kpi1Cell.alignment = { horizontal: "center", vertical: "middle" };
-    kpi1Cell.border = {
-      top: { style: "thin", color: { argb: "FFA7F3D0" } },
-      bottom: { style: "thin", color: { argb: "FFA7F3D0" } },
-      left: { style: "thin", color: { argb: "FFA7F3D0" } },
-      right: { style: "thin", color: { argb: "FFA7F3D0" } },
-    };
 
-    // Bloc 2: Total Gains
-    const colMid = Math.max(3, Math.floor(numCols / 2));
-    const kpi2Cell = kpiRow.getCell(colMid);
+    // Bloc 2: Total Gains (Ambre/Or subtil)
+    for (let c = span2Start; c <= span2End; c++) {
+      const cell = kpiRow.getCell(c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFFDE68A" } },
+        bottom: { style: "thin", color: { argb: "FFFDE68A" } },
+        left: { style: "thin", color: { argb: "FFFDE68A" } },
+        right: { style: "thin", color: { argb: "FFFDE68A" } },
+      };
+    }
+    const kpi2Cell = kpiRow.getCell(span2Start);
     kpi2Cell.value = `Gains Remportés : ${new Intl.NumberFormat("fr-FR").format(totalGains)} FCFA`;
-    kpi2Cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF1E40AF" } };
-    kpi2Cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
+    kpi2Cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF92400E" } };
     kpi2Cell.alignment = { horizontal: "center", vertical: "middle" };
-    kpi2Cell.border = {
-      top: { style: "thin", color: { argb: "FFBFDBFE" } },
-      bottom: { style: "thin", color: { argb: "FFBFDBFE" } },
-      left: { style: "thin", color: { argb: "FFBFDBFE" } },
-      right: { style: "thin", color: { argb: "FFBFDBFE" } },
-    };
 
-    // Bloc 3: Marge / Rétention
-    const kpi3Cell = kpiRow.getCell(numCols);
+    // Bloc 3: Marge Nette (Slate subtil)
     const marge = totalMise - totalGains;
+    for (let c = span3Start; c <= span3End; c++) {
+      const cell = kpiRow.getCell(c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+    }
+    const kpi3Cell = kpiRow.getCell(span3Start);
     kpi3Cell.value = `Marge Nette : ${new Intl.NumberFormat("fr-FR").format(marge)} FCFA`;
-    kpi3Cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF374151" } };
-    kpi3Cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
+    kpi3Cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF0F172A" } };
     kpi3Cell.alignment = { horizontal: "center", vertical: "middle" };
-    kpi3Cell.border = {
-      top: { style: "thin", color: { argb: "FFE5E7EB" } },
-      bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
-      left: { style: "thin", color: { argb: "FFE5E7EB" } },
-      right: { style: "thin", color: { argb: "FFE5E7EB" } },
-    };
 
     currentRow++;
     worksheet.getRow(currentRow).height = 10;
@@ -210,13 +274,13 @@ export async function exportStyledExcel({
     cell.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FF1E3A8A" }, // Bleu Marine Corporate (Blue 900)
+      fgColor: { argb: "FF006B2D" }, // Vert Émeraude Officiel #006B2D
     };
     cell.border = {
-      top: { style: "medium", color: { argb: "FF0F172A" } },
-      bottom: { style: "medium", color: { argb: "FF0F172A" } },
-      left: { style: "thin", color: { argb: "FF3B82F6" } },
-      right: { style: "thin", color: { argb: "FF3B82F6" } },
+      top: { style: "medium", color: { argb: "FF004D20" } },
+      bottom: { style: "medium", color: { argb: "FF004D20" } },
+      left: { style: "thin", color: { argb: "FF059669" } },
+      right: { style: "thin", color: { argb: "FF059669" } },
     };
   });
   currentRow++;
@@ -268,18 +332,21 @@ export async function exportStyledExcel({
         right: { style: "thin", color: { argb: "FFE2E8F0" } },
       };
 
-      // Badge de statut stylisé
+      // Badge de statut stylisé et traduction automatique en français
       if (col.isStatus && val) {
         const st = String(val).toLowerCase();
-        if (st.includes("gagn")) {
+        if (st.includes("gagn") || st === "won" || st.includes("valid")) {
+          cell.value = st.includes("valid") ? "Validé" : "Gagné";
           cell.font = { name: "Segoe UI", size: 9.5, bold: true, color: { argb: "FF166534" } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
           cell.alignment = { horizontal: "center", vertical: "middle" };
-        } else if (st.includes("perdu")) {
+        } else if (st.includes("perdu") || st === "lost" || st.includes("refus")) {
+          cell.value = st.includes("refus") ? "Refusé" : "Perdu";
           cell.font = { name: "Segoe UI", size: 9.5, bold: true, color: { argb: "FF991B1B" } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } };
           cell.alignment = { horizontal: "center", vertical: "middle" };
-        } else if (st.includes("attente")) {
+        } else if (st.includes("attente") || st === "pending") {
+          cell.value = "En attente";
           cell.font = { name: "Segoe UI", size: 9.5, bold: true, color: { argb: "FF92400E" } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
           cell.alignment = { horizontal: "center", vertical: "middle" };

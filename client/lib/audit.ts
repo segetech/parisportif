@@ -1,12 +1,18 @@
+import { supabase } from "./supabase";
+
 export type AuditAction =
   | "cree"
   | "edite"
   | "valide"
   | "rejete"
   | "supprime"
-  | "normalise";
+  | "normalise"
+  | "connexion"
+  | "echec_connexion"
+  | "demande_reinitialisation"
+  | "reinitialisation_effectuee";
 
-export type AuditEntity = "Transaction" | "Pari" | "Salle" | "Systeme";
+export type AuditEntity = "Transaction" | "Pari" | "Salle" | "Systeme" | "Utilisateur" | "Profil" | "Authentification";
 
 export interface AuditEntry {
   id: string;
@@ -18,99 +24,132 @@ export interface AuditEntry {
   details?: any;
 }
 
-const LS_KEY = "ps.audit";
+const LOCAL_FALLBACK_KEY = "ps.audit_cache";
 
-function uid() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function load(): AuditEntry[] {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? (JSON.parse(raw) as AuditEntry[]) : [];
-  } catch {
-    return [];
+function sanitizeDetails(details: any): any {
+  if (!details || typeof details !== "object") return details;
+  const sensitiveKeys = new Set(["password", "token", "key", "secret", "currentpassword", "newpassword"]);
+  const clean: Record<string, any> = {};
+  for (const [k, v] of Object.entries(details)) {
+    if (sensitiveKeys.has(k.toLowerCase())) {
+      clean[k] = "[REDACTED]";
+    } else {
+      clean[k] = v;
+    }
   }
+  return clean;
 }
-
-function save(list: AuditEntry[]) {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(list));
-  } catch {}
-}
-
-let cache = load();
 
 export const auditService = {
-  log(action: AuditAction, entity: AuditEntity, entityId?: string, details?: any) {
-    const actor = getCurrentActor(details);
+  async log(action: AuditAction, entity: AuditEntity, entityId?: string, details?: any): Promise<AuditEntry | null> {
+    const cleanDetails = sanitizeDetails(details);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (token) {
+        await fetch("/api/audit", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action,
+            entity,
+            entityId,
+            details: cleanDetails,
+          }),
+        });
+      }
+    } catch (e) {
+      console.warn("Audit log remote submission failed:", e);
+    }
+
+    // Always create a local record representation
     const entry: AuditEntry = {
-      id: uid(),
+      id: Math.random().toString(36).slice(2, 10),
       ts: new Date().toISOString(),
-      user: actor || undefined,
       action,
       entity,
       entityId,
-      details,
+      details: cleanDetails,
     };
-    cache.unshift(entry);
-    pruneByRetention();
-    save(cache);
+
     return entry;
   },
-  list(params?: {
+
+  async list(params?: {
     start?: string;
     end?: string;
     userEmail?: string;
     role?: string;
     action?: AuditAction;
     entity?: AuditEntity;
-  }): AuditEntry[] {
-    let res = cache.slice();
-    if (params?.start) res = res.filter((e) => e.ts >= params.start!);
-    if (params?.end) res = res.filter((e) => e.ts <= params.end!);
-    if (params?.userEmail)
-      res = res.filter((e) => e.user?.email?.toLowerCase().includes(params.userEmail!.toLowerCase()));
-    if (params?.role) res = res.filter((e) => e.user?.role === params.role);
-    if (params?.action) res = res.filter((e) => e.action === params.action);
-    if (params?.entity) res = res.filter((e) => e.entity === params.entity);
-    return res;
-  },
-  clear() {
-    cache = [];
-    save(cache);
+  }): Promise<AuditEntry[]> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (token) {
+        const queryParams = new URLSearchParams();
+        if (params?.start) queryParams.set("start", params.start);
+        if (params?.end) queryParams.set("end", params.end);
+        if (params?.action) queryParams.set("action", params.action);
+        if (params?.entity) queryParams.set("entityType", params.entity);
+
+        const res = await fetch(`/api/audit?${queryParams.toString()}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          const logs: AuditEntry[] = (json.logs || []).map((l: any) => ({
+            id: l.id,
+            ts: l.ts,
+            action: l.action as AuditAction,
+            entity: l.entity as AuditEntity,
+            entityId: l.entityId,
+            user: l.userId || l.userEmail ? {
+              id: l.userId || "",
+              email: l.userEmail || "",
+              role: l.details?.loggedByRole || "",
+            } : undefined,
+            details: l.details,
+          }));
+
+          // Filter by client params
+          let filtered = logs;
+          if (params?.userEmail) {
+            filtered = filtered.filter((e) =>
+              e.user?.email?.toLowerCase().includes(params.userEmail!.toLowerCase())
+            );
+          }
+          if (params?.role) {
+            filtered = filtered.filter((e) => e.user?.role === params.role);
+          }
+
+          // Cache locally for offline inspection
+          try {
+            localStorage.setItem(LOCAL_FALLBACK_KEY, JSON.stringify(filtered.slice(0, 100)));
+          } catch {}
+
+          return filtered;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch remote audit logs:", e);
+    }
+
+    // Offline fallback
+    try {
+      const raw = localStorage.getItem(LOCAL_FALLBACK_KEY);
+      return raw ? (JSON.parse(raw) as AuditEntry[]) : [];
+    } catch {
+      return [];
+    }
   },
 };
-
-// --- Helpers to enrich and retain logs ---
-function getCurrentActor(details?: any): { id: string; email?: string; role?: string } | null {
-  try {
-    // Prefer explicit actor provided by caller
-    if (details?.by && typeof details.by === "object") {
-      const by = details.by as { id?: string; email?: string; role?: string };
-      if (by.id || by.email) return { id: by.id || "", email: by.email, role: by.role };
-    }
-    if (details?.user && typeof details.user === "object") {
-      const u = details.user as { id?: string; email?: string; role?: string };
-      if (u.id || u.email) return { id: u.id || "", email: u.email, role: u.role };
-    }
-    // Fallback to current session (localStorage set by AuthContext)
-    const raw = localStorage.getItem("ps.auth");
-    if (!raw) return null;
-    const u = JSON.parse(raw) as { id?: string; email?: string; role?: string } | null;
-    if (u && (u.id || u.email)) return { id: u.id || "", email: u.email, role: u.role };
-  } catch {}
-  return null;
-}
-
-function pruneByRetention() {
-  try {
-    const raw = localStorage.getItem("ps.settings");
-    if (!raw) return;
-    const settings = JSON.parse(raw) as { auditRetentionDays?: number } | null;
-    const days = Number(settings?.auditRetentionDays || 0);
-    if (!days || days <= 0) return;
-    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-    cache = cache.filter((e) => new Date(e.ts).getTime() >= cutoff);
-  } catch {}
-}

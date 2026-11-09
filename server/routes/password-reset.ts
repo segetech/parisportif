@@ -1,137 +1,162 @@
 import { RequestHandler } from "express";
-import { createClient } from "@supabase/supabase-js";
-import {
-  sendEmail,
-  generatePasswordResetToken,
-  generatePasswordResetLink,
-} from "../lib/email";
+import { getSupabaseAdmin } from "../lib/supabase-admin";
+import { sendEmail, generatePasswordResetToken, generatePasswordResetLink } from "../lib/email";
+import { recordAuditLog } from "../lib/audit-server";
+import crypto from "crypto";
 
-let supabase: ReturnType<typeof createClient> | null = null;
-
-function getSupabaseClient() {
-  if (!supabase) {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error("Missing Supabase environment variables");
-    }
-
-    supabase = createClient(supabaseUrl, supabaseServiceKey);
-  }
-  return supabase;
+function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-// In-memory token store (in production, use a database table)
-const resetTokens = new Map<
-  string,
-  { email: string; userId: string; expiresAt: number }
->();
-
 export const handleForgotPassword: RequestHandler = async (req, res) => {
+  // Always respond with a generic message to prevent email enumeration
+  const genericResponse = {
+    message: "Si cet email correspond à un compte actif, un lien de réinitialisation vous a été envoyé.",
+  };
+
   try {
-    const supabaseClient = getSupabaseClient();
     const { email } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ error: "Email is required" });
+    if (!email || typeof email !== "string" || !email.includes("@")) {
+      return res.status(400).json({ error: "Adresse email requise" });
     }
 
-    const emailLower = email.toLowerCase();
+    const emailLower = email.toLowerCase().trim();
+    const admin = getSupabaseAdmin();
 
     // Check if user exists
-    const { data: user, error } = await supabaseClient
+    const { data: user, error: userError } = await admin
       .from("users")
-      .select("id, nom, prenom, email")
+      .select("id, nom, prenom, email, statut")
       .eq("email", emailLower)
-      .single();
+      .maybeSingle();
 
-    if (error || !user) {
-      // Don't reveal if email exists for security
-      return res.json({
-        message:
-          "Si cet email existe, un lien de réinitialisation sera envoyé.",
-      });
+    if (userError || !user || user.statut !== "actif") {
+      return res.json(genericResponse);
     }
 
-    // Generate reset token (valid for 1 hour)
-    const token = generatePasswordResetToken();
-    const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
-    resetTokens.set(token, { email: emailLower, userId: user.id, expiresAt });
+    // Generate secure token (valid for 1 hour)
+    const rawToken = generatePasswordResetToken();
+    const tokenHashed = hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    // Persist token in database
+    const { error: dbError } = await admin.from("password_resets").insert({
+      user_id: user.id,
+      token_hash: tokenHashed,
+      expires_at: expiresAt,
+      used: false,
+    });
+
+    if (dbError) {
+      console.error("Failed to insert password reset token into db:", dbError);
+      return res.json(genericResponse);
+    }
 
     // Generate reset link
-    const baseUrl = process.env.APP_URL || "http://localhost:8080";
-    const resetLink = generatePasswordResetLink(token, baseUrl);
+    const baseUrl = process.env.APP_URL || "http://localhost:3000";
+    const resetLink = generatePasswordResetLink(rawToken, baseUrl);
 
     // Send email
-    await sendEmail({
-      to: emailLower,
-      subject: "Réinitialiser votre mot de passe",
-      html: `
-        <h2>Réinitialisation de mot de passe</h2>
-        <p>Bonjour ${user.nom} ${user.prenom || ""},</p>
-        <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
-        <p><a href="${resetLink}" style="display: inline-block; padding: 10px 20px; background-color: #1f9e64; color: white; text-decoration: none; border-radius: 5px;">Réinitialiser le mot de passe</a></p>
-        <p>Ou copiez ce lien dans votre navigateur:</p>
-        <p><code>${resetLink}</code></p>
-        <p>Ce lien expirera dans 1 heure.</p>
-        <p>Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
-      `,
+    try {
+      await sendEmail({
+        to: emailLower,
+        subject: "Réinitialisation de votre mot de passe",
+        html: `
+          <h2>Réinitialisation de mot de passe</h2>
+          <p>Bonjour ${user.nom} ${user.prenom || ""},</p>
+          <p>Vous avez demandé la réinitialisation de votre mot de passe pour la plateforme Pari Sportif.</p>
+          <p><a href="${resetLink}" style="display: inline-block; padding: 10px 20px; background-color: #1f9e64; color: white; text-decoration: none; border-radius: 5px;">Réinitialiser mon mot de passe</a></p>
+          <p>Ou copiez ce lien dans votre navigateur :</p>
+          <p><code>${resetLink}</code></p>
+          <p>Ce lien est à usage unique et expirera dans 1 heure.</p>
+          <p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email en toute sécurité.</p>
+        `,
+      });
+    } catch (emailErr) {
+      console.error("Failed to send reset email:", emailErr);
+    }
+
+    await recordAuditLog({
+      action: "demande_reinitialisation",
+      entityType: "Authentification",
+      entityId: user.id,
+      userId: user.id,
+      details: {
+        action: "demande_reinitialisation_mdp",
+        email: emailLower,
+      },
     });
 
-    res.json({
-      message:
-        "Un lien de réinitialisation a été envoyé à votre adresse email.",
-    });
+    return res.json(genericResponse);
   } catch (error: any) {
     console.error("Forgot password error:", error);
-    res.status(500).json({ error: error?.message ?? "Internal server error" });
+    // Silent generic response to avoid leaking server state or existence of accounts
+    return res.json(genericResponse);
   }
 };
 
 export const handleResetPassword: RequestHandler = async (req, res) => {
   try {
-    const supabaseClient = getSupabaseClient();
     const { token, password } = req.body;
 
-    if (!token || !password) {
-      return res.status(400).json({ error: "Token and password required" });
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({ error: "Jeton de réinitialisation requis" });
     }
 
-    if (password.length < 6) {
+    if (!password || typeof password !== "string" || password.length < 6) {
       return res.status(400).json({
-        error: "Password must be at least 6 characters long",
+        error: "Le nouveau mot de passe doit comporter au moins 6 caractères",
       });
     }
 
-    // Validate token
-    const tokenData = resetTokens.get(token);
+    const admin = getSupabaseAdmin();
+    const tokenHashed = hashToken(token);
+    const nowIso = new Date().toISOString();
 
-    if (!tokenData) {
-      return res.status(400).json({ error: "Invalid or expired reset link" });
+    // Atomic token consumption: mark used = true ONLY IF used = false AND expires_at > now()
+    const { data: consumedRecord, error: consumeError } = await admin
+      .from("password_resets")
+      .update({ used: true })
+      .eq("token_hash", tokenHashed)
+      .eq("used", false)
+      .gt("expires_at", nowIso)
+      .select("user_id")
+      .maybeSingle();
+
+    if (consumeError || !consumedRecord || !consumedRecord.user_id) {
+      return res.status(400).json({
+        error: "Lien de réinitialisation invalide, déjà utilisé ou expiré",
+      });
     }
 
-    if (Date.now() > tokenData.expiresAt) {
-      resetTokens.delete(token);
-      return res.status(400).json({ error: "Reset link has expired" });
-    }
+    const targetUserId = consumedRecord.user_id;
 
     // Update password in Supabase auth
-    const { error: updateError } =
-      await supabaseClient.auth.admin.updateUserById(tokenData.userId, {
-        password,
-      });
+    const { error: updateError } = await admin.auth.admin.updateUserById(targetUserId, {
+      password,
+    });
 
     if (updateError) {
-      throw updateError;
+      console.error("Failed to update user password in auth:", updateError);
+      // Invalider ou restaurer en cas d'échec
+      await admin.from("password_resets").update({ used: false }).eq("token_hash", tokenHashed);
+      return res.status(500).json({ error: "Échec de mise à jour du mot de passe" });
     }
 
-    // Delete used token
-    resetTokens.delete(token);
+    await recordAuditLog({
+      action: "reinitialisation_effectuee",
+      entityType: "Authentification",
+      entityId: targetUserId,
+      userId: targetUserId,
+      details: {
+        action: "succes_reinitialisation_mdp",
+      },
+    });
 
-    res.json({ message: "Password reset successfully" });
+    return res.json({ message: "Votre mot de passe a été réinitialisé avec succès" });
   } catch (error: any) {
     console.error("Reset password error:", error);
-    res.status(500).json({ error: error?.message ?? "Internal server error" });
+    res.status(500).json({ error: "Erreur interne lors de la réinitialisation" });
   }
 };

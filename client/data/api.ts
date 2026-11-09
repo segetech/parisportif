@@ -25,6 +25,9 @@ export interface User {
   mfa_active?: boolean;
 }
 
+export type ValidationStatus = "en_attente" | "valide" | "refuse";
+export type LegacyReviewStatus = "en_cours" | "valide" | "rejete";
+
 export interface Transaction {
   id: string;
   date: string;
@@ -40,7 +43,11 @@ export interface Transaction {
   notes?: string;
   created_at: string;
   created_by: string;
-  review_status: "en_cours" | "valide" | "rejete";
+  validation_status?: ValidationStatus;
+  validated_by?: string;
+  validated_at?: string;
+  validation_notes?: string;
+  review_status?: LegacyReviewStatus;
   reviewed_by?: string;
   reviewed_at?: string;
   reject_reason?: string;
@@ -61,7 +68,11 @@ export interface Bet {
   notes?: string;
   created_at: string;
   created_by: string;
-  review_status: "en_cours" | "valide" | "rejete";
+  validation_status?: ValidationStatus;
+  validated_by?: string;
+  validated_at?: string;
+  validation_notes?: string;
+  review_status?: LegacyReviewStatus;
   reviewed_by?: string;
   reviewed_at?: string;
   reject_reason?: string;
@@ -255,7 +266,12 @@ export const transactions = {
 
     const { data, error } = await supabase
       .from("transactions")
-      .insert({ ...input, reference: ref })
+      .insert({
+        ...input,
+        reference: ref,
+        validation_status: input.validation_status || "en_attente",
+        review_status: input.review_status || "en_cours",
+      })
       .select()
       .single();
 
@@ -285,10 +301,14 @@ export const transactions = {
     }
 
     const updated = { ...prev, ...input } as Transaction;
-    if (prev.review_status === "rejete" && input) {
+    if ((prev.review_status === "rejete" || prev.validation_status === "refuse") && input) {
+      updated.validation_status = "en_attente";
       updated.review_status = "en_cours";
+      updated.validation_notes = undefined;
       updated.reject_reason = undefined;
+      updated.validated_at = undefined;
       updated.reviewed_at = undefined;
+      updated.validated_by = undefined;
       updated.reviewed_by = undefined;
     }
 
@@ -311,6 +331,10 @@ export const transactions = {
   async validate(id: string, reviewer: User): Promise<Transaction> {
     const now = dayjs().toISOString();
     const updated = {
+      validation_status: "valide" as const,
+      validated_by: reviewer.id,
+      validated_at: now,
+      validation_notes: null,
       review_status: "valide" as const,
       reviewed_by: reviewer.id,
       reviewed_at: now,
@@ -337,6 +361,10 @@ export const transactions = {
 
     const now = dayjs().toISOString();
     const updated = {
+      validation_status: "refuse" as const,
+      validated_by: reviewer.id,
+      validated_at: now,
+      validation_notes: reason.trim(),
       review_status: "rejete" as const,
       reviewed_by: reviewer.id,
       reviewed_at: now,
@@ -399,7 +427,12 @@ export const bets = {
 
     const { data, error } = await supabase
       .from("bets")
-      .insert({ ...input, reference: ref })
+      .insert({
+        ...input,
+        reference: ref,
+        validation_status: input.validation_status || "en_attente",
+        review_status: input.review_status || "en_cours",
+      })
       .select()
       .single();
 
@@ -415,10 +448,14 @@ export const bets = {
     if (!prev) throw new Error("Introuvable");
 
     const updated = { ...prev, ...input } as Bet;
-    if (prev.review_status === "rejete" && input) {
+    if ((prev.review_status === "rejete" || prev.validation_status === "refuse") && input) {
+      updated.validation_status = "en_attente";
       updated.review_status = "en_cours";
+      updated.validation_notes = undefined;
       updated.reject_reason = undefined;
+      updated.validated_at = undefined;
       updated.reviewed_at = undefined;
+      updated.validated_by = undefined;
       updated.reviewed_by = undefined;
     }
 
@@ -452,6 +489,10 @@ export const bets = {
   async validate(id: string, reviewer: User): Promise<Bet> {
     const now = dayjs().toISOString();
     const updated = {
+      validation_status: "valide" as const,
+      validated_by: reviewer.id,
+      validated_at: now,
+      validation_notes: null,
       review_status: "valide" as const,
       reviewed_by: reviewer.id,
       reviewed_at: now,
@@ -474,6 +515,10 @@ export const bets = {
 
     const now = dayjs().toISOString();
     const updated = {
+      validation_status: "refuse" as const,
+      validated_by: reviewer.id,
+      validated_at: now,
+      validation_notes: reason.trim(),
       review_status: "rejete" as const,
       reviewed_by: reviewer.id,
       reviewed_at: now,

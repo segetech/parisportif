@@ -5,7 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { createRoot } from "react-dom/client";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
@@ -36,7 +37,7 @@ import { initializeApp } from "@/lib/init";
 // Initialize app (clean up service workers and caches)
 initializeApp().catch(console.error);
 
-const queryClient = new QueryClient();
+
 
 const App = () => (
   <ErrorBoundary>

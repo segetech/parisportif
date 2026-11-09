@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   LayoutDashboard,
   CreditCard,
@@ -9,11 +9,16 @@ import {
   Link2,
   FileDown,
   Settings,
-  LogOut,
   Plus,
   AlertTriangle,
   Users,
   CheckSquare,
+  ShieldCheck,
+  HardDrive,
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,11 +32,21 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { computePeriod, getDefaultPeriod, PeriodState } from "@/lib/period";
+import { UserAvatarMenu } from "./UserAvatarMenu";
+import { cn } from "@/lib/utils";
 
-function cls(active: boolean) {
-  return active
-    ? "bg-primary/10 text-primary"
-    : "text-foreground/80 hover:text-foreground hover:bg-accent";
+interface NavItem {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  badge?: string;
+  adminOnly?: boolean;
+  controllerOrAdmin?: boolean;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
 }
 
 export default function AppLayout({
@@ -43,115 +58,154 @@ export default function AppLayout({
   onNew?: () => void;
   newButtonLabel?: string;
 }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<PeriodState>(getDefaultPeriod());
+  
+  // État du sidebar rétractable
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("ps.sidebar.collapsed") === "true";
+    }
+    return false;
+  });
+
+  // État du sidebar sur mobile (tiroir)
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem("ps.sidebar.collapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  // Fermer le tiroir mobile lors d'un changement de route
+  useEffect(() => {
+    setMobileDrawerOpen(false);
+  }, [location.pathname]);
 
   const isAdmin = user?.role === "ADMIN";
   const isController = user?.role === "CONTROLEUR";
 
-  const menu = useMemo(
-    () => [
+  const navigationSections: NavSection[] = useMemo(() => {
+    const rawSections: NavSection[] = [
       {
-        to: "/",
-        label: "Tableau de bord",
-        icon: <LayoutDashboard className="h-4 w-4" />,
+        title: "Opérations",
+        items: [
+          {
+            to: "/",
+            label: "Tableau de bord",
+            icon: <LayoutDashboard className="h-4 w-4 shrink-0" />,
+          },
+          {
+            to: "/transactions",
+            label: "Transactions",
+            icon: <CreditCard className="h-4 w-4 shrink-0" />,
+          },
+          {
+            to: "/bets",
+            label: "Paris",
+            icon: <Trophy className="h-4 w-4 shrink-0" />,
+          },
+          {
+            to: "/venues",
+            label: "Salles de jeux",
+            icon: <Building2 className="h-4 w-4 shrink-0" />,
+          },
+        ],
       },
       {
-        to: "/transactions",
-        label: "Transactions",
-        icon: <CreditCard className="h-4 w-4" />,
+        title: "Contrôle & Risques",
+        items: [
+          {
+            to: "/illegal",
+            label: "Activités Illégales",
+            icon: <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />,
+            controllerOrAdmin: true,
+          },
+          {
+            to: "/validation",
+            label: "Validation",
+            icon: <CheckSquare className="h-4 w-4 shrink-0 text-emerald-400" />,
+            controllerOrAdmin: true,
+          },
+          {
+            to: "/journal",
+            label: "Journal d'audit",
+            icon: <ShieldCheck className="h-4 w-4 shrink-0 text-blue-400" />,
+            controllerOrAdmin: true,
+          },
+        ],
       },
-      { to: "/bets", label: "Paris", icon: <Trophy className="h-4 w-4" /> },
       {
-        to: "/venues",
-        label: "Salles",
-        icon: <Building2 className="h-4 w-4" />,
+        title: "Administration",
+        items: [
+          {
+            to: "/users-management",
+            label: "Utilisateurs",
+            icon: <Users className="h-4 w-4 shrink-0" />,
+            adminOnly: true,
+          },
+          {
+            to: "/lookups",
+            label: "Référentiels",
+            icon: <Book className="h-4 w-4 shrink-0" />,
+            adminOnly: true,
+          },
+          {
+            to: "/matching",
+            label: "Rapprochement",
+            icon: <Link2 className="h-4 w-4 shrink-0" />,
+            adminOnly: true,
+          },
+          {
+            to: "/exports",
+            label: "Exports de données",
+            icon: <FileDown className="h-4 w-4 shrink-0" />,
+            adminOnly: true,
+          },
+          {
+            to: "/cache",
+            label: "Gestion du Cache",
+            icon: <HardDrive className="h-4 w-4 shrink-0" />,
+          },
+          {
+            to: "/parametres",
+            label: "Paramètres",
+            icon: <Settings className="h-4 w-4 shrink-0" />,
+            adminOnly: true,
+          },
+        ],
       },
-      ...((isAdmin || isController)
-        ? [
-            {
-              to: "/illegal",
-              label: "Activités Illégales",
-              icon: <AlertTriangle className="h-4 w-4" />,
-            },
-          ]
-        : []),
-      // Validation: visible pour ADMIN et CONTROLEUR
-      ...((isAdmin || isController)
-        ? [
-            {
-              to: "/validation",
-              label: "Validation",
-              icon: <CheckSquare className="h-4 w-4" />,
-            },
-          ]
-        : []),
-      ...(isAdmin
-        ? [
-            {
-              to: "/lookups",
-              label: "Référentiels",
-              icon: <Book className="h-4 w-4" />,
-            },
-          ]
-        : []),
-      ...(isAdmin
-        ? [
-            {
-              to: "/matching",
-              label: "Matching",
-              icon: <Link2 className="h-4 w-4" />,
-            },
-          ]
-        : []),
-      ...(isAdmin
-        ? [
-            {
-              to: "/exports",
-              label: "Exports",
-              icon: <FileDown className="h-4 w-4" />,
-            },
-          ]
-        : []),
-      // Gestion utilisateurs: visible pour ADMIN uniquement
-      ...(isAdmin
-        ? [
-            {
-              to: "/users-management",
-              label: "Utilisateurs",
-              icon: <Users className="h-4 w-4" />,
-            },
-          ]
-        : []),
-      // Journal d'audit: visible pour ADMIN et CONTROLEUR
-      ...((isAdmin || isController)
-        ? [
-            {
-              to: "/journal",
-              label: "Journal d'audit",
-              icon: <Book className="h-4 w-4" />,
-            },
-          ]
-        : []),
-      ...(isAdmin
-        ? [
-            {
-              to: "/parametres",
-              label: "Paramètres",
-              icon: <Settings className="h-4 w-4" />,
-            },
-          ]
-        : []),
-    ],
-    [isAdmin, isController],
-  );
+    ];
+
+    return rawSections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => {
+          if (item.adminOnly && !isAdmin) return false;
+          if (item.controllerOrAdmin && !isAdmin && !isController) return false;
+          return true;
+        }),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [isAdmin, isController]);
+
+  // Titre dynamique de la page courante
+  const currentPageTitle = useMemo(() => {
+    for (const section of navigationSections) {
+      for (const item of section.items) {
+        if (location.pathname === item.to) return item.label;
+      }
+    }
+    if (location.pathname === "/profil") return "Mon Profil";
+    return "Pari Sportif";
+  }, [location.pathname, navigationSections]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    const params = new URLSearchParams({ ref: search });
+    if (!search.trim()) return;
+    const params = new URLSearchParams({ ref: search.trim() });
     navigate(`/transactions?${params.toString()}`);
   }
 
@@ -159,89 +213,208 @@ export default function AppLayout({
     const p = computePeriod(v as any);
     setPeriod(p);
     const params = new URLSearchParams({ start: p.start, end: p.end });
-    if (location.pathname === "/")
+    if (location.pathname === "/") {
       navigate({ pathname: "/", search: params.toString() });
+    }
   }
 
   return (
-    <div className="min-h-screen grid grid-cols-[260px_1fr]">
-      <aside className="border-r bg-sidebar p-4 flex flex-col gap-4">
-        <Link to="/" className="font-extrabold text-lg tracking-tight">
-          Pari Sportif — MVP
-        </Link>
-        <nav className="flex-1 flex flex-col gap-1">
-          {menu.map((m) => (
-            <NavLink
-              key={m.to}
-              to={m.to}
-              className={({ isActive }) =>
-                `flex items-center gap-2 rounded-md px-3 py-2 ${cls(isActive)}`
-              }
-            >
-              {m.icon}
-              <span>{m.label}</span>
-            </NavLink>
+    <div className="min-h-screen flex bg-[#F5F8F5] text-[#17251C] antialiased">
+      {/* Overlay mobile quand le tiroir est ouvert */}
+      {mobileDrawerOpen && (
+        <div
+          onClick={() => setMobileDrawerOpen(false)}
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-xs md:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* SIDEBAR NAVIGATION (Fixe et indépendante du défilement de la page)        */}
+      {/* ========================================================================= */}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[#003816] bg-[#004D20] text-white transition-all duration-300 md:sticky md:top-0 md:h-screen shrink-0 overflow-y-auto",
+          // Mobile responsive: slide in/out
+          mobileDrawerOpen
+            ? "translate-x-0 w-64 shadow-2xl"
+            : "-translate-x-full md:translate-x-0",
+          // Desktop responsive: expanded vs collapsed
+          sidebarCollapsed ? "md:w-20" : "md:w-64"
+        )}
+      >
+        {/* En-tête Sidebar : Logo officiel & Titre de l'application */}
+        <div className="h-16 flex items-center justify-between px-3.5 border-b border-[#003816] shrink-0 bg-[#003816]/50">
+          <Link
+            to="/"
+            className="flex items-center gap-3 min-w-0 group outline-none"
+            title="Pari Sportif - Accueil"
+          >
+            {/* Boîte Logo officiel */}
+            <div className="h-10 w-10 rounded-xl bg-white border border-white/20 p-1 flex items-center justify-center shrink-0 shadow-xs">
+              <img
+                src="/logo.png"
+                alt="Logo officiel Pari Sportif"
+                className="h-full w-full object-contain"
+              />
+            </div>
+            {(!sidebarCollapsed || mobileDrawerOpen) && (
+              <div className="flex flex-col min-w-0">
+                <span className="font-extrabold text-sm tracking-tight text-white leading-tight truncate">
+                  Pari Sportif
+                </span>
+                <span className="text-[10px] font-bold text-[#FFD000] tracking-wider uppercase truncate">
+                  Supervision & Contrôle
+                </span>
+              </div>
+            )}
+          </Link>
+
+          {/* Bouton pour plier / déplier la barre latérale sur grand écran */}
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="hidden md:flex items-center justify-center h-8 w-8 rounded-lg text-emerald-100/70 hover:text-white hover:bg-white/10 transition-colors"
+            title={sidebarCollapsed ? "Agrandir le menu" : "Réduire le menu"}
+            aria-label={sidebarCollapsed ? "Agrandir le menu" : "Réduire le menu"}
+          >
+            {sidebarCollapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </button>
+        </div>
+
+        {/* Liens de navigation groupés */}
+        <nav className="flex-1 overflow-y-auto px-2.5 py-4 space-y-6">
+          {navigationSections.map((section, idx) => (
+            <div key={idx} className="space-y-1">
+              {(!sidebarCollapsed || mobileDrawerOpen) && (
+                <div className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-[#A3D9B5]">
+                  {section.title}
+                </div>
+              )}
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  title={sidebarCollapsed && !mobileDrawerOpen ? item.label : undefined}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all group",
+                      isActive
+                        ? "bg-[#006B2D] text-white shadow-xs font-bold"
+                        : "text-emerald-100/85 hover:text-white hover:bg-white/10",
+                      sidebarCollapsed && !mobileDrawerOpen && "justify-center px-2"
+                    )
+                  }
+                >
+                  <span className="shrink-0">{item.icon}</span>
+                  {(!sidebarCollapsed || mobileDrawerOpen) && (
+                    <span className="truncate">{item.label}</span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
-        <div className="text-xs text-muted-foreground">
-          Connecté en tant que{" "}
-          <span className="font-medium">
-            {user?.role === "ADMIN"
-              ? "Admin"
-              : user?.role === "CONTROLEUR"
-              ? "Contrôleur"
-              : "Agent"}
-          </span>
+
+        {/* Pied du Sidebar : Profil Utilisateur & Avatar Menu */}
+        <div className="p-2.5 border-t border-[#003816] bg-[#003816]/60 shrink-0">
+          <UserAvatarMenu
+            collapsed={sidebarCollapsed && !mobileDrawerOpen}
+            side="top"
+            align="start"
+          />
         </div>
-        <Button variant="outline" onClick={logout} className="gap-2">
-          <LogOut className="h-4 w-4" /> Déconnexion
-        </Button>
       </aside>
-      <main className="p-6">
-        <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+
+      {/* ========================================================================= */}
+      {/* MAIN CONTENT AREA                                                         */}
+      {/* ========================================================================= */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen bg-[#F5F8F5]">
+        {/* Top Header */}
+        <header className="h-16 border-b border-[#D8E6DB] bg-white sticky top-0 z-30 shrink-0 px-4 md:px-6 flex items-center justify-between gap-4">
+          {/* Côté gauche : Bouton menu mobile & Fil d'Ariane / Titre */}
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => setMobileDrawerOpen(true)}
+              className="p-2 rounded-lg text-[#556B5C] hover:text-[#17251C] hover:bg-[#F5F8F5] md:hidden"
+              aria-label="Ouvrir le menu de navigation"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+
+            <div className="flex flex-col min-w-0">
+              <span className="text-[11px] font-semibold text-[#556B5C] uppercase tracking-wider hidden sm:block">
+                Espace de gestion
+              </span>
+              <h1 className="text-sm md:text-base font-extrabold text-[#17251C] truncate leading-tight">
+                {currentPageTitle}
+              </h1>
+            </div>
+          </div>
+
+          {/* Centre / Recherche rapide par référence */}
           <form
             onSubmit={handleSearch}
-            className="flex gap-2 items-center w-full md:max-w-md"
+            className="hidden md:flex items-center relative w-64 lg:w-80"
           >
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#556B5C]" />
             <Input
-              placeholder="Rechercher par référence"
+              type="search"
+              placeholder="Rechercher une référence..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              className="h-9 pl-9 pr-3 text-xs bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] placeholder:text-[#556B5C] rounded-xl focus:border-[#006B2D]"
             />
-            <Button type="submit" variant="secondary">
-              Rechercher
-            </Button>
           </form>
-          <div className="flex items-center gap-2">
+
+          {/* Côté droit : Sélecteur de période, Notifications, Bouton Action, AVATAR MENU PROFIL */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Notifications avec badge */}
             <NotificationBell />
+
+            {/* Sélecteur temporel */}
             <Select value={period.kind} onValueChange={handlePeriodChange}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="h-9 w-[120px] sm:w-[140px] text-xs bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] rounded-xl font-medium">
                 <SelectValue placeholder="Période" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-white border-[#D8E6DB] text-[#17251C]">
                 <SelectItem value="today">Aujourd’hui</SelectItem>
                 <SelectItem value="week">Semaine</SelectItem>
                 <SelectItem value="month">Mois</SelectItem>
                 <SelectItem value="range">Intervalle</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Action principale CTA si fournie par la page */}
             {onNew && (
-              <Button onClick={onNew} className="gap-1">
-                <Plus className="h-4 w-4" /> {newButtonLabel ?? "+ Nouveau"}
+              <Button
+                onClick={onNew}
+                className="h-9 gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold text-xs px-3 rounded-xl shadow-xs"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{newButtonLabel ?? "Nouveau"}</span>
               </Button>
             )}
+
+            {/* AVATAR DU MENU PROFIL : En haut à droite, visible sur TOUS les écrans */}
+            <div className="flex items-center pl-1 sm:pl-2.5 border-l border-[#D8E6DB]">
+              <UserAvatarMenu collapsed side="bottom" align="end" />
+            </div>
           </div>
         </header>
-        <section className="mt-6">{children}</section>
-        {onNew && (
-          <Button
-            onClick={onNew}
-            className="md:hidden fixed bottom-4 right-4 rounded-full h-12 w-12 p-0 shadow-lg"
-          >
-            <Plus className="h-5 w-5" />
-          </Button>
-        )}
-      </main>
+
+        {/* Contenu principal de la page */}
+        <main className="flex-1 w-full min-w-0 p-4 md:p-6 lg:p-8 bg-[#F5F8F5] text-[#17251C] overflow-y-auto">
+          <div className="w-full min-w-0">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import api, { Bet, Transaction, Venue } from "@/data/api";
 import { exportStyledExcel, ExcelColumnDef } from "@/lib/excel-export";
+import { exportStyledPDF, PDFColumnDef } from "@/lib/pdf-export";
 
 export type ExportModule = "transactions" | "bets" | "venues";
 
@@ -56,7 +57,8 @@ export async function fetchExportData(
   }
 
   if (module === "venues") {
-    const rows: Venue[] = [...api.store.venues].filter((v) => v.operator === operator);
+    const allVenues = await api.venues.list();
+    const rows: Venue[] = allVenues.filter((v) => v.operator === operator);
     return rows.map((v) => ({
       quartier_no: v.quartier_no ?? "",
       quartier: v.quartier,
@@ -140,6 +142,45 @@ export async function exportToExcel(
     sheetName,
     title: `Rapport Officiel — ${sheetName.toUpperCase()}`,
     subtitle: `Exportation certifiée des données`,
+    columns,
+    data: rows,
+    filename,
+    showTotals: true,
+  });
+}
+
+export async function exportToPDF(
+  documentTitle: string,
+  headers: { key: string; title: string; width?: number; numFmt?: string }[],
+  rows: any[],
+  filename: string,
+  operator?: string,
+  periodText?: string,
+) {
+  const columns: PDFColumnDef[] = headers.map((h) => {
+    const isCurrency =
+      h.key.toLowerCase().includes("amount") ||
+      h.key.toLowerCase().includes("montant") ||
+      h.key.toLowerCase().includes("gains");
+    const isStatus =
+      h.key.toLowerCase() === "status" ||
+      h.key.toLowerCase() === "statut" ||
+      h.key.toLowerCase() === "proof" ||
+      h.key.toLowerCase().includes("validation");
+
+    return {
+      header: h.title,
+      key: h.key,
+      isCurrency,
+      isStatus,
+      align: isCurrency ? "right" : isStatus ? "center" : "left",
+    };
+  });
+
+  await exportStyledPDF({
+    title: `Rapport Officiel — ${documentTitle.toUpperCase()}`,
+    operator,
+    periodText,
     columns,
     data: rows,
     filename,

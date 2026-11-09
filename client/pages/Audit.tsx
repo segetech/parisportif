@@ -4,6 +4,10 @@ import { auditService, type AuditEntry } from "@/lib/audit";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import { exportStyledExcel } from "@/lib/excel-export";
+import { exportStyledPDF } from "@/lib/pdf-export";
+import { FileText, Download } from "lucide-react";
 
 export default function AuditLogPage() {
   return (
@@ -31,20 +35,24 @@ function AuditTable() {
     userId: "",
   });
 
-  function load() {
-    const base = auditService.list({
-      start: filters.start || undefined,
-      end: filters.end || undefined,
-      userEmail: filters.userEmail || undefined,
-      role: (filters.role as any) || undefined,
-      action: (filters.action as any) || undefined,
-      entity: (filters.entity as any) || undefined,
-    });
-    const uid = filters.userId.trim();
-    const filtered = uid
-      ? base.filter((e) => e.entityId === uid || (e.details && (e.details.userId === uid || e.details.user?.id === uid)))
-      : base;
-    setRows(filtered);
+  async function load() {
+    try {
+      const base = await auditService.list({
+        start: filters.start || undefined,
+        end: filters.end || undefined,
+        userEmail: filters.userEmail || undefined,
+        role: (filters.role as any) || undefined,
+        action: (filters.action as any) || undefined,
+        entity: (filters.entity as any) || undefined,
+      });
+      const uid = filters.userId.trim();
+      const filtered = uid
+        ? base.filter((e) => e.entityId === uid || (e.details && (e.details.userId === uid || e.details.user?.id === uid)))
+        : base;
+      setRows(filtered);
+    } catch (e) {
+      console.error("Erreur chargement audit:", e);
+    }
   }
 
   useEffect(() => {
@@ -98,6 +106,86 @@ function AuditTable() {
     URL.revokeObjectURL(url);
   }
 
+  async function downloadExcel() {
+    if (!rows.length) {
+      toast.error("Aucune ligne d'audit à exporter");
+      return;
+    }
+    const columns = [
+      { header: "DATE & HEURE", key: "ts", width: 22, align: "center" as const },
+      { header: "UTILISATEUR", key: "user", width: 26, align: "left" as const },
+      { header: "RÔLE", key: "role", width: 14, align: "center" as const, isStatus: true },
+      { header: "ACTION", key: "action", width: 16, align: "center" as const, isStatus: true },
+      { header: "ENTITÉ", key: "entity", width: 16, align: "left" as const },
+      { header: "ID ENTITÉ", key: "entityId", width: 20, align: "center" as const },
+      { header: "DÉTAILS", key: "details", width: 35, align: "left" as const },
+    ];
+    const data = rows.map((r) => ({
+      ts: new Date(r.ts).toLocaleString("fr-FR"),
+      user: r.user?.email || "Système",
+      role: r.user?.role || "—",
+      action: labelAction(r.action),
+      entity: labelEntity(r.entity),
+      entityId: r.entityId || "—",
+      details: summarizeDetails(r.details || {}),
+    }));
+
+    try {
+      toast.loading("Génération du rapport d'audit Excel...", { id: "audit-export" });
+      await exportStyledExcel({
+        sheetName: "Audit",
+        title: "Journal d'Audit et Traçabilité Système",
+        subtitle: "Rapport certifié d'activité et de sécurité des opérations",
+        columns,
+        data,
+        filename: `journal_audit_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        showTotals: false,
+      });
+      toast.success(`${rows.length} entrée(s) d'audit exportée(s) en Excel`, { id: "audit-export" });
+    } catch (e: any) {
+      toast.error("Erreur lors de l'export Excel", { id: "audit-export" });
+    }
+  }
+
+  async function downloadPdf() {
+    if (!rows.length) {
+      toast.error("Aucune ligne d'audit à exporter");
+      return;
+    }
+    const columns = [
+      { header: "DATE/HEURE", key: "ts", align: "center" as const },
+      { header: "UTILISATEUR", key: "user", align: "left" as const },
+      { header: "RÔLE", key: "role", align: "center" as const, isStatus: true },
+      { header: "ACTION", key: "action", align: "center" as const, isStatus: true },
+      { header: "ENTITÉ", key: "entity", align: "left" as const },
+      { header: "DÉTAILS", key: "details", align: "left" as const },
+    ];
+    const data = rows.map((r) => ({
+      ts: new Date(r.ts).toLocaleString("fr-FR"),
+      user: r.user?.email || "Système",
+      role: r.user?.role || "—",
+      action: labelAction(r.action),
+      entity: labelEntity(r.entity),
+      details: summarizeDetails(r.details || {}),
+    }));
+
+    try {
+      toast.loading("Génération du rapport d'audit PDF...", { id: "audit-pdf" });
+      await exportStyledPDF({
+        title: "Journal d'Audit et Traçabilité Système",
+        subtitle: "Rapport certifié d'activité et de sécurité des opérations",
+        columns,
+        data,
+        filename: `journal_audit_${new Date().toISOString().slice(0, 10)}.pdf`,
+        showTotals: false,
+        orientation: "landscape",
+      });
+      toast.success(`${rows.length} entrée(s) d'audit exportée(s) en PDF`, { id: "audit-pdf" });
+    } catch (e: any) {
+      toast.error("Erreur lors de l'export PDF", { id: "audit-pdf" });
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="text-xl font-semibold">Journal d’audit</div>
@@ -149,9 +237,28 @@ function AuditTable() {
           <label className="text-xs font-medium">Utilisateur (ID)</label>
           <input className="border rounded px-2 py-1 text-sm" value={filters.userId} onChange={(e) => setFilters({ ...filters, userId: e.target.value })} placeholder="Filtrer par userId" />
         </div>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button onClick={load}>Rechercher</Button>
-          <Button variant="outline" onClick={downloadCsv} disabled={!canExport}>Exporter CSV</Button>
+          <Button
+            variant="outline"
+            onClick={downloadPdf}
+            disabled={!canExport || !rows.length}
+            className="gap-1.5 border-[#006B2D]/30 text-[#006B2D] hover:bg-[#006B2D]/10 font-bold"
+          >
+            <FileText className="h-4 w-4 text-[#006B2D]" />
+            PDF
+          </Button>
+          <Button
+            onClick={downloadExcel}
+            disabled={!canExport || !rows.length}
+            className="gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold"
+          >
+            <Download className="h-4 w-4 text-[#FFD000]" />
+            Excel
+          </Button>
+          <Button variant="outline" onClick={downloadCsv} disabled={!canExport || !rows.length}>
+            CSV
+          </Button>
         </div>
       </div>
 

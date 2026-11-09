@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RequireAuth, RequireRole } from "@/context/AuthContext";
+import { RequireAuth, RequireRole, useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -46,6 +46,7 @@ export default function UsersManagementPage() {
 }
 
 function UsersManagement() {
+  const { getAccessToken } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -182,71 +183,54 @@ function UsersManagement() {
     }
 
     try {
-      // 1. Créer l'utilisateur dans Supabase Auth (sans confirmation email)
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          emailRedirectTo: undefined, // Pas de redirection
-          data: {
-            nom: formData.nom,
-            prenom: formData.prenom,
-            role: formData.role,
-          },
-        },
-      });
-
-      if (authError) throw authError;
-
-      if (!authData.user) {
-        throw new Error("Erreur lors de la création de l'utilisateur");
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error("Session expirée. Veuillez vous reconnecter.");
       }
 
-      // 2. Créer l'entrée dans la table users
-      const { error: dbError } = await supabase
-        .from("users")
-        .insert([
-          {
-            id: authData.user.id,
-            nom: formData.nom,
-            prenom: formData.prenom || null,
-            email: formData.email,
-            role: formData.role,
-            statut: "actif", // Directement actif, pas besoin de confirmation
-          },
-        ]);
+      // Appel sécurisé à l'API Admin côté serveur (ne remplace pas la session de l'administrateur)
+      const res = await fetch("/api/admin/users/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          nom: formData.nom,
+          prenom: formData.prenom || undefined,
+          email: formData.email,
+          role: formData.role,
+          sendEmail: false,
+        }),
+      });
 
-      if (dbError) throw dbError;
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Erreur lors de la création");
+      }
 
-      // 3. Afficher un message de succès avec les identifiants
       toast.success("Utilisateur créé avec succès !");
-      
-      // Créer un message détaillé avec les identifiants
+
+      const tempPass = data.temporaryPassword || formData.password;
       const credentials = `
 📧 Email: ${formData.email}
-🔑 Mot de passe: ${formData.password}
+🔑 Mot de passe: ${tempPass}
 
 ⚠️ Notez bien ces identifiants et communiquez-les à l'utilisateur.
 L'utilisateur peut se connecter immédiatement avec ces identifiants.
       `.trim();
 
-      // Afficher dans un toast long
       toast.info(credentials, { duration: 15000 });
 
-      // Copier automatiquement dans le presse-papiers
-      const clipboardText = `Email: ${formData.email}\nMot de passe: ${formData.password}`;
+      const clipboardText = `Email: ${formData.email}\nMot de passe: ${tempPass}`;
       navigator.clipboard.writeText(clipboardText);
       toast.success("Identifiants copiés dans le presse-papiers !");
 
       setDialogOpen(false);
       await loadUsers();
     } catch (error: any) {
-      console.error("Erreur:", error);
-      if (error.message?.includes("already registered") || error.message?.includes("User already registered")) {
-        toast.error("Cet email est déjà utilisé");
-      } else {
-        toast.error(error.message || "Erreur lors de la création");
-      }
+      console.error("Erreur création utilisateur:", error);
+      toast.error(error.message || "Erreur lors de la création");
     }
   }
 
@@ -329,26 +313,39 @@ L'utilisateur peut se connecter immédiatement avec ces identifiants.
     }
 
     try {
-      // Utiliser l'API Admin de Supabase pour changer le mot de passe
-      // Note: Cela nécessite la clé service_role côté serveur
-      // Pour l'instant, on utilise l'API client qui nécessite que l'utilisateur soit connecté
-      
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error("Session expirée. Veuillez vous reconnecter.");
+      }
+
+      // Appel sécurisé à l'API Admin pour réinitialiser le mot de passe de l'utilisateur cible
+      const res = await fetch(`/api/admin/users/${userForPasswordReset.id}/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          sendEmail: false,
+        }),
       });
 
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Erreur lors de la réinitialisation");
+      }
 
+      const tempPass = data.temporaryPassword || newPassword;
       toast.success("Mot de passe réinitialisé avec succès");
       
-      const credentials = `Email: ${userForPasswordReset.email}\nNouveau mot de passe: ${newPassword}`;
+      const credentials = `Email: ${userForPasswordReset.email}\nNouveau mot de passe: ${tempPass}`;
       navigator.clipboard.writeText(credentials);
       toast.info("Identifiants copiés dans le presse-papiers", { duration: 10000 });
       
       setPasswordDialogOpen(false);
     } catch (error: any) {
-      console.error("Erreur:", error);
-      toast.error("Impossible de réinitialiser le mot de passe. Utilisez le lien de réinitialisation à la place.");
+      console.error("Erreur réinitialisation mot de passe:", error);
+      toast.error(error.message || "Impossible de réinitialiser le mot de passe.");
     }
   }
 

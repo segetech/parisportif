@@ -1,3 +1,9 @@
+-- ==============================================================================
+-- ⚠️ ATTENTION : SCRIPT OBSOLÈTE ET TROP PERMISSIF - NE PAS UTILISER EN PRODUCTION
+-- Ce script configure des politiques permissives (WITH CHECK true) sans contrôle de rôle.
+-- Veuillez utiliser les migrations officielles situées dans /supabase/migrations/
+-- ==============================================================================
+
 -- Script FORCE pour corriger les tables - Supprime tout et recrée
 -- Exécutez ce script dans le SQL Editor de Supabase
 

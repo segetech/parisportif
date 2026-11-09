@@ -14,6 +14,18 @@ export default {
     },
     extend: {
       colors: {
+        brand: {
+          DEFAULT: "#006B2D",
+          dark: "#004D20",
+          light: "#008739",
+          gold: "#FFD000",
+          red: "#E52329",
+          bg: "#F5F8F5",
+          text: "#17251C",
+          surface: "#FFFFFF",
+          border: "#D8E6DB",
+          muted: "#556B5C",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

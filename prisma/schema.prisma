@@ -1,0 +1,335 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                                           String               @id @default(dbgenerated("auth.uid()")) @db.Uuid
+  nom                                          String               @db.VarChar(255)
+  prenom                                       String?              @db.VarChar(255)
+  email                                        String               @unique @db.VarChar(255)
+  role                                         String               @db.VarChar(50)
+  statut                                       String               @default("actif") @db.VarChar(50)
+  derniere_connexion                           DateTime?            @db.Timestamptz(6)
+  cree_le                                      DateTime?            @default(now()) @db.Timestamptz(6)
+  mis_a_jour_le                                DateTime?            @default(now()) @updatedAt @db.Timestamptz(6)
+  mfa_active                                   Boolean?             @default(false)
+  betsCreated                                  Bet[]                @relation("BetAuthor")
+  bets_bets_reviewed_byTousers                 Bet[]                @relation("bets_reviewed_byTousers")
+  betsValidated                                Bet[]                @relation("BetValidator")
+  illegalBets                                  IllegalBet[]         @relation("IllegalBetAuthor")
+  illegalTransactions                          IllegalTransaction[] @relation("IllegalTransactionAuthor")
+  notifications                                notifications[]
+  operation_comments                           operation_comments[]
+  operation_history                            operation_history[]
+  password_resets                              PasswordReset[]
+  transactionsCreated                          Transaction[]        @relation("TransactionAuthor")
+  transactions_transactions_reviewed_byTousers Transaction[]        @relation("transactions_reviewed_byTousers")
+  transactionsValidated                        Transaction[]        @relation("TransactionValidator")
+  venuesCreated                                Venue[]              @relation("VenueAuthor")
+  venuesValidated                              Venue[]              @relation("VenueValidator")
+
+  @@index([email], map: "idx_users_email")
+  @@index([role], map: "idx_users_role")
+  @@index([statut], map: "idx_users_statut")
+  @@map("users")
+}
+
+model Transaction {
+  id                                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date                                  DateTime  @db.Date
+  time                                  DateTime  @db.Time(6)
+  operator                              String    @db.VarChar(255)
+  platform                              String    @db.VarChar(255)
+  payment_operator                      String    @db.VarChar(255)
+  type                                  String    @db.VarChar(50)
+  amount_fcfa                           Decimal   @db.Decimal(15, 2)
+  phone                                 String?   @db.VarChar(20)
+  reference                             String?   @unique @db.VarChar(255)
+  proof                                 Boolean?  @default(false)
+  notes                                 String?
+  created_at                            DateTime? @default(now()) @db.Timestamptz(6)
+  created_by                            String    @db.Uuid
+  review_status                         String    @default("en_cours") @db.VarChar(50)
+  reviewed_by                           String?   @db.Uuid
+  reviewed_at                           DateTime? @db.Timestamptz(6)
+  reject_reason                         String?
+  validation_status                     String?   @default("en_attente") @db.VarChar(20)
+  validated_by                          String?   @db.Uuid
+  validated_at                          DateTime? @db.Timestamp(6)
+  validation_notes                      String?
+  author                                User      @relation("TransactionAuthor", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_transactions_reviewed_byTousers User?     @relation("transactions_reviewed_byTousers", fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validator                             User?     @relation("TransactionValidator", fields: [validated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_transactions_created_at")
+  @@index([created_by], map: "idx_transactions_created_by")
+  @@index([date], map: "idx_transactions_date")
+  @@index([reference], map: "idx_transactions_reference")
+  @@index([validation_status], map: "idx_transactions_validation_status")
+  @@map("transactions")
+}
+
+model Bet {
+  id                            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date                          DateTime  @db.Date
+  time                          DateTime  @db.Time(6)
+  operator                      String    @db.VarChar(255)
+  support                       String    @db.VarChar(255)
+  bet_type                      String    @db.VarChar(255)
+  amount_fcfa                   Decimal   @db.Decimal(15, 2)
+  reference                     String?   @unique @db.VarChar(255)
+  status                        String    @db.VarChar(50)
+  amount_won_fcfa               Decimal?  @db.Decimal(15, 2)
+  ticket_url                    String?
+  notes                         String?
+  created_at                    DateTime? @default(now()) @db.Timestamptz(6)
+  created_by                    String    @db.Uuid
+  review_status                 String    @default("en_cours") @db.VarChar(50)
+  reviewed_by                   String?   @db.Uuid
+  reviewed_at                   DateTime? @db.Timestamptz(6)
+  reject_reason                 String?
+  validation_status             String?   @default("en_attente") @db.VarChar(20)
+  validated_by                  String?   @db.Uuid
+  validated_at                  DateTime? @db.Timestamp(6)
+  validation_notes              String?
+  author                        User      @relation("BetAuthor", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_bets_reviewed_byTousers User?     @relation("bets_reviewed_byTousers", fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validator                     User?     @relation("BetValidator", fields: [validated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_bets_created_at")
+  @@index([created_by], map: "idx_bets_created_by")
+  @@index([date], map: "idx_bets_date")
+  @@index([reference], map: "idx_bets_reference")
+  @@index([validation_status], map: "idx_bets_validation_status")
+  @@map("bets")
+}
+
+model Venue {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quartier_no       String?   @db.VarChar(50)
+  quartier          String    @db.VarChar(255)
+  operator          String    @db.VarChar(255)
+  support           String    @db.VarChar(255)
+  bet_type          String    @db.VarChar(255)
+  address           String
+  contact_phone     String?   @db.VarChar(20)
+  gps_lat           Decimal?  @db.Decimal(10, 8)
+  gps_lng           Decimal?  @db.Decimal(11, 8)
+  notes             String?
+  validation_status String?   @default("en_attente") @db.VarChar(20)
+  validated_by      String?   @db.Uuid
+  validated_at      DateTime? @db.Timestamp(6)
+  validation_notes  String?
+  created_by        String?   @db.Uuid
+  created_at        DateTime? @default(now()) @db.Timestamp(6)
+  author            User?     @relation("VenueAuthor", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validator         User?     @relation("VenueValidator", fields: [validated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_venues_created_at")
+  @@index([created_by], map: "idx_venues_created_by")
+  @@index([validation_status], map: "idx_venues_validation_status")
+  @@map("venues")
+}
+
+model IllegalBet {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  no               Int       @default(autoincrement())
+  date             DateTime  @db.Date
+  time             DateTime  @db.Time(6)
+  operator         String    @db.VarChar(255)
+  platform         String    @db.VarChar(255)
+  payment_operator String    @db.VarChar(255)
+  type             String    @db.VarChar(255)
+  amount_fcfa      Decimal   @db.Decimal(15, 2)
+  phone            String?   @db.VarChar(20)
+  reference        String    @db.VarChar(255)
+  proof            Boolean?  @default(false)
+  notes            String?
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  created_by       String    @db.Uuid
+  author           User      @relation("IllegalBetAuthor", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_by], map: "idx_illegal_bets_created_by")
+  @@index([date], map: "idx_illegal_bets_date")
+  @@map("illegal_bets")
+}
+
+model IllegalTransaction {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  no               Int       @default(autoincrement())
+  date             DateTime  @db.Date
+  time             DateTime  @db.Time(6)
+  operator         String    @db.VarChar(255)
+  platform         String    @db.VarChar(255)
+  payment_operator String    @db.VarChar(255)
+  type             String    @db.VarChar(50)
+  amount_fcfa      Decimal   @db.Decimal(15, 2)
+  phone            String?   @db.VarChar(20)
+  reference        String    @db.VarChar(255)
+  proof            Boolean?  @default(false)
+  notes            String?
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  created_by       String    @db.Uuid
+  author           User      @relation("IllegalTransactionAuthor", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_by], map: "idx_illegal_transactions_created_by")
+  @@index([date], map: "idx_illegal_transactions_date")
+  @@map("illegal_transactions")
+}
+
+model AuditLog {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  action      String    @db.VarChar(50)
+  entity_type String    @db.VarChar(255)
+  entity_id   String    @db.VarChar(255)
+  user_id     String?   @db.Uuid
+  details     Json?
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([created_at], map: "idx_audit_logs_created_at")
+  @@index([entity_type, entity_id], map: "idx_audit_logs_entity")
+  @@index([action], map: "idx_audit_logs_action")
+  @@index([user_id], map: "idx_audit_logs_user_id")
+  @@map("audit_logs")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model bet_statuses {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String    @unique @db.VarChar(100)
+  active     Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([active], map: "idx_bet_statuses_active")
+  @@index([name], map: "idx_bet_statuses_name")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model bet_types {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String    @unique @db.VarChar(255)
+  active     Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([active], map: "idx_bet_types_active")
+  @@index([name], map: "idx_bet_types_name")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model notifications {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String?   @db.Uuid
+  type           String    @db.VarChar(50)
+  title          String    @db.VarChar(255)
+  message        String
+  operation_type String?   @db.VarChar(20)
+  operation_id   String?   @db.Uuid
+  read           Boolean?  @default(false)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  read_at        DateTime? @db.Timestamp(6)
+  users          User?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_notifications_created_at")
+  @@index([read], map: "idx_notifications_read")
+  @@index([user_id], map: "idx_notifications_user_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model operation_comments {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  operation_type String    @db.VarChar(20)
+  operation_id   String    @db.Uuid
+  user_id        String?   @db.Uuid
+  comment        String
+  is_internal    Boolean?  @default(false)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  users          User?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_operation_comments_created_at")
+  @@index([operation_type, operation_id], map: "idx_operation_comments_operation")
+  @@index([user_id], map: "idx_operation_comments_user")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model operation_history {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  operation_type  String    @db.VarChar(20)
+  operation_id    String    @db.Uuid
+  action          String    @db.VarChar(20)
+  previous_status String?   @db.VarChar(20)
+  new_status      String?   @db.VarChar(20)
+  modified_by     String?   @db.Uuid
+  modified_at     DateTime? @default(now()) @db.Timestamp(6)
+  changes         Json?
+  comment         String?
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  users           User?     @relation(fields: [modified_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_operation_history_created_at")
+  @@index([modified_by], map: "idx_operation_history_modified_by")
+  @@index([operation_type, operation_id], map: "idx_operation_history_operation")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model operators {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String    @unique @db.VarChar(255)
+  active     Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([active], map: "idx_operators_active")
+  @@index([name], map: "idx_operators_name")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model payment_operators {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String    @unique @db.VarChar(255)
+  active     Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([active], map: "idx_payment_operators_active")
+  @@index([name], map: "idx_payment_operators_name")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model platforms {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String    @unique @db.VarChar(255)
+  active     Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([active], map: "idx_platforms_active")
+  @@index([name], map: "idx_platforms_name")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model supports {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String    @unique @db.VarChar(100)
+  active     Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([active], map: "idx_supports_active")
+  @@index([name], map: "idx_supports_name")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model PasswordReset {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique
+  expires_at DateTime  @db.Timestamptz(6)
+  used       Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  users      User      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([token_hash], map: "idx_password_resets_hash")
+  @@map("password_resets")
+}

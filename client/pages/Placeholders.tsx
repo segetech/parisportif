@@ -25,10 +25,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import LookupDialog from "@/components/common/LookupDialog";
-import { fetchExportData, exportToCSV, exportToExcel } from "@/lib/exports";
+import { fetchExportData, exportToCSV, exportToExcel, exportToPDF } from "@/lib/exports";
 import { toast } from "sonner";
 import api, { Lookups, LookupKey } from "@/data/api";
-import { Pencil, Trash, Plus } from "lucide-react";
+import { Pencil, Trash, Plus, FileText, Download } from "lucide-react";
 import { useSettings } from "@/lib/settings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -670,6 +670,66 @@ export function ExportsPage() {
     }
   }
 
+  async function doExportPDF() {
+    try {
+      setLoading(true);
+      const data = await fetchExportData(moduleKey, operator, start, end);
+      if (!data.length) {
+        toast.message("Aucune donnée pour ces filtres.");
+        return;
+      }
+      let headers: { key: string; title: string; width?: number; numFmt?: string }[] = [];
+      if (moduleKey === "transactions") {
+        headers = [
+          { key: "date", title: "Date" },
+          { key: "time", title: "Heure" },
+          { key: "operator", title: "Opérateur" },
+          { key: "platform", title: "Plateforme" },
+          { key: "payment_operator", title: "Moyen paiement" },
+          { key: "type", title: "Type" },
+          { key: "amount_fcfa", title: "Montant (F CFA)" },
+          { key: "phone", title: "Téléphone" },
+          { key: "reference", title: "Référence" },
+          { key: "notes", title: "Notes" },
+        ];
+      } else if (moduleKey === "bets") {
+        headers = [
+          { key: "operator", title: "Opérateur" },
+          { key: "support", title: "Support" },
+          { key: "montant_text", title: "Montant" },
+          { key: "heure_text", title: "Heure" },
+          { key: "reference", title: "Référence" },
+          { key: "statut", title: "Statut" },
+          { key: "montant_gagne_text", title: "Gains" },
+        ];
+      } else {
+        headers = [
+          { key: "quartier_no", title: "N° quartier" },
+          { key: "quartier", title: "Quartier" },
+          { key: "operator", title: "Opérateur" },
+          { key: "support", title: "Support" },
+          { key: "bet_type", title: "Type" },
+          { key: "address", title: "Adresse" },
+          { key: "contact_phone", title: "Téléphone" },
+        ];
+      }
+      const titleMod = moduleKey === "transactions" ? "Transactions" : moduleKey === "bets" ? "Paris" : "Salles de Jeux";
+      await exportToPDF(
+        titleMod,
+        headers,
+        data,
+        `${filenameBase()}.pdf`,
+        operator,
+        start && end ? `${start} au ${end}` : undefined
+      );
+      toast.success("Export PDF généré avec succès.");
+    } catch (e: any) {
+      toast.error(e?.message || "Erreur lors de l'export PDF");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const disableExport = !count;
 
   return (
@@ -721,9 +781,27 @@ export function ExportsPage() {
             <div className="text-sm">
               {count ? `${count} lignes prêtes à l’export` : "Aucune donnée pour ces filtres."}
             </div>
-            <div className="ml-auto flex gap-2">
-              <Button onClick={doExportExcel} disabled={disableExport || loading}>Exporter en Excel</Button>
-              <Button variant="outline" onClick={doExportCSV} disabled={disableExport || loading}>Exporter en CSV</Button>
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={doExportPDF}
+                disabled={disableExport || loading}
+                className="gap-1.5 border-[#006B2D]/30 text-[#006B2D] hover:bg-[#006B2D]/10 font-bold"
+              >
+                <FileText className="h-4 w-4 text-[#006B2D]" />
+                Exporter en PDF
+              </Button>
+              <Button
+                onClick={doExportExcel}
+                disabled={disableExport || loading}
+                className="gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold"
+              >
+                <Download className="h-4 w-4 text-[#FFD000]" />
+                Exporter en Excel
+              </Button>
+              <Button variant="outline" onClick={doExportCSV} disabled={disableExport || loading}>
+                Exporter en CSV
+              </Button>
             </div>
           </div>
         </AppLayout>
@@ -738,7 +816,7 @@ export function SettingsPage() {
     <RequireAuth>
       <RequireRole allow={["ADMIN"]}>
         <AppLayout>
-          <div className="max-w-4xl space-y-4">
+          <div className="w-full space-y-4">
             <Tabs defaultValue="saisie">
               <TabsList>
                 <TabsTrigger value="saisie">Saisie & qualité</TabsTrigger>

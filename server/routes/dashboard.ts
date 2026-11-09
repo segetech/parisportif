@@ -1,54 +1,73 @@
 import { RequestHandler } from "express";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "../lib/supabase-admin";
 
-let supabase: ReturnType<typeof createClient> | null = null;
-
-function getSupabaseClient() {
-  if (!supabase) {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error("Missing Supabase environment variables");
-    }
-
-    supabase = createClient(supabaseUrl, supabaseServiceKey);
-  }
-  return supabase;
-}
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}/;
 
 export const handleDashboardData: RequestHandler = async (req, res) => {
   try {
-    const supabaseClient = getSupabaseClient();
-    const { start, end, userId, role } = req.query;
-
-    let txQuery = supabaseClient.from("transactions").select("*");
-    let betsQuery = supabaseClient.from("bets").select("*");
-
-    if (start && end) {
-      txQuery = txQuery.gte("date", start as string).lte("date", end as string);
-      betsQuery = betsQuery
-        .gte("date", start as string)
-        .lte("date", end as string);
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: "Authentification requise" });
     }
 
-    // If agent, filter by creator
-    if (role === "AGENT" && userId) {
-      txQuery = txQuery.eq("created_by", userId as string);
-      betsQuery = betsQuery.eq("created_by", userId as string);
+    const admin = getSupabaseAdmin();
+    const { start, end, agentId } = req.query;
+
+    let txQuery = admin.from("transactions").select("*");
+    let betsQuery = admin.from("bets").select("*");
+
+    // Optional safe date filtering
+    if (typeof start === "string" && typeof end === "string") {
+      if (ISO_DATE_REGEX.test(start) && ISO_DATE_REGEX.test(end)) {
+        txQuery = txQuery.gte("date", start).lte("date", end);
+        betsQuery = betsQuery.gte("date", start).lte("date", end);
+      }
     }
 
-    const [{ data: txData }, { data: betsData }] = await Promise.all([
-      txQuery,
-      betsQuery,
-    ]);
+    // Role-based data isolation
+    if (user.role === "AGENT") {
+      // Agents can ONLY access their own records
+      txQuery = txQuery.eq("created_by", user.id);
+      betsQuery = betsQuery.eq("created_by", user.id);
+    } else if ((user.role === "ADMIN" || user.role === "CONTROLEUR") && typeof agentId === "string" && agentId) {
+      // Admins and Controllers can optionally filter by a specific agent
+      txQuery = txQuery.eq("created_by", agentId);
+      betsQuery = betsQuery.eq("created_by", agentId);
+    }
+
+    const [{ data: txData, error: txError }, { data: betsData, error: betsError }] =
+      await Promise.all([txQuery, betsQuery]);
+
+    if (txError) {
+      console.error("Dashboard transactions query error:", txError);
+      return res.status(500).json({ error: "Erreur lors de la récupération des transactions" });
+    }
+
+    if (betsError) {
+      console.error("Dashboard bets query error:", betsError);
+      return res.status(500).json({ error: "Erreur lors de la récupération des paris" });
+    }
+
+    const transactions = txData || [];
+    const bets = betsData || [];
+
+    const totalBets = bets.length;
+    const totalTransactions = transactions.length;
+    const totalAmount = bets.reduce((sum: number, b: any) => sum + (Number(b.amount_fcfa) || 0), 0);
+    const pendingValidations = bets.filter((b: any) => b.validation_status === "en_attente").length;
 
     res.json({
-      transactions: txData || [],
-      bets: betsData || [],
+      transactions,
+      bets,
+      stats: {
+        totalBets,
+        totalTransactions,
+        totalAmount,
+        pendingValidations,
+      },
     });
   } catch (error: any) {
     console.error("Dashboard error:", error);
-    res.status(500).json({ error: error?.message ?? "Internal server error" });
+    res.status(500).json({ error: "Erreur interne du serveur" });
   }
 };

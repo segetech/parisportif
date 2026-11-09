@@ -11,13 +11,16 @@ import {
 import {
   handleUpdateProfile,
   handleChangePassword,
-  requireAuth,
 } from "./routes/profile";
 import {
   handleCreateUserWithPassword,
   handleResetUserPassword,
-  handleGetTemporaryPassword,
 } from "./routes/admin-users";
+import {
+  handleListAuditLogs,
+  handleCreateAuditLog,
+} from "./routes/audit";
+import { requireAuth, requireRole } from "./middleware/auth";
 
 export function createServer() {
   const app = express();
@@ -40,20 +43,40 @@ export function createServer() {
 
   app.get("/api/demo", handleDemo);
 
-  // Auth routes
+  // Auth routes (public)
   app.post("/api/auth/login", handleLogin);
   app.post("/api/auth/forgot-password", handleForgotPassword);
   app.post("/api/auth/reset-password", handleResetPassword);
+
+  // Auth routes (protected)
   app.post("/api/auth/update-profile", requireAuth, handleUpdateProfile);
   app.post("/api/auth/change-password", requireAuth, handleChangePassword);
 
-  // Admin user management routes
-  app.post("/api/admin/users/create", handleCreateUserWithPassword);
-  app.post("/api/admin/users/:userId/reset-password", handleResetUserPassword);
-  app.get("/api/admin/users/:userId/temp-password", handleGetTemporaryPassword);
+  // Admin user management routes (strictly restricted to active ADMINs)
+  app.post(
+    "/api/admin/users/create",
+    requireAuth,
+    requireRole(["ADMIN"]),
+    handleCreateUserWithPassword
+  );
+  app.post(
+    "/api/admin/users/:userId/reset-password",
+    requireAuth,
+    requireRole(["ADMIN"]),
+    handleResetUserPassword
+  );
 
-  // Dashboard routes
-  app.get("/api/dashboard/data", handleDashboardData);
+  // Dashboard routes (protected, role-isolated)
+  app.get("/api/dashboard/data", requireAuth, handleDashboardData);
+
+  // Audit log routes (centralized, persistent in DB)
+  app.get(
+    "/api/audit",
+    requireAuth,
+    requireRole(["ADMIN", "CONTROLEUR"]),
+    handleListAuditLogs
+  );
+  app.post("/api/audit", requireAuth, handleCreateAuditLog);
 
   return app;
 }

@@ -1,77 +1,75 @@
 import { RequestHandler } from "express";
-import { createClient } from "@supabase/supabase-js";
-import { sendEmail, generatePasswordResetToken } from "../lib/email";
+import { getSupabaseAdmin } from "../lib/supabase-admin";
+import { sendEmail } from "../lib/email";
+import { recordAuditLog } from "../lib/audit-server";
 import crypto from "crypto";
+import { UserRole } from "../types/auth";
 
-let supabase: ReturnType<typeof createClient> | null = null;
+const ALLOWED_ROLES: UserRole[] = ["ADMIN", "CONTROLEUR", "AGENT"];
 
-function getSupabaseClient() {
-  if (!supabase) {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function generateSecureTemporaryPassword(): string {
+  // Generate random 10-character alphanumeric password
+  return crypto.randomBytes(6).toString("hex").toUpperCase();
+}
 
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error("Missing Supabase environment variables");
+export const handleCreateUserWithPassword: RequestHandler = async (req, res) => {
+  try {
+    const adminUser = req.user;
+    if (!adminUser || adminUser.role !== "ADMIN") {
+      return res.status(403).json({ error: "Opération réservée aux administrateurs" });
     }
 
-    supabase = createClient(supabaseUrl, supabaseServiceKey);
-  }
-  return supabase;
-}
-
-// In-memory store for temporary passwords (use DB in production)
-const tempPasswords = new Map<
-  string,
-  { password: string; expiresAt: number; email: string }
->();
-
-function generateTemporaryPassword(): string {
-  return crypto.randomBytes(8).toString("hex").toUpperCase();
-}
-
-export const handleCreateUserWithPassword: RequestHandler = async (
-  req,
-  res,
-) => {
-  try {
-    const supabaseClient = getSupabaseClient();
     const { nom, prenom, email, role, sendEmail: shouldSendEmail } = req.body;
 
-    if (!nom || !email || !role) {
-      return res.status(400).json({
-        error: "nom, email, and role are required",
-      });
+    if (!nom || typeof nom !== "string" || !nom.trim()) {
+      return res.status(400).json({ error: "Le nom est requis" });
     }
 
-    const emailLower = email.toLowerCase();
+    if (!email || typeof email !== "string" || !email.includes("@")) {
+      return res.status(400).json({ error: "Une adresse email valide est requise" });
+    }
+
+    if (!role || !ALLOWED_ROLES.includes(role as UserRole)) {
+      return res.status(400).json({ error: "Rôle invalide (ADMIN, CONTROLEUR ou AGENT)" });
+    }
+
+    const admin = getSupabaseAdmin();
+    const emailLower = email.toLowerCase().trim();
 
     // Check if user already exists
-    const { data: existing } = await supabaseClient
+    const { data: existing } = await admin
       .from("users")
       .select("id")
-      .eq("email", emailLower);
+      .eq("email", emailLower)
+      .maybeSingle();
 
-    if (existing && existing.length > 0) {
-      return res.status(400).json({ error: "User already exists" });
+    if (existing) {
+      return res.status(400).json({ error: "Un utilisateur avec cet email existe déjà" });
     }
 
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = generateSecureTemporaryPassword();
 
-    // Create Supabase auth user
-    const { data: authData, error: authError } =
-      await supabaseClient.auth.admin.createUser({
-        email: emailLower,
-        password: temporaryPassword,
-        user_metadata: { nom, role },
-      });
+    // Create Supabase auth user with email_confirm: true
+    const { data: authData, error: authError } = await admin.auth.admin.createUser({
+      email: emailLower,
+      password: temporaryPassword,
+      email_confirm: true,
+      user_metadata: {
+        nom: nom.trim(),
+        prenom: prenom ? prenom.trim() : null,
+        role,
+      },
+    });
 
-    if (authError) {
-      return res.status(400).json({ error: authError.message });
+    if (authError || !authData?.user) {
+      return res.status(400).json({ error: authError?.message || "Erreur de création de compte auth" });
     }
 
-    // Create user record
+    // Create user record in users table
     const now = new Date().toISOString();
-    const { data: userData, error: userError } = await supabaseClient
+    const statut = shouldSendEmail ? "invitation_envoyee" : "actif";
+
+    const { data: userData, error: userError } = await admin
       .from("users")
       .insert({
         id: authData.user.id,
@@ -79,7 +77,7 @@ export const handleCreateUserWithPassword: RequestHandler = async (
         prenom: prenom ? prenom.trim() : null,
         email: emailLower,
         role,
-        statut: shouldSendEmail ? "invitation_envoyee" : "actif",
+        statut,
         cree_le: now,
         mis_a_jour_le: now,
       })
@@ -87,21 +85,28 @@ export const handleCreateUserWithPassword: RequestHandler = async (
       .single();
 
     if (userError) {
-      // Clean up auth user if DB insert fails
-      await supabaseClient.auth.admin.deleteUser(authData.user.id);
+      // Rollback auth user creation
+      await admin.auth.admin.deleteUser(authData.user.id);
       return res.status(400).json({ error: userError.message });
     }
 
-    // Store temporary password for later retrieval
-    tempPasswords.set(authData.user.id, {
-      password: temporaryPassword,
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-      email: emailLower,
+    // Record persistent audit log
+    await recordAuditLog({
+      action: "cree",
+      entityType: "Utilisateur",
+      entityId: authData.user.id,
+      userId: adminUser.id,
+      details: {
+        targetEmail: emailLower,
+        targetRole: role,
+        statut,
+        createdBy: adminUser.email,
+      },
     });
 
     // Send email if requested
     if (shouldSendEmail) {
-      const baseUrl = process.env.APP_URL || "http://localhost:8080";
+      const baseUrl = process.env.APP_URL || "http://localhost:3000";
       const loginUrl = `${baseUrl}/login`;
 
       await sendEmail({
@@ -109,118 +114,108 @@ export const handleCreateUserWithPassword: RequestHandler = async (
         subject: "Bienvenue - Vos identifiants d'accès",
         html: `
           <h2>Bienvenue ${nom}!</h2>
-          <p>Un compte a été créé pour vous.</p>
-          <p><strong>Email:</strong> ${emailLower}</p>
-          <p><strong>Mot de passe temporaire:</strong> <code>${temporaryPassword}</code></p>
-          <p><strong>Rôle:</strong> ${role}</p>
+          <p>Un compte a été créé pour vous sur la plateforme Pari Sportif.</p>
+          <p><strong>Email :</strong> ${emailLower}</p>
+          <p><strong>Mot de passe temporaire :</strong> <code>${temporaryPassword}</code></p>
+          <p><strong>Rôle :</strong> ${role}</p>
           <p><a href="${loginUrl}" style="display: inline-block; padding: 10px 20px; background-color: #1f9e64; color: white; text-decoration: none; border-radius: 5px;">Se connecter</a></p>
-          <p>Veuillez changer votre mot de passe après votre première connexion.</p>
+          <p>Veuillez modifier votre mot de passe dès votre première connexion.</p>
         `,
       });
     }
 
     res.status(201).json({
       user: userData,
-      temporaryPassword: shouldSendEmail ? undefined : temporaryPassword,
+      temporaryPassword,
       message: shouldSendEmail
-        ? "User created and invitation sent via email"
-        : "User created successfully",
+        ? "Utilisateur créé et invitation envoyée par email"
+        : "Utilisateur créé avec succès",
     });
   } catch (error: any) {
     console.error("Create user error:", error);
-    res.status(500).json({ error: error?.message ?? "Internal server error" });
+    res.status(500).json({ error: "Erreur interne du serveur lors de la création" });
   }
 };
 
 export const handleResetUserPassword: RequestHandler = async (req, res) => {
   try {
-    const supabaseClient = getSupabaseClient();
-    const { userId, sendEmail: shouldSendEmail } = req.body;
-
-    if (!userId) {
-      return res.status(400).json({ error: "userId is required" });
+    const adminUser = req.user;
+    if (!adminUser || adminUser.role !== "ADMIN") {
+      return res.status(403).json({ error: "Opération réservée aux administrateurs" });
     }
 
-    // Get user
-    const { data: userData, error: userError } = await supabaseClient
+    const { userId } = req.params;
+    const { sendEmail: shouldSendEmail } = req.body;
+
+    const targetUserId = userId || req.body.userId;
+    if (!targetUserId) {
+      return res.status(400).json({ error: "L'identifiant de l'utilisateur est requis" });
+    }
+
+    const admin = getSupabaseAdmin();
+
+    // Verify target user exists
+    const { data: targetUser, error: userError } = await admin
       .from("users")
-      .select("id, nom, prenom, email")
-      .eq("id", userId)
+      .select("id, nom, prenom, email, role")
+      .eq("id", targetUserId)
       .single();
 
-    if (userError || !userData) {
-      return res.status(400).json({ error: "User not found" });
+    if (userError || !targetUser) {
+      return res.status(404).json({ error: "Utilisateur introuvable" });
     }
 
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = generateSecureTemporaryPassword();
 
-    // Update password in Supabase
-    const { error: updateError } =
-      await supabaseClient.auth.admin.updateUserById(userId, {
-        password: temporaryPassword,
-      });
+    // Update password in Supabase auth
+    const { error: updateError } = await admin.auth.admin.updateUserById(targetUserId, {
+      password: temporaryPassword,
+    });
 
     if (updateError) {
       return res.status(400).json({ error: updateError.message });
     }
 
-    // Store temporary password
-    tempPasswords.set(userId, {
-      password: temporaryPassword,
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-      email: userData.email,
+    // Record persistent audit log
+    await recordAuditLog({
+      action: "edite",
+      entityType: "Utilisateur",
+      entityId: targetUserId,
+      userId: adminUser.id,
+      details: {
+        action: "reinitialisation_mot_de_passe",
+        targetEmail: targetUser.email,
+        resetBy: adminUser.email,
+      },
     });
 
     // Send email if requested
     if (shouldSendEmail) {
-      const baseUrl = process.env.APP_URL || "http://localhost:8080";
+      const baseUrl = process.env.APP_URL || "http://localhost:3000";
       const loginUrl = `${baseUrl}/login`;
 
       await sendEmail({
-        to: userData.email,
-        subject: "Réinitialisation de mot de passe",
+        to: targetUser.email,
+        subject: "Réinitialisation de votre mot de passe",
         html: `
           <h2>Réinitialisation de mot de passe</h2>
-          <p>Bonjour ${userData.nom} ${userData.prenom || ""},</p>
+          <p>Bonjour ${targetUser.nom} ${targetUser.prenom || ""},</p>
           <p>Votre mot de passe a été réinitialisé par un administrateur.</p>
-          <p><strong>Nouveau mot de passe temporaire:</strong> <code>${temporaryPassword}</code></p>
+          <p><strong>Nouveau mot de passe temporaire :</strong> <code>${temporaryPassword}</code></p>
           <p><a href="${loginUrl}" style="display: inline-block; padding: 10px 20px; background-color: #1f9e64; color: white; text-decoration: none; border-radius: 5px;">Se connecter</a></p>
-          <p>Veuillez changer votre mot de passe après votre connexion.</p>
+          <p>Veuillez modifier votre mot de passe dès votre connexion.</p>
         `,
       });
     }
 
     res.json({
-      temporaryPassword: shouldSendEmail ? undefined : temporaryPassword,
+      temporaryPassword,
       message: shouldSendEmail
-        ? "Password reset and sent via email"
-        : "Password reset successfully",
+        ? "Mot de passe réinitialisé et envoyé par email"
+        : "Mot de passe réinitialisé avec succès",
     });
   } catch (error: any) {
     console.error("Reset user password error:", error);
-    res.status(500).json({ error: error?.message ?? "Internal server error" });
-  }
-};
-
-export const handleGetTemporaryPassword: RequestHandler = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const stored = tempPasswords.get(userId);
-
-    if (!stored) {
-      return res.status(404).json({ error: "No temporary password found" });
-    }
-
-    if (Date.now() > stored.expiresAt) {
-      tempPasswords.delete(userId);
-      return res.status(410).json({ error: "Temporary password has expired" });
-    }
-
-    res.json({ password: stored.password });
-    tempPasswords.delete(userId); // Clear after retrieval
-  } catch (error: any) {
-    console.error("Get temp password error:", error);
-    res.status(500).json({ error: error?.message ?? "Internal server error" });
+    res.status(500).json({ error: "Erreur interne lors de la réinitialisation" });
   }
 };

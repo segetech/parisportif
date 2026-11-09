@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { purgeAllAppCaches } from "@/lib/queryClient";
 
 type Role = "ADMIN" | "CONTROLEUR" | "AGENT";
 
@@ -10,6 +12,10 @@ interface User {
   email: string;
   role: Role;
   statut: string;
+  derniere_connexion?: string;
+  cree_le?: string;
+  mis_a_jour_le?: string;
+  mfa_active?: boolean;
 }
 
 interface AuthState {
@@ -17,6 +23,9 @@ interface AuthState {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (data: Partial<User>) => void;
+  refreshUser: () => Promise<void>;
+  getAccessToken: () => Promise<string | null>;
 }
 
 const AuthCtx = createContext<AuthState | undefined>(undefined);
@@ -30,11 +39,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkSession();
 
     // Écouter les changements d'authentification
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
-        await loadUserData(session.user.id);
+        try {
+          await loadUserData(session.user.id);
+        } catch (e) {
+          console.warn("Erreur chargement session onAuthStateChange:", e);
+        }
       } else {
         setUser(null);
+        purgeAllAppCaches();
       }
     });
 
@@ -45,12 +61,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function checkSession() {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (session?.user) {
         await loadUserData(session.user.id);
       }
     } catch (error) {
-      console.error("Erreur lors de la vérification de la session:", error);
+      console.warn("Erreur vérification session:", error);
     } finally {
       setLoading(false);
     }
@@ -58,7 +76,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function loadUserData(userId: string) {
     try {
-      // Utiliser maybeSingle() au lieu de single() pour éviter l'erreur si l'utilisateur n'existe pas
       const { data, error } = await supabase
         .from("users")
         .select("*")
@@ -66,36 +83,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (error) {
-        console.error("Erreur Supabase:", error);
-        throw new Error("Erreur lors de la récupération des données utilisateur.");
+        console.warn("Erreur Supabase loadUserData:", error);
+        return;
       }
-      
+
       if (!data) {
-        throw new Error("Utilisateur non trouvé dans la base de données. Veuillez contacter l'administrateur.");
+        console.warn("Utilisateur non trouvé dans la table users.");
+        return;
       }
-      
-      // Vérifier si l'utilisateur est actif
+
       if (data.statut !== "actif") {
-        throw new Error("Compte suspendu ou désactivé. Veuillez contacter l'administrateur.");
+        console.warn("Compte utilisateur inactif ou suspendu.");
+        setUser(null);
+        purgeAllAppCaches();
+        await supabase.auth.signOut();
+        return;
       }
-      
+
       setUser(data);
-      
-      // Mettre à jour la dernière connexion
-      try {
-        await supabase
-          .from("users")
-          .update({ derniere_connexion: new Date().toISOString() })
-          .eq("id", userId);
-      } catch (updateError) {
-        // Ne pas bloquer la connexion si la mise à jour échoue
-        console.warn("Impossible de mettre à jour la dernière connexion:", updateError);
-      }
+
+      // Mise à jour en arrière-plan sans bloquer la connexion
+      (async () => {
+        try {
+          await supabase
+            .from("users")
+            .update({ derniere_connexion: new Date().toISOString() })
+            .eq("id", userId);
+        } catch (updateError) {
+          console.warn("Impossible de mettre à jour derniere_connexion:", updateError);
+        }
+      })();
     } catch (error: any) {
-      console.error("Erreur lors du chargement des données utilisateur:", error);
-      // Déconnecter l'utilisateur si ses données ne sont pas valides
-      await supabase.auth.signOut();
-      throw error;
+      console.warn("Exception loadUserData:", error);
     }
   }
 
@@ -110,14 +129,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (error) throw error;
-        
+
         if (data.user) {
           await loadUserData(data.user.id);
         }
       },
       async logout() {
-        await supabase.auth.signOut();
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.warn("Erreur déconnexion supabase:", e);
+        }
         setUser(null);
+        purgeAllAppCaches();
+      },
+      updateUser(updatedFields: Partial<User>) {
+        setUser((prev) => (prev ? { ...prev, ...updatedFields } : null));
+      },
+      async refreshUser() {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.user) {
+          await loadUserData(session.user.id);
+        }
+      },
+      async getAccessToken() {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        return session?.access_token || null;
       },
     }),
     [user, loading],
@@ -140,11 +181,22 @@ export type { Role, User };
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return null;
-  if (!user) {
-    window.location.href = "/login";
-    return null;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-xs text-muted-foreground">Vérification de la session...</p>
+        </div>
+      </div>
+    );
   }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
   return <>{children}</>;
 }
 

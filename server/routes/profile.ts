@@ -1,123 +1,109 @@
 import { RequestHandler } from "express";
-import { createClient } from "@supabase/supabase-js";
-
-let supabase: ReturnType<typeof createClient> | null = null;
-
-function getSupabaseClient() {
-  if (!supabase) {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error("Missing Supabase environment variables");
-    }
-
-    supabase = createClient(supabaseUrl, supabaseServiceKey);
-  }
-  return supabase;
-}
-
-// Middleware to check if user is authenticated
-export function requireAuth(req: any, res: any, next: any) {
-  const userId = req.headers["x-user-id"];
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  req.userId = userId;
-  next();
-}
+import { getSupabaseAdmin, createAnonClient } from "../lib/supabase-admin";
+import { recordAuditLog } from "../lib/audit-server";
 
 export const handleUpdateProfile: RequestHandler = async (req, res) => {
   try {
-    const supabaseClient = getSupabaseClient();
-    const userId = (req as any).userId;
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: "Authentification requise" });
+    }
+
     const { nom, prenom } = req.body;
 
-    if (!nom || !nom.trim()) {
-      return res.status(400).json({ error: "Nom is required" });
+    if (!nom || typeof nom !== "string" || !nom.trim()) {
+      return res.status(400).json({ error: "Le nom est obligatoire" });
     }
 
-    // Get current session to verify user identity
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({ error: "Missing authorization header" });
-    }
+    const admin = getSupabaseAdmin();
 
-    const { data, error } = await supabaseClient
+    const { data: updatedUser, error: updateError } = await admin
       .from("users")
       .update({
         nom: nom.trim(),
-        prenom: prenom && prenom.trim() ? prenom.trim() : null,
+        prenom: prenom && typeof prenom === "string" && prenom.trim() ? prenom.trim() : null,
+        mis_a_jour_le: new Date().toISOString(),
       })
-      .eq("id", userId)
-      .select()
+      .eq("id", user.id)
+      .select("id, nom, prenom, email, role, statut")
       .single();
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    res.json({ user: data });
-  } catch (error: any) {
-    console.error("Update profile error:", error);
-    res.status(500).json({ error: error?.message ?? "Internal server error" });
-  }
-};
-
-export const handleChangePassword: RequestHandler = async (req, res) => {
-  try {
-    const supabaseClient = getSupabaseClient();
-    const userId = (req as any).userId;
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res
-        .status(400)
-        .json({ error: "Current and new password required" });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        error: "New password must be at least 6 characters",
-      });
-    }
-
-    // Get user email
-    const { data: userData, error: userError } = await supabaseClient
-      .from("users")
-      .select("email")
-      .eq("id", userId)
-      .single();
-
-    if (userError || !userData) {
-      return res.status(400).json({ error: "User not found" });
-    }
-
-    // Verify current password by attempting to sign in
-    const { error: signInError } = await supabaseClient.auth.signInWithPassword(
-      {
-        email: userData.email,
-        password: currentPassword,
-      },
-    );
-
-    if (signInError) {
-      return res.status(401).json({ error: "Current password is incorrect" });
-    }
-
-    // Update password
-    const { error: updateError } =
-      await supabaseClient.auth.admin.updateUserById(userId, {
-        password: newPassword,
-      });
 
     if (updateError) {
       return res.status(400).json({ error: updateError.message });
     }
 
-    res.json({ message: "Password changed successfully" });
+    await recordAuditLog({
+      action: "edite",
+      entityType: "Profil",
+      entityId: user.id,
+      userId: user.id,
+      details: {
+        action: "mise_a_jour_profil",
+        email: user.email,
+      },
+    });
+
+    res.json({ user: updatedUser });
+  } catch (error: any) {
+    console.error("Update profile error:", error);
+    res.status(500).json({ error: "Erreur interne lors de la mise à jour du profil" });
+  }
+};
+
+export const handleChangePassword: RequestHandler = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: "Authentification requise" });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "Le mot de passe actuel et le nouveau mot de passe sont requis" });
+    }
+
+    if (typeof newPassword !== "string" || newPassword.length < 6) {
+      return res.status(400).json({
+        error: "Le nouveau mot de passe doit comporter au moins 6 caractères",
+      });
+    }
+
+    // Verify current password with an isolated unprivileged client (prevents session sharing)
+    const anonClient = createAnonClient();
+    const { error: verifyError } = await anonClient.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword,
+    });
+
+    if (verifyError) {
+      return res.status(400).json({ error: "Le mot de passe actuel est incorrect" });
+    }
+
+    // Update password with the admin client
+    const admin = getSupabaseAdmin();
+    const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
+      password: newPassword,
+    });
+
+    if (updateError) {
+      return res.status(400).json({ error: updateError.message });
+    }
+
+    await recordAuditLog({
+      action: "edite",
+      entityType: "Profil",
+      entityId: user.id,
+      userId: user.id,
+      details: {
+        action: "changement_mot_de_passe",
+        email: user.email,
+      },
+    });
+
+    res.json({ message: "Mot de passe modifié avec succès" });
   } catch (error: any) {
     console.error("Change password error:", error);
-    res.status(500).json({ error: error?.message ?? "Internal server error" });
+    res.status(500).json({ error: "Erreur interne lors de la modification du mot de passe" });
   }
 };

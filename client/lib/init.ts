@@ -1,74 +1,55 @@
-// App Initialization - Clean up service workers and caches
+// App Initialization - Versioned one-time migration and cleanup
 export async function initializeApp(): Promise<void> {
-  console.log("[Init] Starting app initialization");
+  const INIT_VERSION_KEY = "ps_app_init_v2";
 
-  // Aggressively clear all service workers and caches
-  if ("serviceWorker" in navigator) {
-    try {
-      // Unregister all service workers
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      console.log("[Init] Found SW registrations:", registrations.length);
-
-      for (const registration of registrations) {
-        try {
-          const unregistered = await registration.unregister();
-          if (unregistered) {
-            console.log(
-              "[Init] Unregistered service worker:",
-              registration.scope,
-            );
-          }
-        } catch (error) {
-          console.error("[Init] Failed to unregister SW:", error);
-        }
-      }
-
-      // Send skip waiting to any active controller
-      if (navigator.serviceWorker.controller) {
-        console.log("[Init] Forcing service worker to skip waiting");
-        navigator.serviceWorker.controller.postMessage({
-          type: "SKIP_WAITING",
-        });
-      }
-    } catch (error) {
-      console.error("[Init] Failed to get SW registrations:", error);
+  if (typeof window !== "undefined" && window.localStorage) {
+    // If migration already completed for this version, skip completely to preserve caches
+    if (localStorage.getItem(INIT_VERSION_KEY) === "done") {
+      return;
     }
   }
 
-  // Clear all caches with retry
-  if ("caches" in window) {
+  console.log("[Init] Running one-time app initialization and cleanup...");
+
+  // Safely unregister any legacy service workers
+  if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      if (registrations.length > 0) {
+        console.log("[Init] Cleaning up legacy SW registrations:", registrations.length);
+        for (const registration of registrations) {
+          try {
+            await registration.unregister();
+          } catch (error) {
+            console.warn("[Init] Could not unregister SW:", error);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("[Init] Error querying SW registrations:", error);
+    }
+  }
+
+  // Clear obsolete CacheStorage caches if any legacy service worker created them
+  if (typeof window !== "undefined" && "caches" in window) {
     try {
       const cacheNames = await caches.keys();
-      console.log("[Init] Found caches:", cacheNames.length, cacheNames);
-
-      // Delete each cache
       for (const cacheName of cacheNames) {
-        try {
-          const deleted = await caches.delete(cacheName);
-          console.log("[Init] Cache deletion result:", cacheName, deleted);
-        } catch (error) {
-          console.error("[Init] Failed to delete cache:", cacheName, error);
+        if (cacheName.includes("workbox") || cacheName.includes("sw-") || cacheName.includes("pari-sportif-precache")) {
+          try {
+            await caches.delete(cacheName);
+          } catch {}
         }
       }
-
-      // Verify deletion
-      const remainingCaches = await caches.keys();
-      console.log(
-        "[Init] Remaining caches after cleanup:",
-        remainingCaches.length,
-      );
     } catch (error) {
-      console.error("[Init] Failed to clear caches:", error);
+      console.warn("[Init] Error checking CacheStorage:", error);
     }
   }
 
-  // Additional: Reload if service worker is present
-  if (navigator.serviceWorker?.controller) {
-    console.log("[Init] Service worker still active, will reload page");
-    setTimeout(() => {
-      window.location.reload();
-    }, 100);
-  }
+  // Mark initialization complete so it never runs again on subsequent loads
+  try {
+    localStorage.setItem(INIT_VERSION_KEY, "done");
+  } catch {}
 
-  console.log("[Init] App initialization complete");
+  console.log("[Init] App initialization complete (versioned, non-destructive)");
 }

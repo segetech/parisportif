@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { purgeAllAppCaches, invalidateRelatedQueries } from "@/lib/queryClient";
 
 const CACHE_KEYS = {
   TRANSACTIONS: "transactions",
@@ -6,30 +7,38 @@ const CACHE_KEYS = {
   VENUES: "venues",
   USERS: "users",
   LOOKUPS: "lookups",
-  MATCHING: "matching",
+  DASHBOARD: "dashboard",
+  VALIDATION: "validation",
+  AUDIT: "audit",
+  ILLEGAL: "illegal",
 };
 
 /**
- * Hook for managing cache invalidation and prefetching
- * Provides fine-grained control over cache lifecycle
+ * Hook de gestion du cycle de vie du cache
+ * Fournit un contrôle fin sur l'invalidation et le rafraîchissement
  */
 export function useCache() {
   const queryClient = useQueryClient();
 
   return {
-    // Invalidate single key
+    // Invalider une clé spécifique
     invalidate: (key: string) => {
       queryClient.invalidateQueries({ queryKey: [key] });
     },
 
-    // Invalidate multiple keys
+    // Invalider un domaine métier avec toutes ses dépendances
+    invalidateDomain: (domain: "bets" | "transactions" | "venues" | "validation" | "lookups" | "users" | "illegal") => {
+      invalidateRelatedQueries(domain);
+    },
+
+    // Invalider plusieurs clés
     invalidateMany: (keys: string[]) => {
       keys.forEach((key) => {
         queryClient.invalidateQueries({ queryKey: [key] });
       });
     },
 
-    // Invalidate all data caches (but keep auth)
+    // Invalider tous les caches métier (mais préserver l'auth)
     invalidateAllData: () => {
       queryClient.invalidateQueries({
         predicate: (query) => {
@@ -39,17 +48,17 @@ export function useCache() {
       });
     },
 
-    // Clear specific data from cache
+    // Supprimer une clé spécifique du cache
     clearData: (key: string) => {
       queryClient.removeQueries({ queryKey: [key] });
     },
 
-    // Clear all cache
+    // Purge totale (utilisé notamment lors de la déconnexion)
     clearAll: () => {
-      queryClient.clear();
+      purgeAllAppCaches();
     },
 
-    // Get cache size (for debugging/monitoring)
+    // Taille approximative du cache local
     getCacheSize: () => {
       let size = 0;
       try {
@@ -66,7 +75,7 @@ export function useCache() {
       return size;
     },
 
-    // Clear old cache entries
+    // Nettoyer les entrées expirées du cache localStorage
     clearExpiredCache: (maxAgeMs: number = 24 * 60 * 60 * 1000) => {
       try {
         const now = Date.now();
@@ -77,8 +86,12 @@ export function useCache() {
           if (key?.startsWith("cache:")) {
             const item = localStorage.getItem(key);
             if (item) {
-              const { timestamp } = JSON.parse(item);
-              if (now - timestamp > maxAgeMs) {
+              try {
+                const { timestamp } = JSON.parse(item);
+                if (timestamp && now - timestamp > maxAgeMs) {
+                  keysToDelete.push(key);
+                }
+              } catch {
                 keysToDelete.push(key);
               }
             }
@@ -86,94 +99,7 @@ export function useCache() {
         }
 
         keysToDelete.forEach((key) => localStorage.removeItem(key));
-        return keysToDelete.length;
-      } catch {
-        return 0;
-      }
-    },
-
-    // Get cache status
-    getCacheStatus: () => {
-      const status: Record<string, { cached: boolean; age?: number }> = {};
-
-      try {
-        Object.entries(CACHE_KEYS).forEach(([name, key]) => {
-          const item = localStorage.getItem(`cache:${key}`);
-          if (item) {
-            const { timestamp } = JSON.parse(item);
-            const age = Date.now() - timestamp;
-            status[name] = { cached: true, age };
-          } else {
-            status[name] = { cached: false };
-          }
-        });
       } catch {}
-
-      return status;
-    },
-
-    // Cache key constants for external use
-    keys: CACHE_KEYS,
-  };
-}
-
-/**
- * Hook for handling cache invalidation on API mutations
- * Use this when making changes that affect cache
- */
-export function useCacheInvalidation() {
-  const cache = useCache();
-
-  return {
-    // After creating a transaction
-    onTransactionCreated: () => {
-      cache.invalidate(CACHE_KEYS.TRANSACTIONS);
-      cache.invalidate(CACHE_KEYS.MATCHING); // Matching suggestions might change
-    },
-
-    // After updating a transaction
-    onTransactionUpdated: () => {
-      cache.invalidate(CACHE_KEYS.TRANSACTIONS);
-      cache.invalidate(CACHE_KEYS.MATCHING);
-    },
-
-    // After deleting a transaction
-    onTransactionDeleted: () => {
-      cache.invalidate(CACHE_KEYS.TRANSACTIONS);
-      cache.invalidate(CACHE_KEYS.MATCHING);
-    },
-
-    // After creating a bet
-    onBetCreated: () => {
-      cache.invalidate(CACHE_KEYS.BETS);
-      cache.invalidate(CACHE_KEYS.MATCHING);
-    },
-
-    // After updating a bet
-    onBetUpdated: () => {
-      cache.invalidate(CACHE_KEYS.BETS);
-      cache.invalidate(CACHE_KEYS.MATCHING);
-    },
-
-    // After deleting a bet
-    onBetDeleted: () => {
-      cache.invalidate(CACHE_KEYS.BETS);
-      cache.invalidate(CACHE_KEYS.MATCHING);
-    },
-
-    // After creating/updating/deleting a venue
-    onVenueChanged: () => {
-      cache.invalidate(CACHE_KEYS.VENUES);
-    },
-
-    // After user changes
-    onUserChanged: () => {
-      cache.invalidate(CACHE_KEYS.USERS);
-    },
-
-    // Complete data refresh
-    onDataRefresh: () => {
-      cache.invalidateAllData();
     },
   };
 }
