@@ -41,7 +41,7 @@ import {
   ChevronRight,
   Filter,
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import { exportStyledExcel } from "@/lib/excel-export";
 import { CreatableSelect } from "@/components/ui/creatable-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -423,7 +423,7 @@ function Bets() {
     });
   };
 
-  const exportToExcel = (betsToExport: Bet[] = filteredBets, operatorName: string = "tous") => {
+  const exportToExcel = async (betsToExport: Bet[] = filteredBets, operatorName: string = "tous") => {
     const filteredByPeriod = filterBetsByPeriod(betsToExport);
 
     if (filteredByPeriod.length === 0) {
@@ -431,62 +431,74 @@ function Bets() {
       return;
     }
 
-    const title = `RAPPORT DES PARIS SUR LES DIFFERENTES PLATEFORMES`;
     const periodText =
       exportPeriod === "week"
-        ? "DE LA SEMAINE"
+        ? "Dernière semaine (7 jours)"
         : exportPeriod === "month"
-        ? "DU MOIS"
+        ? "Dernier mois (30 jours)"
         : exportPeriod === "custom"
-        ? `DU ${new Date(exportStartDate).toLocaleDateString("fr-FR")} AU ${new Date(
+        ? `Du ${new Date(exportStartDate).toLocaleDateString("fr-FR")} au ${new Date(
             exportEndDate
           ).toLocaleDateString("fr-FR")}`
-        : "";
+        : "Toutes les dates";
 
-    const excelData = filteredByPeriod.map((bet, index) => ({
-      "N°": index + 1,
-      DATE: new Date(bet.date).toLocaleDateString("fr-FR"),
-      "Opérateur de jeux": bet.operator,
-      Support: bet.support,
-      "Type de Pari": bet.bet_type,
-      "Montant FCFA": bet.amount_fcfa,
-      Heure: bet.time || "",
-      "Gains FCFA": bet.amount_won_fcfa || 0,
-      Statut: bet.status,
-      Référence: bet.id.substring(0, 12),
+    const columns = [
+      { header: "N°", key: "index", width: 7, align: "center" as const },
+      { header: "DATE", key: "date", width: 13, align: "center" as const },
+      { header: "HEURE", key: "time", width: 10, align: "center" as const },
+      { header: "OPÉRATEUR DE JEUX", key: "operator", width: 22, align: "left" as const },
+      { header: "SUPPORT", key: "support", width: 14, align: "center" as const },
+      { header: "TYPE DE PARI", key: "bet_type", width: 18, align: "left" as const },
+      { header: "MONTANT MISÉ", key: "amount_fcfa", width: 20, align: "right" as const, isCurrency: true },
+      { header: "GAINS REMPORTÉS", key: "amount_won_fcfa", width: 20, align: "right" as const, isCurrency: true },
+      { header: "STATUT DU PARI", key: "status", width: 16, align: "center" as const, isStatus: true },
+      { header: "VALIDATION", key: "validation_status", width: 16, align: "center" as const },
+      { header: "RÉFÉRENCE TICKET", key: "reference", width: 18, align: "center" as const },
+    ];
+
+    const data = filteredByPeriod.map((bet, index) => ({
+      index: index + 1,
+      date: new Date(bet.date).toLocaleDateString("fr-FR"),
+      time: bet.time || "—",
+      operator: bet.operator,
+      support: bet.support || "—",
+      bet_type: bet.bet_type || "—",
+      amount_fcfa: Number(bet.amount_fcfa) || 0,
+      amount_won_fcfa: Number(bet.amount_won_fcfa) || 0,
+      status: bet.status,
+      validation_status:
+        bet.validation_status === "valide"
+          ? "Validé"
+          : bet.validation_status === "refuse"
+          ? "Refusé"
+          : "En attente",
+      reference: bet.id.substring(0, 12).toUpperCase(),
     }));
-
-    const wb = XLSX.utils.book_new();
-    const ws_data = [
-      [title + (periodText ? " " + periodText : "")],
-      Object.keys(excelData[0] || {}),
-      ...excelData.map((row) => Object.values(row)),
-    ];
-
-    const ws = XLSX.utils.aoa_to_sheet(ws_data);
-    ws["!cols"] = [
-      { wch: 6 },
-      { wch: 12 },
-      { wch: 20 },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 10 },
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 15 },
-    ];
 
     const fileName =
       operatorName === "tous"
         ? `rapport_paris_tous_${new Date().toISOString().split("T")[0]}.xlsx`
         : `rapport_paris_${operatorName}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
-    XLSX.utils.book_append_sheet(wb, ws, "Paris");
-    XLSX.writeFile(wb, fileName);
-
-    toast.success(`Export réussi: ${filteredByPeriod.length} pari(s)`);
-    setExportDialogOpen(false);
+    try {
+      toast.loading("Génération du rapport Excel stylisé en cours...", { id: "excel-export" });
+      await exportStyledExcel({
+        sheetName: "Paris Sportifs",
+        title: "Rapport Officiel des Paris sur les Plateformes",
+        subtitle: "État certifié des mises, gains et statuts d'arbitrage",
+        operator: operatorName,
+        periodText,
+        columns,
+        data,
+        filename: fileName,
+        showTotals: true,
+      });
+      toast.success(`Export réussi: ${filteredByPeriod.length} pari(s) exporté(s)`, { id: "excel-export" });
+      setExportDialogOpen(false);
+    } catch (err: any) {
+      console.error("Erreur export:", err);
+      toast.error("Erreur lors de la génération du fichier Excel", { id: "excel-export" });
+    }
   };
 
   const formatFCFA = (val: number) => {

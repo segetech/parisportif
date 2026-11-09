@@ -8,8 +8,8 @@ WORKDIR /app
 # Installer pnpm
 RUN npm install -g pnpm@10.14.0
 
-# Copie des fichiers package.json et pnpm-lock.yaml
-COPY package.json pnpm-lock.yaml ./
+# Copie des fichiers package.json, pnpm-lock.yaml et .npmrc
+COPY package.json pnpm-lock.yaml .npmrc* ./
 
 # Installation des dépendances avec tolérance de mise à jour du lockfile
 RUN pnpm install --no-frozen-lockfile
@@ -41,7 +41,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Installation des dépendances de production uniquement
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml .npmrc* ./
 RUN pnpm install --prod --no-frozen-lockfile
 
 # Copie des artefacts compilés depuis l'étape builder

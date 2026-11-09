@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:client && npm run build:server",
+    "build": "pnpm run build:client && pnpm run build:server",
     "build:client": "vite build",
     "build:server": "vite build --config vite.config.server.ts",
     "start": "node dist/server/node-build.mjs",
@@ -29,6 +29,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "nodemailer": "^7.0.9",
+    "tslib": "^2.8.1",
     "xlsx": "^0.18.5",
     "zod": "^3.25.76"
   },
@@ -107,5 +108,34 @@
     "vite": "^7.1.2",
     "vitest": "^3.2.4"
   },
-  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
+  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748",
+  "pnpm": {
+    "packageExtensions": {
+      "@supabase/functions-js": {
+        "dependencies": {
+          "tslib": "^2.8.1"
+        }
+      },
+      "@supabase/auth-js": {
+        "dependencies": {
+          "tslib": "^2.8.1"
+        }
+      },
+      "@supabase/postgrest-js": {
+        "dependencies": {
+          "tslib": "^2.8.1"
+        }
+      },
+      "@supabase/realtime-js": {
+        "dependencies": {
+          "tslib": "^2.8.1"
+        }
+      },
+      "@supabase/storage-js": {
+        "dependencies": {
+          "tslib": "^2.8.1"
+        }
+      }
+    }
+  }
 }

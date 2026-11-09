@@ -1,4 +1,5 @@
 import api, { Bet, Transaction, Venue } from "@/data/api";
+import { exportStyledExcel, ExcelColumnDef } from "@/lib/excel-export";
 
 export type ExportModule = "transactions" | "bets" | "venues";
 
@@ -109,127 +110,39 @@ export function formatHeureH(isoOrHHmm?: string) {
   return isoOrHHmm;
 }
 
-async function loadExcelJsFromCdn(): Promise<any> {
-  const url = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
-  // already loaded?
-  if ((window as any).ExcelJS) return (window as any).ExcelJS;
-  await new Promise<void>((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = url;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Impossible de charger ExcelJS depuis le CDN."));
-    document.head.appendChild(s);
-  });
-  return (window as any).ExcelJS;
-}
-
 export async function exportToExcel(
   sheetName: string,
   headers: { key: string; title: string; width?: number; numFmt?: string }[],
   rows: any[],
   filename: string,
 ) {
-  let ExcelJS: any;
-  try {
-    // Try local package first (browser build)
-    // @ts-ignore
-    ExcelJS = (await import(/* @vite-ignore */ "exceljs/dist/exceljs.min.js")) as any;
-  } catch {
-    // Fallback via script tag to avoid Vite import analysis
-    ExcelJS = await loadExcelJsFromCdn();
-  }
+  const columns: ExcelColumnDef[] = headers.map((h) => {
+    const isCurrency =
+      h.key.toLowerCase().includes("amount") ||
+      h.key.toLowerCase().includes("montant") ||
+      h.key.toLowerCase().includes("gains");
+    const isStatus =
+      h.key.toLowerCase() === "status" ||
+      h.key.toLowerCase() === "statut" ||
+      h.key.toLowerCase() === "proof";
 
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(sheetName);
-
-  ws.views = [{ state: "frozen", ySplit: 1 }];
-  const adjustedHeaders = headers; // rows may already be formatted as text for full control
-  ws.columns = adjustedHeaders.map((h) => ({ header: h.title, key: h.key, width: h.width ?? 16 }));
-
-  // Header style
-  const header = ws.getRow(1);
-  header.font = { bold: true, color: { argb: "FF111827" } }; // black text
-  header.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } }; // gray-200
-  header.eachCell((cell) => {
-    cell.border = {
-      top: { style: "medium", color: { argb: "FF111827" } },
-      left: { style: "medium", color: { argb: "FF111827" } },
-      bottom: { style: "medium", color: { argb: "FF111827" } },
-      right: { style: "medium", color: { argb: "FF111827" } },
+    return {
+      header: h.title,
+      key: h.key,
+      width: h.width || (isCurrency ? 20 : 16),
+      isCurrency,
+      isStatus,
+      align: isCurrency ? "right" : isStatus ? "center" : "left",
     };
   });
 
-  // Insert spacer rows between operator groups and color operator cells
-  const keyIndex: Record<string, number> = {};
-  ws.getRow(1).eachCell((cell, colNumber) => {
-    const col = ws.getColumn(colNumber);
-    const headerTitle = String(cell.value ?? "");
-    const headerDef = adjustedHeaders[colNumber - 1];
-    if (headerDef) keyIndex[headerDef.key] = colNumber;
+  await exportStyledExcel({
+    sheetName,
+    title: `Rapport Officiel — ${sheetName.toUpperCase()}`,
+    subtitle: `Exportation certifiée des données`,
+    columns,
+    data: rows,
+    filename,
+    showTotals: true,
   });
-
-  // Detect operator column by key or header title
-  const findOpIdx = () => {
-    if (keyIndex["operator"]) return keyIndex["operator"];
-    if (keyIndex["op"]) return keyIndex["op"];
-    // fallback by title match
-    let idx = 0;
-    ws.getRow(1).eachCell((cell, c) => {
-      const t = String(cell.value ?? "").toLowerCase();
-      if (t.includes("opérateur de jeux")) idx = c;
-    });
-    return idx || undefined;
-  };
-  const opColIdx = findOpIdx();
-
-  const colorMap: Record<string, { bg: string; fg: string }> = {
-    "1xBet": { bg: "FF1E88E5", fg: "FFFFFFFF" },
-    "Bet223": { bg: "FFF57C00", fg: "FFFFFFFF" },
-    "PremierBet": { bg: "FF2E7D32", fg: "FFFFFFFF" },
-  };
-
-  // build rows (caller may have sorted already)
-  const sorted = [...rows];
-  let prevOp: string | undefined = undefined;
-  for (let i = 0; i < sorted.length; i++) {
-    const r = sorted[i] as any;
-    const curOp = r?.operator as string | undefined;
-    const excelRow = ws.addRow(r);
-    // operator color chip
-    if (opColIdx && curOp) {
-      const cell = excelRow.getCell(opColIdx);
-      const m = colorMap[curOp] ?? { bg: "FFF3F4F6", fg: "FF111827" };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: m.bg } } as any;
-      cell.font = { color: { argb: m.fg }, bold: true } as any;
-      cell.alignment = { horizontal: "left", vertical: "middle", wrapText: true } as any;
-    }
-    prevOp = curOp;
-  }
-
-  // Styles
-  ws.eachRow((row) => {
-    row.eachCell((cell) => {
-      cell.border = {
-        top: { style: "medium", color: { argb: "FF111827" } },
-        left: { style: "medium", color: { argb: "FF111827" } },
-        bottom: { style: "medium", color: { argb: "FF111827" } },
-        right: { style: "medium", color: { argb: "FF111827" } },
-      };
-      cell.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
-    });
-  });
-
-  // Auto filter
-  const lastCol = String.fromCharCode("A".charCodeAt(0) + headers.length - 1) + "1";
-  ws.autoFilter = { from: "A1", to: lastCol } as any;
-
-  const buf = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
