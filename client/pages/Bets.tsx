@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -17,10 +18,29 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { Search, Plus, Download, Settings, Eye, EyeOff } from "lucide-react";
+import {
+  Search,
+  Plus,
+  Download,
+  Settings,
+  RefreshCw,
+  Trophy,
+  Coins,
+  ArrowUpRight,
+  TrendingDown,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  LayoutGrid,
+  List,
+  Edit2,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+} from "lucide-react";
 import * as XLSX from "xlsx";
 import { CreatableSelect } from "@/components/ui/creatable-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -60,6 +80,11 @@ function Bets() {
   const [bets, setBets] = useState<Bet[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingBet, setEditingBet] = useState<Bet | null>(null);
   const [activeOperator, setActiveOperator] = useState<string>("all");
@@ -68,12 +93,12 @@ function Bets() {
   const [exportPeriod, setExportPeriod] = useState<string>("all");
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
-  
+
   // Listes déroulantes
   const [operators, setOperators] = useState<string[]>([]);
   const [supports, setSupports] = useState<string[]>([]);
   const [betTypes, setBetTypes] = useState<string[]>([]);
-  
+
   // Formulaire
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -98,12 +123,12 @@ function Bets() {
   async function loadBets() {
     setLoading(true);
     try {
-      const { data, error} = await supabase
+      const { data, error } = await supabase
         .from("bets")
         .select("*")
         .order("date", { ascending: false })
         .order("time", { ascending: false })
-        .limit(100);
+        .limit(300);
 
       if (error) throw error;
       if (data) setBets(data);
@@ -121,9 +146,9 @@ function Bets() {
       .select("name")
       .eq("active", true)
       .order("name");
-    
+
     if (error) throw error;
-    if (data) setOperators(data.map(o => o.name));
+    if (data) setOperators(data.map((o) => o.name));
   }
 
   async function loadSupports() {
@@ -132,9 +157,9 @@ function Bets() {
       .select("name")
       .eq("active", true)
       .order("name");
-    
+
     if (error) throw error;
-    if (data) setSupports(data.map(s => s.name));
+    if (data) setSupports(data.map((s) => s.name));
   }
 
   async function loadBetTypes() {
@@ -143,16 +168,13 @@ function Bets() {
       .select("name")
       .eq("active", true)
       .order("name");
-    
+
     if (error) throw error;
-    if (data) setBetTypes(data.map(b => b.name));
+    if (data) setBetTypes(data.map((b) => b.name));
   }
 
   async function createOperator(name: string) {
-    const { error } = await supabase
-      .from("operators")
-      .insert([{ name }]);
-    
+    const { error } = await supabase.from("operators").insert([{ name }]);
     if (error) {
       if (error.code === "23505") {
         toast.error("Cet opérateur existe déjà");
@@ -161,16 +183,12 @@ function Bets() {
       }
       throw error;
     }
-    
     await loadOperators();
     toast.success(`Opérateur "${name}" créé avec succès`);
   }
 
   async function createSupport(name: string) {
-    const { error } = await supabase
-      .from("supports")
-      .insert([{ name }]);
-    
+    const { error } = await supabase.from("supports").insert([{ name }]);
     if (error) {
       if (error.code === "23505") {
         toast.error("Ce support existe déjà");
@@ -179,16 +197,12 @@ function Bets() {
       }
       throw error;
     }
-    
     await loadSupports();
     toast.success(`Support "${name}" créé avec succès`);
   }
 
   async function createBetType(name: string) {
-    const { error } = await supabase
-      .from("bet_types")
-      .insert([{ name }]);
-    
+    const { error } = await supabase.from("bet_types").insert([{ name }]);
     if (error) {
       if (error.code === "23505") {
         toast.error("Ce type de pari existe déjà");
@@ -197,7 +211,6 @@ function Bets() {
       }
       throw error;
     }
-    
     await loadBetTypes();
     toast.success(`Type de pari "${name}" créé avec succès`);
   }
@@ -207,9 +220,9 @@ function Bets() {
     setFormData({
       date: new Date().toISOString().split("T")[0],
       time: new Date().toTimeString().slice(0, 5),
-      operator: "",
-      support: "",
-      bet_type: "",
+      operator: operators[0] || "",
+      support: supports[0] || "",
+      bet_type: betTypes[0] || "",
       amount_fcfa: 0,
       status: "en attente",
       amount_won_fcfa: 0,
@@ -248,16 +261,14 @@ function Bets() {
       };
 
       if (editingBet) {
-        // Mode édition
         const { error } = await supabase
           .from("bets")
           .update(betData)
           .eq("id", editingBet.id);
-        
+
         if (error) throw error;
         toast.success("Pari modifié avec succès");
       } else {
-        // Mode création
         const isAgent = user?.role === "AGENT";
         const newBetData = {
           ...betData,
@@ -265,19 +276,16 @@ function Bets() {
           validation_status: isAgent ? "en_attente" : "valide",
         };
 
-        const { error } = await supabase
-          .from("bets")
-          .insert([newBetData]);
-        
+        const { error } = await supabase.from("bets").insert([newBetData]);
         if (error) throw error;
-        
+
         toast.success(
           isAgent
             ? "Pari créé avec succès. En attente de validation."
             : "Pari créé avec succès"
         );
       }
-      
+
       setDialogOpen(false);
       setEditingBet(null);
       await loadBets();
@@ -287,56 +295,92 @@ function Bets() {
     }
   }
 
-  const filteredBets = bets.filter((bet) => {
-    if (!search) return true;
-    const searchLower = search.toLowerCase();
-    return (
-      bet.operator.toLowerCase().includes(searchLower) ||
-      bet.bet_type.toLowerCase().includes(searchLower) ||
-      bet.status.toLowerCase().includes(searchLower) ||
-      bet.notes?.toLowerCase().includes(searchLower)
-    );
-  });
+  // Filtered bets with multi-faceted criteria
+  const filteredBets = useMemo(() => {
+    return bets.filter((bet) => {
+      // 1. Text search
+      if (search) {
+        const s = search.toLowerCase();
+        const matches =
+          bet.operator.toLowerCase().includes(s) ||
+          bet.bet_type.toLowerCase().includes(s) ||
+          bet.support?.toLowerCase().includes(s) ||
+          bet.status.toLowerCase().includes(s) ||
+          bet.id.toLowerCase().includes(s) ||
+          bet.notes?.toLowerCase().includes(s);
+        if (!matches) return false;
+      }
 
-  const getStatusBadge = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "gagné":
-      case "gagne":
-        return "px-2 py-1 text-xs rounded bg-emerald-100 text-emerald-700";
-      case "perdu":
-        return "px-2 py-1 text-xs rounded bg-red-100 text-red-700";
-      case "en attente":
-      case "en_attente":
-        return "px-2 py-1 text-xs rounded bg-blue-100 text-blue-700";
-      case "annulé":
-      case "annule":
-        return "px-2 py-1 text-xs rounded bg-slate-100 text-slate-700";
-      default:
-        return "px-2 py-1 text-xs rounded bg-slate-100 text-slate-700";
-    }
-  };
+      // 2. Status facet
+      if (statusFilter !== "all") {
+        const st = bet.status.toLowerCase();
+        if (statusFilter === "won" && !(st.includes("gagn") || st === "won")) return false;
+        if (statusFilter === "lost" && st !== "perdu" && st !== "lost") return false;
+        if (statusFilter === "pending" && !st.includes("attente") && st !== "pending") return false;
+      }
 
-  const formatAmount = (amount: number) => {
-    return new Intl.NumberFormat("fr-FR").format(amount) + " F CFA";
-  };
+      return true;
+    });
+  }, [bets, search, statusFilter]);
+
+  // Compute High-Density KPI Metrics
+  const statsSummary = useMemo(() => {
+    let totalMise = 0;
+    let totalGains = 0;
+    let wonCount = 0;
+    let lostCount = 0;
+    let pendingCount = 0;
+
+    filteredBets.forEach((b) => {
+      totalMise += Number(b.amount_fcfa) || 0;
+      const st = (b.status || "").toLowerCase();
+      if (st.includes("gagn") || st === "won") {
+        wonCount++;
+        totalGains += Number(b.amount_won_fcfa) || 0;
+      } else if (st === "perdu" || st === "lost") {
+        lostCount++;
+      } else {
+        pendingCount++;
+      }
+    });
+
+    const netPlatformMargin = totalMise - totalGains;
+    const winRate = filteredBets.length > 0 ? Math.round((wonCount / filteredBets.length) * 100) : 0;
+    const avgBet = filteredBets.length > 0 ? Math.round(totalMise / filteredBets.length) : 0;
+
+    return {
+      totalMise,
+      totalGains,
+      wonCount,
+      lostCount,
+      pendingCount,
+      netPlatformMargin,
+      winRate,
+      avgBet,
+    };
+  }, [filteredBets]);
 
   // Grouper les paris par opérateur
-  const groupedBets = filteredBets.reduce((acc, bet) => {
-    if (!acc[bet.operator]) {
-      acc[bet.operator] = [];
-    }
-    acc[bet.operator].push(bet);
-    return acc;
-  }, {} as Record<string, Bet[]>);
-
-  // Trier chaque groupe par date
-  Object.keys(groupedBets).forEach(operator => {
-    groupedBets[operator].sort((a, b) => {
-      const dateCompare = new Date(b.date).getTime() - new Date(a.date).getTime();
-      if (dateCompare !== 0) return dateCompare;
-      return (b.time || "").localeCompare(a.time || "");
+  const groupedBets = useMemo(() => {
+    const acc: Record<string, Bet[]> = {};
+    filteredBets.forEach((bet) => {
+      if (!acc[bet.operator]) {
+        acc[bet.operator] = [];
+      }
+      acc[bet.operator].push(bet);
     });
-  });
+
+    // Trier chaque groupe par date & heure
+    Object.keys(acc).forEach((operator) => {
+      acc[operator].sort((a, b) => {
+        const dateCompare = new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (dateCompare !== 0) return dateCompare;
+        return (b.time || "").localeCompare(a.time || "");
+      });
+    });
+
+    return acc;
+  }, [filteredBets]);
 
   const toggleOperatorVisibility = (operator: string) => {
     const newHidden = new Set(hiddenOperators);
@@ -373,7 +417,7 @@ function Bets() {
         return betsToFilter;
     }
 
-    return betsToFilter.filter(bet => {
+    return betsToFilter.filter((bet) => {
       const betDate = new Date(bet.date);
       return betDate >= startDate && betDate <= endDate;
     });
@@ -381,140 +425,132 @@ function Bets() {
 
   const exportToExcel = (betsToExport: Bet[] = filteredBets, operatorName: string = "tous") => {
     const filteredByPeriod = filterBetsByPeriod(betsToExport);
-    
+
     if (filteredByPeriod.length === 0) {
       toast.error("Aucun pari à exporter pour cette période");
       return;
     }
 
-    // Créer le titre avec période
     const title = `RAPPORT DES PARIS SUR LES DIFFERENTES PLATEFORMES`;
-    const periodText = exportPeriod === "week" ? "DE LA SEMAINE" 
-      : exportPeriod === "month" ? "DU MOIS"
-      : exportPeriod === "custom" ? `DU ${new Date(exportStartDate).toLocaleDateString("fr-FR")} AU ${new Date(exportEndDate).toLocaleDateString("fr-FR")}`
-      : "";
-    
-    // Préparer les données
+    const periodText =
+      exportPeriod === "week"
+        ? "DE LA SEMAINE"
+        : exportPeriod === "month"
+        ? "DU MOIS"
+        : exportPeriod === "custom"
+        ? `DU ${new Date(exportStartDate).toLocaleDateString("fr-FR")} AU ${new Date(
+            exportEndDate
+          ).toLocaleDateString("fr-FR")}`
+        : "";
+
     const excelData = filteredByPeriod.map((bet, index) => ({
       "N°": index + 1,
-      "DATE": new Date(bet.date).toLocaleDateString("fr-FR"),
+      DATE: new Date(bet.date).toLocaleDateString("fr-FR"),
       "Opérateur de jeux": bet.operator,
-      "Support": bet.support,
+      Support: bet.support,
       "Type de Pari": bet.bet_type,
       "Montant FCFA": bet.amount_fcfa,
-      "Heure": bet.time || "",
-      "Numéro de téléphone": "98932544",
-      "Référence": bet.id.substring(0, 12)
+      Heure: bet.time || "",
+      "Gains FCFA": bet.amount_won_fcfa || 0,
+      Statut: bet.status,
+      Référence: bet.id.substring(0, 12),
     }));
 
-    // Créer le workbook
     const wb = XLSX.utils.book_new();
-    
-    // Créer la feuille avec titre
     const ws_data = [
-      [title + (periodText ? " " + periodText : "")], // Titre
-      Object.keys(excelData[0] || {}), // En-têtes (ligne 2 maintenant)
-      ...excelData.map(row => Object.values(row)) // Données
+      [title + (periodText ? " " + periodText : "")],
+      Object.keys(excelData[0] || {}),
+      ...excelData.map((row) => Object.values(row)),
     ];
-    
+
     const ws = XLSX.utils.aoa_to_sheet(ws_data);
-
-    // Largeurs des colonnes
-    ws['!cols'] = [
-      { wch: 5 },  // N°
-      { wch: 12 }, // DATE
-      { wch: 20 }, // Opérateur
-      { wch: 15 }, // Support
-      { wch: 15 }, // Type
-      { wch: 15 }, // Montant
-      { wch: 10 }, // Heure
-      { wch: 18 }, // Téléphone
-      { wch: 15 }  // Référence
+    ws["!cols"] = [
+      { wch: 6 },
+      { wch: 12 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 10 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 15 },
     ];
 
-    // Fusionner les cellules du titre
-    ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } } // Fusionner A1:I1
-    ];
+    const fileName =
+      operatorName === "tous"
+        ? `rapport_paris_tous_${new Date().toISOString().split("T")[0]}.xlsx`
+        : `rapport_paris_${operatorName}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
-    // Appliquer les styles (titre, en-têtes, données)
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-    
-    // Style pour le titre (ligne 1)
-    const titleCell = ws['A1'];
-    if (titleCell) {
-      titleCell.s = {
-        font: { bold: true, sz: 14 },
-        alignment: { horizontal: 'center', vertical: 'center' },
-        fill: { fgColor: { rgb: "FFFFFF" } },
-        border: {
-          top: { style: 'thin', color: { rgb: "000000" } },
-          bottom: { style: 'thin', color: { rgb: "000000" } },
-          left: { style: 'thin', color: { rgb: "000000" } },
-          right: { style: 'thin', color: { rgb: "000000" } }
-        }
-      };
-    }
-
-    // Style pour les en-têtes (ligne 2) - FOND BLEU + TEXTE BLANC
-    for (let col = 0; col <= 8; col++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: 1, c: col });
-      const cell = ws[cellAddress];
-      if (cell) {
-        cell.s = {
-          font: { bold: true, color: { rgb: "FFFFFF" } },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          fill: { fgColor: { rgb: "4472C4" } }, // Bleu comme votre image
-          border: {
-            top: { style: 'thin', color: { rgb: "000000" } },
-            bottom: { style: 'thin', color: { rgb: "000000" } },
-            left: { style: 'thin', color: { rgb: "000000" } },
-            right: { style: 'thin', color: { rgb: "000000" } }
-          }
-        };
-      }
-    }
-
-    // Style pour les données (lignes 3+) - Alternance bleu clair / blanc
-    for (let row = 2; row <= range.e.r; row++) {
-      const isBlueRow = (row - 2) % 2 === 0; // Lignes paires en bleu clair
-      for (let col = 0; col <= 8; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-        const cell = ws[cellAddress];
-        if (cell) {
-          cell.s = {
-            alignment: { horizontal: col === 0 ? 'center' : 'left', vertical: 'center' },
-            fill: { fgColor: { rgb: isBlueRow ? "B4C7E7" : "FFFFFF" } }, // Bleu clair alternant
-            border: {
-              top: { style: 'thin', color: { rgb: "000000" } },
-              bottom: { style: 'thin', color: { rgb: "000000" } },
-              left: { style: 'thin', color: { rgb: "000000" } },
-              right: { style: 'thin', color: { rgb: "000000" } }
-            }
-          };
-        }
-      }
-    }
-
-    // Ajouter la feuille au workbook
     XLSX.utils.book_append_sheet(wb, ws, "Paris");
-
-    // Générer le fichier
-    const fileName = operatorName === "tous" 
-      ? `rapport_paris_tous_${new Date().toISOString().split("T")[0]}.xlsx`
-      : `rapport_paris_${operatorName}_${new Date().toISOString().split("T")[0]}.xlsx`;
-    
     XLSX.writeFile(wb, fileName);
-    
-    toast.success(`Export réussi: ${filteredByPeriod.length} pari${filteredByPeriod.length > 1 ? "s" : ""}`);
+
+    toast.success(`Export réussi: ${filteredByPeriod.length} pari(s)`);
     setExportDialogOpen(false);
+  };
+
+  const formatFCFA = (val: number) => {
+    return new Intl.NumberFormat("fr-FR").format(Math.round(val)) + " FCFA";
+  };
+
+  // Pagination helper for the current active tab
+  const currentTabBets = activeOperator === "all" ? filteredBets : groupedBets[activeOperator] || [];
+  const totalPages = Math.max(1, Math.ceil(currentTabBets.length / pageSize));
+  const paginatedBets = currentTabBets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const getStatusBadge = (status: string) => {
+    const s = (status || "").toLowerCase();
+    if (s.includes("gagn") || s === "won") {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border-emerald-200/60 font-semibold text-[11px] px-2 py-0.5 gap-1"
+        >
+          <CheckCircle2 className="h-3 w-3" />
+          Gagné
+        </Badge>
+      );
+    }
+    if (s === "perdu" || s === "lost") {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border-rose-200/60 font-semibold text-[11px] px-2 py-0.5 gap-1"
+        >
+          <XCircle className="h-3 w-3" />
+          Perdu
+        </Badge>
+      );
+    }
+    if (s.includes("attente") || s === "pending") {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 border-amber-200/60 font-semibold text-[11px] px-2 py-0.5 gap-1"
+        >
+          <Clock className="h-3 w-3" />
+          En attente
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="text-[11px] px-2 py-0.5">
+        {status}
+      </Badge>
+    );
   };
 
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-muted-foreground">Chargement...</div>
+        <div className="space-y-6">
+          <div className="h-10 w-1/4 bg-muted animate-pulse rounded-lg" />
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />
+            ))}
+          </div>
+          <div className="h-96 bg-muted animate-pulse rounded-xl" />
         </div>
       </AppLayout>
     );
@@ -522,289 +558,594 @@ function Bets() {
 
   return (
     <AppLayout>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="space-y-6">
+        {/* =========================================================================
+            1. HEADER & ACTION BAR
+            ========================================================================= */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border">
           <div>
-            <h1 className="text-2xl font-bold">Paris</h1>
-            <p className="text-sm text-muted-foreground">
-              Historique des paris enregistrés
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+              Gestion des Paris
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Journal des enjeux, suivi des cotes et résultats par opérateur
             </p>
           </div>
-          <Button onClick={openDialog}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nouveau pari
-          </Button>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadBets}
+              className="h-9 gap-1.5"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Actualiser</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExportDialogOpen(true)}
+              className="h-9 gap-1.5"
+            >
+              <Download className="h-4 w-4" />
+              <span>Exporter</span>
+            </Button>
+
+            <Button onClick={openDialog} size="sm" className="h-9 gap-1.5">
+              <Plus className="h-4 w-4" />
+              <span>Nouveau pari</span>
+            </Button>
+          </div>
         </div>
 
-        {/* Barre d'actions */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Rechercher par opérateur, type, statut..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          
-          {/* Gestion des opérateurs visibles */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Settings className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64">
-              <div className="space-y-3">
-                <h4 className="font-medium text-sm">Opérateurs visibles</h4>
-                <div className="space-y-2">
-                  {Object.keys(groupedBets).sort().map((operator) => (
-                    <div key={operator} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`op-${operator}`}
-                        checked={!hiddenOperators.has(operator)}
-                        onCheckedChange={() => toggleOperatorVisibility(operator)}
-                      />
-                      <label
-                        htmlFor={`op-${operator}`}
-                        className="text-sm cursor-pointer flex-1"
-                      >
-                        {operator} ({groupedBets[operator].length})
-                      </label>
-                    </div>
-                  ))}
-                </div>
+        {/* =========================================================================
+            2. HIGH-DENSITY KPI BENTO GRID (Standard dashboard-designer)
+            ========================================================================= */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
+          {/* KPI 1: Volume des Mises */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Volume Misé
+              </span>
+              <div className="h-9 w-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <Coins className="h-4 w-4" />
               </div>
-            </PopoverContent>
-          </Popover>
+            </div>
+            <div className="mt-3">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                {formatFCFA(statsSummary.totalMise)}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border-emerald-200/60 text-[11px] font-semibold px-1.5 py-0">
+                  {filteredBets.length} tickets
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Panier moy. {formatFCFA(statsSummary.avgBet)}
+                </span>
+              </div>
+            </div>
+          </div>
 
-          <Button variant="outline" onClick={() => setExportDialogOpen(true)}>
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
-          
-          <Button variant="outline" onClick={loadBets}>
-            Actualiser
-          </Button>
+          {/* KPI 2: Gains Distribués */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Gains Distribués
+              </span>
+              <div className="h-9 w-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                <Trophy className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                {formatFCFA(statsSummary.totalGains)}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400 border-blue-200/60 text-[11px] font-semibold px-1.5 py-0">
+                  {statsSummary.wonCount} gagnés
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Taux joueur: {statsSummary.winRate}%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 3: Marge Nette Plateforme */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Marge / Rétention
+              </span>
+              <div className="h-9 w-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                <ArrowUpRight className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                {formatFCFA(statsSummary.netPlatformMargin)}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400 border-indigo-200/60 text-[11px] font-semibold px-1.5 py-0">
+                  {statsSummary.lostCount} perdus
+                </Badge>
+                <span className="text-xs text-muted-foreground">marge conservée</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI 4: Tickets en Attente */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Paris en Cours
+              </span>
+              <div className="h-9 w-9 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                <Clock className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                {statsSummary.pendingCount}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Badge variant="outline" className="bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 border-amber-200/60 text-[11px] font-semibold px-1.5 py-0">
+                  En attente
+                </Badge>
+                <span className="text-xs text-muted-foreground">non dénoués</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Statistiques rapides */}
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-4">
-          <div className="p-4 border rounded-lg">
-            <p className="text-sm text-muted-foreground">Total paris</p>
-            <p className="text-2xl font-bold">{filteredBets.length}</p>
-          </div>
-          <div className="p-4 border rounded-lg">
-            <p className="text-sm text-muted-foreground">Gagnés</p>
-            <p className="text-2xl font-bold text-emerald-600">
-              {filteredBets.filter((b) => b.status.toLowerCase() === "gagné" || b.status.toLowerCase() === "gagne").length}
-            </p>
-          </div>
-          <div className="p-4 border rounded-lg">
-            <p className="text-sm text-muted-foreground">Perdus</p>
-            <p className="text-2xl font-bold text-red-600">
-              {filteredBets.filter((b) => b.status.toLowerCase() === "perdu").length}
-            </p>
-          </div>
-          <div className="p-4 border rounded-lg">
-            <p className="text-sm text-muted-foreground">En attente</p>
-            <p className="text-2xl font-bold text-blue-600">
-              {filteredBets.filter((b) => b.status.toLowerCase().includes("attente")).length}
-            </p>
+        {/* =========================================================================
+            3. FACETED FILTER TOOLBAR & VIEW CONTROLS
+            ========================================================================= */}
+        <div className="p-4 rounded-xl border border-border bg-card shadow-xs space-y-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            {/* Global Search */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Rechercher par opérateur, ticket, type, statut..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="pl-9 h-9 text-xs"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Faceted Status Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+              <span className="text-xs text-muted-foreground mr-1 hidden lg:inline">Statut:</span>
+              <Button
+                variant={statusFilter === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setStatusFilter("all");
+                  setCurrentPage(1);
+                }}
+                className="h-8 text-xs px-2.5"
+              >
+                Tous ({bets.length})
+              </Button>
+              <Button
+                variant={statusFilter === "won" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setStatusFilter("won");
+                  setCurrentPage(1);
+                }}
+                className="h-8 text-xs px-2.5"
+              >
+                Gagnés
+              </Button>
+              <Button
+                variant={statusFilter === "lost" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setStatusFilter("lost");
+                  setCurrentPage(1);
+                }}
+                className="h-8 text-xs px-2.5"
+              >
+                Perdus
+              </Button>
+              <Button
+                variant={statusFilter === "pending" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setStatusFilter("pending");
+                  setCurrentPage(1);
+                }}
+                className="h-8 text-xs px-2.5"
+              >
+                En attente
+              </Button>
+            </div>
+
+            {/* View Switcher & Operators Settings */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center border border-border rounded-lg p-0.5 bg-muted/40">
+                <Button
+                  variant={viewMode === "table" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("table")}
+                  className="h-7 px-2 text-xs gap-1"
+                >
+                  <List className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Table</span>
+                </Button>
+                <Button
+                  variant={viewMode === "cards" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("cards")}
+                  className="h-7 px-2 text-xs gap-1"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Cartes</span>
+                </Button>
+              </div>
+
+              {/* Operator visibility selector */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+                    <Settings className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Opérateurs</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64">
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-xs text-foreground uppercase tracking-wider">
+                      Opérateurs visibles
+                    </h4>
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {Object.keys(groupedBets)
+                        .sort()
+                        .map((operator) => (
+                          <div key={operator} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`op-${operator}`}
+                              checked={!hiddenOperators.has(operator)}
+                              onCheckedChange={() => toggleOperatorVisibility(operator)}
+                            />
+                            <label
+                              htmlFor={`op-${operator}`}
+                              className="text-xs cursor-pointer flex-1 text-foreground"
+                            >
+                              {operator} ({groupedBets[operator].length})
+                            </label>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
         </div>
 
-        {/* Onglets par opérateur */}
-        <Tabs value={activeOperator} onValueChange={setActiveOperator} className="w-full">
-          <TabsList className="w-full justify-start overflow-x-auto flex-wrap h-auto">
-            <TabsTrigger value="all" className="gap-2">
-              Tous ({filteredBets.length})
+        {/* =========================================================================
+            4. TABS BY OPERATOR & DATA VIEW (TABLE / CARDS)
+            ========================================================================= */}
+        <Tabs
+          value={activeOperator}
+          onValueChange={(val) => {
+            setActiveOperator(val);
+            setCurrentPage(1);
+          }}
+          className="w-full"
+        >
+          <TabsList className="w-full justify-start overflow-x-auto flex-nowrap h-auto p-1 bg-muted/50 border border-border rounded-xl">
+            <TabsTrigger value="all" className="text-xs px-3 py-1.5 gap-1.5">
+              <span>Tous</span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                {filteredBets.length}
+              </Badge>
             </TabsTrigger>
             {Object.keys(groupedBets)
-              .filter(op => !hiddenOperators.has(op))
+              .filter((op) => !hiddenOperators.has(op))
               .sort()
               .map((operator) => (
-                <TabsTrigger key={operator} value={operator} className="gap-2">
-                  📊 {operator} ({groupedBets[operator].length})
+                <TabsTrigger
+                  key={operator}
+                  value={operator}
+                  className="text-xs px-3 py-1.5 gap-1.5 whitespace-nowrap"
+                >
+                  <span>{operator}</span>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                    {groupedBets[operator].length}
+                  </Badge>
                 </TabsTrigger>
               ))}
           </TabsList>
 
-          {/* Contenu: Tous les paris */}
-          <TabsContent value="all" className="space-y-3 mt-4">
-            {/* Bouton export pour l'onglet "Tous" */}
-            <div className="flex justify-end">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setExportDialogOpen(true)}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Exporter tous les paris ({filteredBets.length})
-              </Button>
-            </div>
-            
-            {filteredBets.length > 0 ? (
-              filteredBets.map((bet, index) => (
-                <div
-                  key={bet.id}
-                  className="p-4 border rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
-                  onClick={() => openEditDialog(bet)}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
-                      #{index + 1}
-                    </div>
-                    
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span className="font-bold text-primary">{bet.operator}</span>
-                        <span className="font-medium">
-                          {new Date(bet.date).toLocaleDateString("fr-FR")}
-                        </span>
-                        {bet.time && (
-                          <span className="text-sm text-muted-foreground">
-                            {bet.time}
-                          </span>
-                        )}
-                        <span className="text-sm px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-                          {bet.support}
-                        </span>
-                        <span className="text-sm px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
-                          {bet.bet_type}
-                        </span>
-                        <span className={getStatusBadge(bet.status)}>
-                          {bet.status}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Montant: </span>
-                          <span className="font-semibold">{formatAmount(bet.amount_fcfa)}</span>
+          {/* Table Container */}
+          <div className="mt-4 rounded-xl border border-border bg-card shadow-xs overflow-hidden">
+            {currentTabBets.length > 0 ? (
+              viewMode === "table" ? (
+                /* === HIGH DENSITY TANSTACK STYLE TABLE === */
+                <div className="relative w-full overflow-auto">
+                  <Table>
+                    <TableHeader className="bg-muted/40">
+                      <TableRow className="border-b border-border">
+                        <TableHead className="w-14 text-center font-semibold text-xs">N°</TableHead>
+                        <TableHead className="font-semibold text-xs">Date & Heure</TableHead>
+                        <TableHead className="font-semibold text-xs">Opérateur</TableHead>
+                        <TableHead className="font-semibold text-xs">Support</TableHead>
+                        <TableHead className="font-semibold text-xs">Type de Pari</TableHead>
+                        <TableHead className="text-right font-semibold text-xs">Montant Misé</TableHead>
+                        <TableHead className="text-right font-semibold text-xs">Gains</TableHead>
+                        <TableHead className="text-center font-semibold text-xs">Statut</TableHead>
+                        <TableHead className="text-center font-semibold text-xs">Validation</TableHead>
+                        <TableHead className="text-right font-semibold text-xs">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-border">
+                      {paginatedBets.map((bet, index) => {
+                        const globalIndex = (currentPage - 1) * pageSize + index + 1;
+                        return (
+                          <TableRow
+                            key={bet.id}
+                            className="hover:bg-muted/40 transition-colors cursor-pointer group"
+                            onClick={() => openEditDialog(bet)}
+                          >
+                            <TableCell className="text-center font-mono text-xs text-muted-foreground font-semibold">
+                              #{globalIndex}
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                              <div className="font-medium text-foreground">
+                                {new Date(bet.date).toLocaleDateString("fr-FR")}
+                              </div>
+                              {bet.time && (
+                                <div className="text-[11px] text-muted-foreground font-mono">
+                                  {bet.time}
+                                </div>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-xs font-semibold text-foreground">
+                              {bet.operator}
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                              <span className="px-2 py-0.5 rounded bg-muted text-foreground text-[11px] font-medium border border-border/50">
+                                {bet.support || "—"}
+                              </span>
+                            </TableCell>
+
+                            <TableCell className="text-xs text-muted-foreground font-medium">
+                              {bet.bet_type}
+                            </TableCell>
+
+                            <TableCell className="text-right font-mono font-semibold text-xs text-foreground">
+                              {formatFCFA(bet.amount_fcfa)}
+                            </TableCell>
+
+                            <TableCell className="text-right font-mono text-xs">
+                              {bet.amount_won_fcfa && bet.amount_won_fcfa > 0 ? (
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                  {formatFCFA(bet.amount_won_fcfa)}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-center">
+                              {getStatusBadge(bet.status)}
+                            </TableCell>
+
+                            <TableCell className="text-center">
+                              {bet.validation_status === "valide" ? (
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border-emerald-200/50 text-[10px]">
+                                  Validé
+                                </Badge>
+                              ) : bet.validation_status === "refuse" ? (
+                                <Badge variant="outline" className="bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border-rose-200/50 text-[10px]">
+                                  Refusé
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-border text-[10px]">
+                                  {bet.validation_status || "Standard"}
+                                </Badge>
+                              )}
+                            </TableCell>
+
+                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEditDialog(bet)}
+                                className="h-8 px-2 text-xs gap-1"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">Détails</span>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                /* === CARDS / TILES VIEW === */
+                <div className="p-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                  {paginatedBets.map((bet, index) => {
+                    const globalIndex = (currentPage - 1) * pageSize + index + 1;
+                    return (
+                      <div
+                        key={bet.id}
+                        className="p-4 rounded-xl border border-border bg-card shadow-xs hover:shadow-md transition-shadow cursor-pointer flex flex-col justify-between space-y-3"
+                        onClick={() => openEditDialog(bet)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="h-6 w-6 rounded-md bg-muted text-muted-foreground flex items-center justify-center font-mono font-bold text-xs">
+                              #{globalIndex}
+                            </span>
+                            <div>
+                              <h4 className="font-semibold text-sm text-foreground">
+                                {bet.operator}
+                              </h4>
+                              <p className="text-[11px] text-muted-foreground">
+                                {new Date(bet.date).toLocaleDateString("fr-FR")} {bet.time ? `• ${bet.time}` : ""}
+                              </p>
+                            </div>
+                          </div>
+                          {getStatusBadge(bet.status)}
                         </div>
-                        {bet.amount_won_fcfa && bet.amount_won_fcfa > 0 && (
+
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
+                          <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground text-[11px]">
+                            {bet.support}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground text-[11px]">
+                            {bet.bet_type}
+                          </span>
+                        </div>
+
+                        <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
                           <div>
-                            <span className="text-muted-foreground">Gains: </span>
-                            <span className="font-semibold text-emerald-600">
-                              {formatAmount(bet.amount_won_fcfa)}
+                            <span className="text-muted-foreground">Misé: </span>
+                            <span className="font-mono font-semibold text-foreground">
+                              {formatFCFA(bet.amount_fcfa)}
                             </span>
                           </div>
-                        )}
+                          {bet.amount_won_fcfa && bet.amount_won_fcfa > 0 ? (
+                            <div>
+                              <span className="text-muted-foreground">Gains: </span>
+                              <span className="font-mono font-semibold text-emerald-600">
+                                {formatFCFA(bet.amount_won_fcfa)}
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                      
-                      {bet.notes && (
-                        <p className="text-sm text-muted-foreground italic">
-                          {bet.notes}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
-              ))
+              )
             ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                Aucun pari trouvé
+              <div className="py-16 text-center">
+                <Trophy className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                <h3 className="font-semibold text-sm text-foreground">Aucun pari trouvé</h3>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                  Aucun résultat ne correspond à vos critères de recherche ou à cet opérateur.
+                </p>
+                <Button onClick={openDialog} size="sm" variant="outline" className="mt-4">
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  Nouveau pari
+                </Button>
               </div>
             )}
-          </TabsContent>
 
-          {/* Contenu: Par opérateur */}
-          {Object.keys(groupedBets)
-            .filter(op => !hiddenOperators.has(op))
-            .map((operator) => {
-              const operatorBets = groupedBets[operator];
-              return (
-                <TabsContent key={operator} value={operator} className="space-y-3 mt-4">
-                  {/* Bouton export pour cet opérateur */}
-                  <div className="flex justify-end">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => setExportDialogOpen(true)}
+            {/* Pagination Controls Footer */}
+            {currentTabBets.length > 0 && (
+              <div className="p-3 border-t border-border bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <span>
+                    Affichage de{" "}
+                    <span className="font-medium text-foreground">
+                      {(currentPage - 1) * pageSize + 1}
+                    </span>{" "}
+                    à{" "}
+                    <span className="font-medium text-foreground">
+                      {Math.min(currentPage * pageSize, currentTabBets.length)}
+                    </span>{" "}
+                    sur{" "}
+                    <span className="font-medium text-foreground">
+                      {currentTabBets.length}
+                    </span>{" "}
+                    paris
+                  </span>
+
+                  <span className="text-border">|</span>
+
+                  <label className="flex items-center gap-1.5">
+                    <span>Lignes:</span>
+                    <select
+                      className="border border-border rounded px-1.5 py-0.5 bg-background text-foreground text-xs"
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
                     >
-                      <Download className="h-4 w-4 mr-2" />
-                      Exporter {operator} ({operatorBets.length})
-                    </Button>
-                  </div>
-                  
-                  {operatorBets.map((bet, index) => (
-                    <div
-                      key={bet.id}
-                      className="p-4 border rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
-                      onClick={() => openEditDialog(bet)}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
-                          #{index + 1}
-                        </div>
-                        
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <span className="font-medium">
-                              {new Date(bet.date).toLocaleDateString("fr-FR")}
-                            </span>
-                            {bet.time && (
-                              <span className="text-sm text-muted-foreground">
-                                {bet.time}
-                              </span>
-                            )}
-                            <span className="text-sm px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-                              {bet.support}
-                            </span>
-                            <span className="text-sm px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
-                              {bet.bet_type}
-                            </span>
-                            <span className={getStatusBadge(bet.status)}>
-                              {bet.status}
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center gap-4 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Montant: </span>
-                              <span className="font-semibold">{formatAmount(bet.amount_fcfa)}</span>
-                            </div>
-                            {bet.amount_won_fcfa && bet.amount_won_fcfa > 0 && (
-                              <div>
-                                <span className="text-muted-foreground">Gains: </span>
-                                <span className="font-semibold text-emerald-600">
-                                  {formatAmount(bet.amount_won_fcfa)}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          
-                          {bet.notes && (
-                            <p className="text-sm text-muted-foreground italic">
-                              {bet.notes}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </TabsContent>
-              );
-            })}
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="h-7 px-2 text-xs gap-1"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    <span>Précédent</span>
+                  </Button>
+
+                  <span className="px-2 font-mono text-xs font-medium text-foreground">
+                    Page {currentPage} / {totalPages}
+                  </span>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    className="h-7 px-2 text-xs gap-1"
+                  >
+                    <span>Suivant</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </Tabs>
-
-        <div className="text-sm text-muted-foreground">
-          Affichage de {filteredBets.length} paris sur {bets.length} au total
-        </div>
       </div>
 
-      {/* Dialog de création/édition */}
+      {/* =========================================================================
+          DIALOG DE CRÉATION / MODIFICATION DU PARI
+          ========================================================================= */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingBet ? "Modifier le pari" : "Nouveau pari"}</DialogTitle>
+            <DialogTitle className="text-lg font-bold">
+              {editingBet ? "Modifier le pari" : "Nouveau pari"}
+            </DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4">
+
+          <div className="grid gap-4 pt-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium">Date *</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                  Date *
+                </label>
                 <Input
                   type="date"
                   value={formData.date}
@@ -812,7 +1153,9 @@ function Bets() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium">Heure</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                  Heure
+                </label>
                 <Input
                   type="time"
                   value={formData.time}
@@ -827,7 +1170,7 @@ function Bets() {
               value={formData.operator}
               onChange={(value) => setFormData({ ...formData, operator: value })}
               options={operators}
-              placeholder="Tapez pour rechercher ou créer..."
+              placeholder="Sélectionner ou saisir un nouvel opérateur..."
               onCreateNew={createOperator}
             />
 
@@ -837,7 +1180,7 @@ function Bets() {
               value={formData.support}
               onChange={(value) => setFormData({ ...formData, support: value })}
               options={supports}
-              placeholder="Tapez pour rechercher ou créer..."
+              placeholder="Sélectionner ou saisir un support..."
               onCreateNew={createSupport}
             />
 
@@ -847,24 +1190,30 @@ function Bets() {
               value={formData.bet_type}
               onChange={(value) => setFormData({ ...formData, bet_type: value })}
               options={betTypes}
-              placeholder="Tapez pour rechercher ou créer..."
+              placeholder="Sélectionner ou saisir un type..."
               onCreateNew={createBetType}
             />
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium">Montant misé (F CFA) *</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                  Montant misé (FCFA) *
+                </label>
                 <Input
                   type="number"
                   value={formData.amount_fcfa || ""}
-                  onChange={(e) => setFormData({ ...formData, amount_fcfa: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, amount_fcfa: parseFloat(e.target.value) || 0 })
+                  }
                   placeholder="0"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium">Statut</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                  Statut du pari
+                </label>
                 <select
-                  className="w-full border rounded px-3 py-2 text-sm"
+                  className="w-full border border-border bg-background rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                 >
@@ -878,55 +1227,68 @@ function Bets() {
 
             {formData.status === "gagné" && (
               <div>
-                <label className="text-xs font-medium">Montant gagné (F CFA)</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                  Montant gagné (FCFA)
+                </label>
                 <Input
                   type="number"
                   value={formData.amount_won_fcfa || ""}
-                  onChange={(e) => setFormData({ ...formData, amount_won_fcfa: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, amount_won_fcfa: parseFloat(e.target.value) || 0 })
+                  }
                   placeholder="0"
                 />
               </div>
             )}
 
             <div>
-              <label className="text-xs font-medium">Notes</label>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
+                Notes & Références
+              </label>
               <Textarea
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Notes additionnelles..."
+                placeholder="Détails du ticket, identifiant externe, match..."
                 rows={3}
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-3 border-t border-border">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 Annuler
               </Button>
               <Button onClick={handleSubmit}>
-                Enregistrer
+                {editingBet ? "Mettre à jour" : "Créer le pari"}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog d'export avancé */}
+      {/* =========================================================================
+          DIALOG D'EXPORT EXCEL AVANCÉ
+          ========================================================================= */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>📥 Exporter les paris</DialogTitle>
+            <DialogTitle className="text-lg font-bold">
+              📥 Exporter le Rapport des Paris
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+
+          <div className="space-y-4 pt-2">
             <div>
-              <label className="text-sm font-medium mb-2 block">Période d'export</label>
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
+                Période d'export
+              </label>
               <select
-                className="w-full border rounded px-3 py-2 text-sm"
+                className="w-full border border-border bg-background rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 value={exportPeriod}
                 onChange={(e) => setExportPeriod(e.target.value)}
               >
-                <option value="all">Tous les paris</option>
-                <option value="week">Dernière semaine</option>
-                <option value="month">Dernier mois</option>
+                <option value="all">Tous les paris enregistrés</option>
+                <option value="week">Dernière semaine (7 jours)</option>
+                <option value="month">Dernier mois (30 jours)</option>
                 <option value="custom">Période personnalisée</option>
               </select>
             </div>
@@ -934,7 +1296,7 @@ function Bets() {
             {exportPeriod === "custom" && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium">Date de début</label>
+                  <label className="text-xs font-medium block mb-1">Date début</label>
                   <Input
                     type="date"
                     value={exportStartDate}
@@ -942,7 +1304,7 @@ function Bets() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium">Date de fin</label>
+                  <label className="text-xs font-medium block mb-1">Date fin</label>
                   <Input
                     type="date"
                     value={exportEndDate}
@@ -952,41 +1314,38 @@ function Bets() {
               </div>
             )}
 
-            <div className="bg-slate-50 p-3 rounded text-sm">
-              <p className="font-medium mb-1">Aperçu de l'export :</p>
+            <div className="bg-muted/40 p-3.5 rounded-xl border border-border text-xs space-y-1">
+              <p className="font-semibold text-foreground">Aperçu du jeu de données :</p>
               <p className="text-muted-foreground">
-                {filterBetsByPeriod(filteredBets).length} pari(s) seront exportés
+                <span className="font-medium text-foreground">
+                  {filterBetsByPeriod(activeOperator === "all" ? filteredBets : groupedBets[activeOperator] || []).length}
+                </span>{" "}
+                pari(s) seront inclus dans le tableur.
               </p>
-              {activeOperator !== "all" && (
-                <p className="text-muted-foreground mt-1">
-                  Opérateur: {activeOperator}
-                </p>
-              )}
+              <p className="text-muted-foreground">
+                Filtre opérateur actif:{" "}
+                <span className="font-medium text-foreground">
+                  {activeOperator === "all" ? "Tous les opérateurs" : activeOperator}
+                </span>
+              </p>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 p-3 rounded text-sm">
-              <p className="font-medium text-blue-900 mb-1">📋 Format d'export</p>
-              <ul className="text-blue-700 space-y-1 text-xs">
-                <li>✓ Titre du rapport avec période</li>
-                <li>✓ Colonnes: N°, Date, Opérateur, Support, Type, Montant, Heure, Téléphone, Référence</li>
-                <li>✓ Compatible Excel avec encodage UTF-8</li>
-              </ul>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-2">
               <Button variant="outline" onClick={() => setExportDialogOpen(false)}>
                 Annuler
               </Button>
-              <Button 
+              <Button
                 onClick={() => {
-                  const betsToExport = activeOperator === "all" 
-                    ? filteredBets 
-                    : groupedBets[activeOperator] || [];
+                  const betsToExport =
+                    activeOperator === "all"
+                      ? filteredBets
+                      : groupedBets[activeOperator] || [];
                   exportToExcel(betsToExport, activeOperator);
                 }}
+                className="gap-1.5"
               >
-                <Download className="h-4 w-4 mr-2" />
-                Exporter
+                <Download className="h-4 w-4" />
+                Générer Excel
               </Button>
             </div>
           </div>
