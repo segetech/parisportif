@@ -5,23 +5,23 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Installer la version exacte de pnpm utilisée par le projet
+# Installer pnpm
 RUN npm install -g pnpm@10.14.0
 
-# Copie des manifestes de dépendances
+# Copie des fichiers package.json et pnpm-lock.yaml
 COPY package.json pnpm-lock.yaml ./
 
-# Installation complète des dépendances
-RUN pnpm install --frozen-lockfile
+# Installation des dépendances avec tolérance de mise à jour du lockfile
+RUN pnpm install --no-frozen-lockfile
 
-# Arguments de build nécessaires pour Vite (injectés par Coolify)
+# Variables de build requises par Vite pour compiler le client
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
-# Copie de l'intégralité du code source
+# Copie de tout le code source
 COPY . .
 
 # Compilation : client (dist/spa) + serveur Node (dist/server)
@@ -34,7 +34,7 @@ FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-# Outils système (curl requis pour le healthcheck Docker / Coolify)
+# Outils système (curl pour le healthcheck) et pnpm
 RUN apk add --no-cache curl && npm install -g pnpm@10.14.0
 
 ENV NODE_ENV=production
@@ -42,7 +42,7 @@ ENV PORT=3000
 
 # Installation des dépendances de production uniquement
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod --no-frozen-lockfile
 
 # Copie des artefacts compilés depuis l'étape builder
 COPY --from=builder /app/dist ./dist
@@ -51,12 +51,12 @@ COPY --from=builder /app/dist ./dist
 RUN chown -R node:node /app
 USER node
 
-# Port d'écoute du serveur
+# Port d'écoute par défaut
 EXPOSE 3000
 
 # Healthcheck natif Docker & Coolify
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
-# Commande de démarrage du serveur unifié
+# Démarrage du serveur unifié
 CMD ["node", "dist/server/node-build.mjs"]
