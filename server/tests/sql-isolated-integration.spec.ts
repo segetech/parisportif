@@ -227,6 +227,12 @@ describe("Real Isolated PostgreSQL 18 Integration Tests (Dedicated Instance)", (
     return client;
   }
 
+  async function impersonate(client: Client, userId: string) {
+    await client.query("SET LOCAL role = 'authenticated';");
+    await client.query(`SELECT set_config('request.jwt.claim.sub', '${userId}', true);`);
+    await client.query("SELECT set_config('request.jwt.claim.role', 'authenticated', true);");
+  }
+
   // ----------------------------------------------------------------------------
   // SUITE 1 : SÉCURITÉ DE GET_DASHBOARD_AGGREGATES()
   // ----------------------------------------------------------------------------
@@ -511,6 +517,72 @@ describe("Real Isolated PostgreSQL 18 Integration Tests (Dedicated Instance)", (
         "SELECT COUNT(*) as count FROM public.users WHERE role = 'ADMIN' AND statut = 'actif';"
       );
       expect(Number(checkRes.rows[0].count)).toBeGreaterThanOrEqual(1);
+    });
+
+    it("doit appliquer les RLS sur import_batches (insertion/mise à jour par utilisateur actif, blocage sous renouvellement)", async () => {
+      const client = await createTestClient();
+
+      // 1. Agent actif sans restriction mot de passe crée un lot d'import
+      await client.query("BEGIN;");
+      await impersonate(client, AGENT_A_ID);
+      const batchId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+      await client.query(`
+        INSERT INTO public.import_batches (id, file_name, sheet_name, entity_type, total_rows, imported_rows, status, imported_by)
+        VALUES ('${batchId}', 'test.xlsx', 'pari', 'bets', 10, 10, 'en_cours', '${AGENT_A_ID}');
+      `);
+
+      // 2. Mise à jour du lot à 'termine' par le même agent
+      const updateRes = await client.query(`
+        UPDATE public.import_batches SET status = 'termine' WHERE id = '${batchId}' RETURNING status;
+      `);
+      expect(updateRes.rows[0].status).toBe("termine");
+      await client.query("COMMIT;");
+
+      // 3. Utilisateur sous renouvellement de mot de passe tente de créer un lot -> bloqué par RLS
+      await client.query("BEGIN;");
+      await impersonate(client, PENDING_PWD_ID);
+      const forbiddenBatchId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+      let blocked = false;
+      try {
+        await client.query(`
+          INSERT INTO public.import_batches (id, file_name, sheet_name, entity_type, total_rows, imported_rows, status, imported_by)
+          VALUES ('${forbiddenBatchId}', 'hack.xlsx', 'pari', 'bets', 1, 1, 'termine', '${PENDING_PWD_ID}');
+        `);
+      } catch (e: any) {
+        blocked = true;
+      }
+      await client.query("ROLLBACK;");
+      expect(blocked).toBe(true);
+    });
+
+    it("doit autoriser l'agent à créer les jeux de ses salles et bloquer l'agent sous renouvellement", async () => {
+      const client = await createTestClient();
+
+      // 1. Agent A crée une salle puis insère ses jeux
+      await client.query("BEGIN;");
+      await impersonate(client, AGENT_A_ID);
+      const venueId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+      await client.query(`
+        INSERT INTO public.venues (id, name, quartier, operator, support, bet_type, address, created_by)
+        VALUES ('${venueId}', 'Salle ACI Express', 'Hamdallaye ACI', '1xBet', 'Physique', 'Loto', 'Rue 12', '${AGENT_A_ID}');
+      `);
+
+      const gameId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+      await client.query(`
+        INSERT INTO public.venue_games (id, venue_id, game_name, active)
+        VALUES ('${gameId}', '${venueId}', 'Spin 2 Win', true);
+      `);
+
+      const gamesRes = await client.query(`SELECT game_name FROM public.venue_games WHERE id = '${gameId}';`);
+      expect(gamesRes.rows[0].game_name).toBe("Spin 2 Win");
+      await client.query("COMMIT;");
+
+      // 2. Utilisateur sous renouvellement de mot de passe est bloqué en lecture / écriture
+      await client.query("BEGIN;");
+      await impersonate(client, PENDING_PWD_ID);
+      const readBlocked = await client.query(`SELECT * FROM public.venue_games;`);
+      expect(readBlocked.rows.length).toBe(0);
+      await client.query("ROLLBACK;");
     });
   });
 });

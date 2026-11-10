@@ -392,3 +392,84 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- ------------------------------------------------------------------------------
+-- 6. Politiques RLS Renforcées pour import_batches et venue_games
+-- Blocage strict des opérations d'import pour les comptes sous renouvellement
+-- ------------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'import_batches') THEN
+    DROP POLICY IF EXISTS "import_batches_select" ON public.import_batches;
+    CREATE POLICY "import_batches_select" ON public.import_batches
+      FOR SELECT TO authenticated
+      USING (public.is_active_and_cleared_user());
+
+    DROP POLICY IF EXISTS "import_batches_insert" ON public.import_batches;
+    CREATE POLICY "import_batches_insert" ON public.import_batches
+      FOR INSERT TO authenticated
+      WITH CHECK (public.is_active_and_cleared_user());
+
+    DROP POLICY IF EXISTS "import_batches_update" ON public.import_batches;
+    CREATE POLICY "import_batches_update" ON public.import_batches
+      FOR UPDATE TO authenticated
+      USING (
+        public.is_active_and_cleared_user() AND (
+          imported_by = (SELECT auth.uid()) OR
+          EXISTS (
+            SELECT 1 FROM public.users 
+            WHERE users.id = (SELECT auth.uid()) 
+            AND users.role IN ('ADMIN', 'CONTROLEUR')
+          )
+        )
+      )
+      WITH CHECK (
+        public.is_active_and_cleared_user() AND (
+          imported_by = (SELECT auth.uid()) OR
+          EXISTS (
+            SELECT 1 FROM public.users 
+            WHERE users.id = (SELECT auth.uid()) 
+            AND users.role IN ('ADMIN', 'CONTROLEUR')
+          )
+        )
+      );
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'venue_games') THEN
+    DROP POLICY IF EXISTS "venue_games_select_authenticated" ON public.venue_games;
+    CREATE POLICY "venue_games_select_authenticated" ON public.venue_games
+      FOR SELECT TO authenticated
+      USING (public.is_active_and_cleared_user());
+
+    DROP POLICY IF EXISTS "venue_games_write_admin_controller" ON public.venue_games;
+    CREATE POLICY "venue_games_write_admin_controller" ON public.venue_games
+      FOR ALL TO authenticated
+      USING (
+        public.is_active_and_cleared_user() AND (
+          EXISTS (
+            SELECT 1 FROM public.users 
+            WHERE users.id = (SELECT auth.uid()) 
+            AND users.role IN ('ADMIN', 'CONTROLEUR')
+          ) OR EXISTS (
+            SELECT 1 FROM public.venues
+            WHERE venues.id = venue_games.venue_id
+            AND venues.created_by = (SELECT auth.uid())
+          )
+        )
+      )
+      WITH CHECK (
+        public.is_active_and_cleared_user() AND (
+          EXISTS (
+            SELECT 1 FROM public.users 
+            WHERE users.id = (SELECT auth.uid()) 
+            AND users.role IN ('ADMIN', 'CONTROLEUR')
+          ) OR EXISTS (
+            SELECT 1 FROM public.venues
+            WHERE venues.id = venue_games.venue_id
+            AND venues.created_by = (SELECT auth.uid())
+          )
+        )
+      );
+  END IF;
+END $$;
+

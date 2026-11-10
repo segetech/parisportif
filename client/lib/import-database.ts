@@ -4,7 +4,7 @@ type DatabaseError = { code?: string; message?: string; details?: string | null 
 type ImportTable = "transactions" | "bets" | "venues";
 
 export function importDatabaseError(error: DatabaseError, resource: string): Error {
-  const missingSchema = ["PGRST202", "PGRST204", "PGRST205", "42703", "42P01", "42883"].includes(error.code || "");
+  const missingSchema = ["PGRST200", "PGRST202", "PGRST204", "PGRST205", "42703", "42P01", "42883"].includes(error.code || "");
   if (missingSchema) {
     return new Error(
       `Structure de base indisponible pour ${resource} (${error.code}). ` +

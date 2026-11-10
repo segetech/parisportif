@@ -43,6 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_proof_status ON public.transactions(
 -- 3. EXTENSION DE LA TABLE VENUES (SALLES DE JEUX)
 -- Support de plusieurs jeux par établissement et géolocalisation par quartier
 ALTER TABLE public.venues 
+ADD COLUMN IF NOT EXISTS name VARCHAR(255),
 ADD COLUMN IF NOT EXISTS quartier VARCHAR(255),
 ADD COLUMN IF NOT EXISTS quartier_no VARCHAR(50),
 ADD COLUMN IF NOT EXISTS games TEXT[] DEFAULT '{}',
@@ -80,6 +81,10 @@ CREATE POLICY "venue_games_write_admin_controller" ON public.venue_games
       WHERE users.id = (SELECT auth.uid()) 
       AND users.statut = 'actif' 
       AND users.role IN ('ADMIN', 'CONTROLEUR')
+    ) OR EXISTS (
+      SELECT 1 FROM public.venues
+      WHERE venues.id = venue_games.venue_id
+      AND venues.created_by = (SELECT auth.uid())
     )
   )
   WITH CHECK (
@@ -88,6 +93,10 @@ CREATE POLICY "venue_games_write_admin_controller" ON public.venue_games
       WHERE users.id = (SELECT auth.uid()) 
       AND users.statut = 'actif' 
       AND users.role IN ('ADMIN', 'CONTROLEUR')
+    ) OR EXISTS (
+      SELECT 1 FROM public.venues
+      WHERE venues.id = venue_games.venue_id
+      AND venues.created_by = (SELECT auth.uid())
     )
   );
 
@@ -168,3 +177,33 @@ CREATE POLICY "import_batches_insert" ON public.import_batches
       AND users.statut = 'actif'
     )
   );
+
+DROP POLICY IF EXISTS "import_batches_update" ON public.import_batches;
+CREATE POLICY "import_batches_update" ON public.import_batches
+  FOR UPDATE TO authenticated
+  USING (
+    imported_by = (SELECT auth.uid()) OR
+    EXISTS (
+      SELECT 1 FROM public.users 
+      WHERE users.id = (SELECT auth.uid()) 
+      AND users.statut = 'actif' 
+      AND users.role IN ('ADMIN', 'CONTROLEUR')
+    )
+  )
+  WITH CHECK (
+    imported_by = (SELECT auth.uid()) OR
+    EXISTS (
+      SELECT 1 FROM public.users 
+      WHERE users.id = (SELECT auth.uid()) 
+      AND users.statut = 'actif' 
+      AND users.role IN ('ADMIN', 'CONTROLEUR')
+    )
+  );
+
+-- Accorder les privilèges d'accès Data API aux rôles applicatifs
+GRANT ALL ON TABLE public.import_batches TO authenticated;
+GRANT ALL ON TABLE public.venue_games TO authenticated;
+GRANT ALL ON TABLE public.reference_aliases TO authenticated;
+GRANT ALL ON TABLE public.import_batches TO service_role;
+GRANT ALL ON TABLE public.venue_games TO service_role;
+GRANT ALL ON TABLE public.reference_aliases TO service_role;

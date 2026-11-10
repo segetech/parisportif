@@ -93,7 +93,16 @@ export function isAuthError(error: any): boolean {
     msg.includes("inactif") ||
     msg.includes("suspendu") ||
     msg.includes("refusé") ||
-    msg.includes("token")
+    msg.includes("token") ||
+    msg.includes("app_unauthenticated") ||
+    msg.includes("app_account_inactive") ||
+    msg.includes("app_password_change_required") ||
+    msg.includes("app_role_unauthorized") ||
+    msg.includes("authentication_required") ||
+    msg.includes("account_inactive") ||
+    msg.includes("password_renewal_required") ||
+    msg.includes("role_unauthorized") ||
+    msg.includes("permission denied")
   );
 }
 
@@ -232,9 +241,7 @@ export function useDashboardData() {
           // Si l'erreur RPC est une erreur d'autorisation ou de compte bloqué, la propager directement
           if (
             isAuthError(rpcError) ||
-            rpcError.message?.includes("ACCOUNT_INACTIVE") ||
-            rpcError.message?.includes("PASSWORD_RENEWAL_REQUIRED") ||
-            rpcError.message?.includes("AUTHENTICATION_REQUIRED")
+            /APP_|AUTHENTICATION_REQUIRED|ACCOUNT_INACTIVE|PASSWORD_RENEWAL_REQUIRED|ROLE_UNAUTHORIZED|USER_NOT_FOUND/i.test(rpcError.message || "")
           ) {
             throw new Error(rpcError.message || "Accès non autorisé aux agrégats du tableau de bord.");
           }
@@ -243,9 +250,8 @@ export function useDashboardData() {
         }
       } catch (err: any) {
         if (
-          err.message?.includes("ACCOUNT_INACTIVE") ||
-          err.message?.includes("PASSWORD_RENEWAL_REQUIRED") ||
-          err.message?.includes("AUTHENTICATION_REQUIRED")
+          isAuthError(err) ||
+          /APP_|AUTHENTICATION_REQUIRED|ACCOUNT_INACTIVE|PASSWORD_RENEWAL_REQUIRED|ROLE_UNAUTHORIZED|USER_NOT_FOUND/i.test(err.message || "")
         ) {
           throw err;
         }
