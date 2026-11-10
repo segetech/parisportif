@@ -29,7 +29,7 @@ describe("Cloudflare R2 Object Storage Integration", () => {
   });
 
   it("doit uploader directement un buffer sur le bucket R2 et le relire fidèlement", async () => {
-    const testContent = "Pari Sportif - Preuve de test R2 " + Date.now();
+    const testContent = "Test - Preuve de test R2 " + Date.now();
     uploadedKeys.push(testKey);
 
     const res = await uploadToR2({

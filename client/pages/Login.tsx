@@ -67,7 +67,7 @@ export default function Login() {
           1. ESPACE DE MARQUE (Visible à gauche sur Desktop, masqué sur Mobile)
           ===================================================================== */}
       <section
-        aria-label="Espace de marque Pari Sportif"
+        aria-label="Espace de marque Test"
         className="hidden md:flex relative md:w-5/12 lg:w-1/2 bg-[#004D20] text-white p-6 sm:p-10 lg:p-16 flex-col justify-between overflow-hidden border-r border-[#003816]"
       >
         {/* Motifs géométriques décoratifs discrets (solid lines, no gradients) */}
@@ -111,14 +111,14 @@ export default function Login() {
             <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl bg-white p-2.5 shadow-md flex items-center justify-center border border-white/20 flex-shrink-0">
               <img
                 src="/logo.png"
-                alt="Logo officiel Pari Sportif"
+                alt="Logo officiel Test"
                 className="h-full w-full object-contain"
                 loading="eager"
               />
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-                Pari Sportif
+                Test
               </h1>
               <p className="text-xs sm:text-sm text-[#FFD000] font-semibold tracking-wide">
                 Direction du Contrôle & de l'Intégrité
@@ -191,7 +191,7 @@ export default function Login() {
             <div className="h-16 w-16 rounded-2xl bg-white p-2 flex items-center justify-center border border-[#D8E6DB] shadow-xs mb-3">
               <img
                 src="/logo.png"
-                alt="Logo officiel Pari Sportif"
+                alt="Logo officiel Test"
                 className="h-full w-full object-contain"
               />
             </div>
@@ -200,7 +200,7 @@ export default function Login() {
               Plateforme Officielle
             </div>
             <h1 className="text-xl font-extrabold text-[#17251C] tracking-tight">
-              Pari Sportif
+              Test
             </h1>
             <p className="text-xs text-[#556B5C]">
               Direction du Contrôle & de l'Intégrité

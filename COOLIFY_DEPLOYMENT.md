@@ -1,6 +1,6 @@
 # 🚀 Guide de Déploiement sur VPS avec Coolify
 
-Ce guide vous explique pas à pas comment déployer l'application **Pari Sportif** sur votre propre VPS grâce à **Coolify** et Docker.
+Ce guide vous explique pas à pas comment déployer l'application **Test** sur votre propre VPS grâce à **Coolify** et Docker.
 
 ---
 

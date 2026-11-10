@@ -66,8 +66,8 @@ export async function exportStyledExcel({
   const ExcelJS = await getExcelJS();
   const workbook = new ExcelJS.Workbook();
 
-  workbook.creator = "Système de Gestion des Paris";
-  workbook.lastModifiedBy = "Système de Gestion des Paris";
+  workbook.creator = "Plateforme Test";
+  workbook.lastModifiedBy = "Plateforme Test";
   workbook.created = new Date();
   workbook.modified = new Date();
 
@@ -473,7 +473,7 @@ export async function exportStyledExcel({
 export async function generateBlankImportTemplate(type: "depotretrait" | "pari" | "salles") {
   const ExcelJS = await getExcelJS();
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Système de Gestion des Paris";
+  workbook.creator = "Plateforme Test";
 
   let sheetName = "Données";
   let headers: string[] = [];

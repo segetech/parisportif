@@ -60,12 +60,12 @@ export async function exportStyledPDF({
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.setTextColor(0, 107, 45);
-  doc.text("PARI SPORTIF", margin, currentY);
+  doc.text("TEST", margin, currentY);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139); // Slate 500
-  doc.text("Supervision & Contrôle des Paris • Document Officiel", margin + 42, currentY - 0.5);
+  doc.text("Supervision & Contrôle des Paris • Document Officiel", margin + 18, currentY - 0.5);
 
   currentY += 8;
 

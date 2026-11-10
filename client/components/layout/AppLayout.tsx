@@ -205,7 +205,7 @@ export default function AppLayout({
       }
     }
     if (location.pathname === "/profil") return "Mon Profil";
-    return "Pari Sportif";
+    return "Test";
   }, [location.pathname, navigationSections]);
 
   function handleSearch(e: React.FormEvent) {
@@ -254,20 +254,20 @@ export default function AppLayout({
           <Link
             to="/"
             className="flex items-center gap-3 min-w-0 group outline-none"
-            title="Pari Sportif - Accueil"
+            title="Test - Accueil"
           >
             {/* Boîte Logo officiel */}
             <div className="h-10 w-10 rounded-xl bg-white border border-white/20 p-1 flex items-center justify-center shrink-0 shadow-xs">
               <img
                 src="/logo.png"
-                alt="Logo officiel Pari Sportif"
+                alt="Logo officiel Test"
                 className="h-full w-full object-contain"
               />
             </div>
             {(!sidebarCollapsed || mobileDrawerOpen) && (
               <div className="flex flex-col min-w-0">
                 <span className="font-extrabold text-sm tracking-tight text-white leading-tight truncate">
-                  Pari Sportif
+                  Test
                 </span>
                 <span className="text-[10px] font-bold text-[#FFD000] tracking-wider uppercase truncate">
                   Supervision & Contrôle

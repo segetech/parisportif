@@ -1,6 +1,6 @@
 # Migrations SQL Supabase Sécurisées
 
-Ce dossier contient les scripts de migration officiels, idempotents et sécurisés pour la plateforme **Pari Sportif**.
+Ce dossier contient les scripts de migration officiels, idempotents et sécurisés pour la plateforme **Test**.
 
 > ⚠️ **IMPORTANT :** 
 > - Ces migrations sont préparées et versionnées ici dans le dépôt.

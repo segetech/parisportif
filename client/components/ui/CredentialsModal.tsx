@@ -69,7 +69,7 @@ export function CredentialsModal({
 
   if (!credentials) return null;
 
-  const formattedText = `Identifiants de connexion Pari Sportif :
+  const formattedText = `Identifiants de connexion Test :
 Utilisateur : ${credentials.nom || credentials.email}
 Rôle : ${credentials.role || "Non spécifié"}
 Email : ${credentials.email}
