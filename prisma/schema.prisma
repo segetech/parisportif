@@ -19,6 +19,8 @@ model User {
   cree_le                                      DateTime?            @default(now()) @db.Timestamptz(6)
   mis_a_jour_le                                DateTime?            @default(now()) @updatedAt @db.Timestamptz(6)
   mfa_active                                   Boolean?             @default(false)
+  must_change_password                         Boolean              @default(false)
+  password_changed_at                          DateTime?            @db.Timestamptz(6)
   betsCreated                                  Bet[]                @relation("BetAuthor")
   bets_bets_reviewed_byTousers                 Bet[]                @relation("bets_reviewed_byTousers")
   betsValidated                                Bet[]                @relation("BetValidator")

@@ -25,7 +25,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // Verify user in the users table to get authoritative role and status
     const { data: userRecord, error: userError } = await admin
       .from("users")
-      .select("id, email, role, statut, nom, prenom")
+      .select("id, email, role, statut, nom, prenom, must_change_password")
       .eq("id", authData.user.id)
       .single();
 
@@ -37,6 +37,25 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return res.status(403).json({ error: "Compte inactif ou suspendu" });
     }
 
+    const mustChangePassword = Boolean(
+      userRecord.must_change_password || authData.user.user_metadata?.must_change_password
+    );
+
+    // Si le renouvellement obligatoire est actif, bloquer toute opération métier
+    // Seuls le changement de mot de passe, sa finalisation et la déconnexion sont autorisés
+    const allowedPath = req.baseUrl + req.path;
+    if (
+      mustChangePassword &&
+      !allowedPath.includes("/change-password") &&
+      !allowedPath.includes("/finalize-password-change") &&
+      !allowedPath.includes("/logout")
+    ) {
+      return res.status(403).json({
+        error: "Renouvellement obligatoire du mot de passe requis avant tout accès métier",
+        mustChangePassword: true,
+      });
+    }
+
     req.user = {
       id: userRecord.id,
       email: userRecord.email,
@@ -44,6 +63,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       statut: userRecord.statut,
       nom: userRecord.nom,
       prenom: userRecord.prenom,
+      must_change_password: mustChangePassword,
     };
 
     next();

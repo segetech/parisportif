@@ -116,7 +116,7 @@ describe("Excel Import Engine - Normalisation et Règles Métier", () => {
 
     it("devient valide lorsqu'une date explicite est fournie", () => {
       const row = parseTransactionRow(
-        { "Opérateur de jeux": "1xBet", "Montant": "1000F", "Référence": "CI250326.0438.B13742" },
+        { "Opérateur de jeux": "1xBet", "Type": "Dépôt", "Montant": "1000F", "Référence": "CI250326.0438.B13742" },
         2,
         "2026-03-26"
       );

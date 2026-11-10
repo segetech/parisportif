@@ -76,20 +76,17 @@ export async function fetchExportData(
   return [];
 }
 
+import { escapeCell } from "./csv";
+
 export async function exportToCSV(
   headers: string[],
   rows: any[],
   filename: string,
 ) {
-  const escape = (v: any) => {
-    if (v == null) return "";
-    const s = String(v);
-    if (s.includes(",") || s.includes("\n") || s.includes('"')) {
-      return '"' + s.replace(/"/g, '""') + '"';
-    }
-    return s;
-  };
-  const csv = [headers.join(","), ...rows.map((r) => headers.map((h) => escape((r as any)[h])).join(","))].join("\n");
+  const csv = [
+    headers.map(escapeCell).join(";"),
+    ...rows.map((r) => headers.map((h) => escapeCell((r as any)[h])).join(";")),
+  ].join("\r\n");
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);

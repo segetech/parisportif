@@ -250,4 +250,113 @@ describe("Cache Architecture and Navigation Performance", () => {
       expect(isAuthError(new Error("Network timeout"))).toBe(false);
     });
   });
+
+  describe("fetchAllRows: Complete Pagination & Server Cap Resilience", () => {
+    it("should correctly paginate 1001 rows when the server applies a 500-row cap", async () => {
+      const { fetchAllRows } = await import("./use-data-queries");
+      const TOTAL_ROWS = 1001;
+      const SERVER_CAP = 500;
+      const allFakeData = Array.from({ length: TOTAL_ROWS }, (_, i) => ({
+        id: `bet-${i + 1}`,
+        date: "2026-11-10",
+        amount_fcfa: 1000,
+      }));
+
+      const mockQueryFn = () => ({
+        range: vi.fn().mockImplementation(async (from: number, to: number) => {
+          // Simuler un plafond serveur : ne jamais renvoyer plus de SERVER_CAP lignes
+          const requestedSlice = allFakeData.slice(from, to + 1);
+          const cappedSlice = requestedSlice.slice(0, SERVER_CAP);
+          return {
+            data: cappedSlice,
+            error: null,
+            count: TOTAL_ROWS,
+          };
+        }),
+      });
+
+      const result = await fetchAllRows(mockQueryFn, 1000);
+      expect(result.error).toBeNull();
+      expect(result.data).toHaveLength(1001);
+      expect(result.data[0].id).toBe("bet-1");
+      expect(result.data[1000].id).toBe("bet-1001");
+    });
+
+    it("should handle multiple page size and server cap combinations", async () => {
+      const { fetchAllRows } = await import("./use-data-queries");
+      const TOTAL_ROWS = 250;
+      const allFakeData = Array.from({ length: TOTAL_ROWS }, (_, i) => ({ id: `row-${i}` }));
+
+      const mockQueryFn = () => ({
+        range: vi.fn().mockImplementation(async (from: number, to: number) => {
+          // Serveur renvoie par paquets de 40 max
+          const slice = allFakeData.slice(from, Math.min(to + 1, from + 40));
+          return { data: slice, error: null, count: TOTAL_ROWS };
+        }),
+      });
+
+      const result = await fetchAllRows(mockQueryFn, 100);
+      expect(result.error).toBeNull();
+      expect(result.data).toHaveLength(250);
+    });
+
+    it("should preserve deterministic order when dates and times are identical (id tie-breaker)", async () => {
+      const { fetchAllRows } = await import("./use-data-queries");
+      // 5 lignes avec même date et même heure, ordonnées de manière stable par id
+      const sortedData = [
+        { id: "bet-99", date: "2026-11-10", time: "14:00" },
+        { id: "bet-88", date: "2026-11-10", time: "14:00" },
+        { id: "bet-77", date: "2026-11-10", time: "14:00" },
+      ];
+
+      const mockQueryFn = () => ({
+        range: vi.fn().mockResolvedValue({
+          data: sortedData,
+          error: null,
+          count: sortedData.length,
+        }),
+      });
+
+      const result = await fetchAllRows(mockQueryFn, 100);
+      expect(result.data.map((r: any) => r.id)).toEqual(["bet-99", "bet-88", "bet-77"]);
+    });
+
+    it("should immediately throw or return empty data on error mid-pagination without masking partial data", async () => {
+      const { fetchAllRows } = await import("./use-data-queries");
+      let callCount = 0;
+
+      const mockQueryFn = () => ({
+        range: vi.fn().mockImplementation(async (from: number, to: number) => {
+          callCount++;
+          if (callCount === 1) {
+            return { data: [{ id: "row-1" }, { id: "row-2" }], error: null, count: 10 };
+          }
+          // Erreur au second appel (réseau / DB timeout)
+          return { data: null, error: { message: "Database connection lost mid-query" } };
+        }),
+      });
+
+      const result = await fetchAllRows(mockQueryFn, 2);
+      expect(result.error).toBeDefined();
+      expect(result.error.message).toContain("Database connection lost");
+      // Ne doit PAS renvoyer un tableau partiel qui tromperait les totaux
+      expect(result.data).toEqual([]);
+    });
+
+    it("should return empty array when query returns 0 rows", async () => {
+      const { fetchAllRows } = await import("./use-data-queries");
+      const mockQueryFn = () => ({
+        range: vi.fn().mockResolvedValue({
+          data: [],
+          error: null,
+          count: 0,
+        }),
+      });
+
+      const result = await fetchAllRows(mockQueryFn, 500);
+      expect(result.error).toBeNull();
+      expect(result.data).toEqual([]);
+      expect(result.totalCount).toBe(0);
+    });
+  });
 });

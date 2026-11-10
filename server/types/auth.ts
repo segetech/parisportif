@@ -1,5 +1,5 @@
 export type UserRole = "ADMIN" | "CONTROLEUR" | "AGENT";
-export type UserStatut = "actif" | "inactif" | "suspendu" | "invitation_envoyee";
+export type UserStatut = "actif" | "inactif" | "suspendu" | "invitation_envoyee" | "desactive";
 
 export interface AuthenticatedUser {
   id: string;
@@ -8,6 +8,7 @@ export interface AuthenticatedUser {
   statut: UserStatut;
   nom?: string;
   prenom?: string;
+  must_change_password?: boolean;
 }
 
 declare global {

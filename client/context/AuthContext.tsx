@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Navigate, useNavigate, useInRouterContext } from "react-router-dom";
+import { Navigate, useNavigate, useInRouterContext, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { purgeAllAppCaches } from "@/lib/queryClient";
 
@@ -20,6 +20,7 @@ export interface User {
   email: string;
   role: Role;
   statut: string;
+  must_change_password?: boolean;
   derniere_connexion?: string;
   cree_le?: string;
   mis_a_jour_le?: string;
@@ -338,6 +339,9 @@ export function useRole(): Role | null {
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading, isLoggingOut } = useAuth();
+  const inRouter = useInRouterContext();
+  const location = inRouter ? useLocation() : null;
+  const currentPath = location?.pathname || (typeof window !== "undefined" ? window.location.pathname : "");
 
   if (loading || isLoggingOut) {
     return (
@@ -354,6 +358,12 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Si le renouvellement obligatoire du mot de passe est actif,
+  // forcer la navigation vers /profil pour changer le mot de passe
+  if (user.must_change_password && currentPath !== "/profil") {
+    return <Navigate to="/profil" state={{ mustChangePassword: true }} replace />;
   }
 
   return <>{children}</>;

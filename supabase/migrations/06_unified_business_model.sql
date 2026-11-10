@@ -41,15 +41,15 @@ CREATE INDEX IF NOT EXISTS idx_transactions_import_batch ON public.transactions(
 CREATE INDEX IF NOT EXISTS idx_transactions_proof_status ON public.transactions(proof_status);
 
 -- 3. EXTENSION DE LA TABLE VENUES (SALLES DE JEUX)
--- Support de plusieurs jeux par établissement
+-- Support de plusieurs jeux par établissement et géolocalisation par quartier
 ALTER TABLE public.venues 
-ADD COLUMN IF NOT EXISTS games TEXT[] DEFAULT '{}';
-
--- Ajout de l'identifiant de lot d'import
-ALTER TABLE public.venues 
+ADD COLUMN IF NOT EXISTS quartier VARCHAR(255),
+ADD COLUMN IF NOT EXISTS quartier_no VARCHAR(50),
+ADD COLUMN IF NOT EXISTS games TEXT[] DEFAULT '{}',
 ADD COLUMN IF NOT EXISTS import_batch_id UUID;
 
 CREATE INDEX IF NOT EXISTS idx_venues_import_batch ON public.venues(import_batch_id);
+CREATE INDEX IF NOT EXISTS idx_venues_quartier ON public.venues(quartier);
 
 -- 4. TABLE RELATIONNELLE VENUE_GAMES (MULTI-JEUX PAR ÉTABLISSEMENT)
 CREATE TABLE IF NOT EXISTS public.venue_games (

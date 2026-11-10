@@ -3,10 +3,25 @@ export type CsvRow = Record<
   string | number | boolean | null | undefined
 >;
 
-function escapeCell(v: unknown): string {
+export function escapeCell(v: unknown): string {
   if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  let s = String(v);
+
+  // Protection stricte contre l'injection de formules dans les tableurs (CSV Injection)
+  // Neutralise =, +, -, @, tabulation ou retour chariot sur les chaînes de texte
+  // tout en préservant intacts les nombres réels (ex: -1500 ou +25)
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (/^[=+\-@\t\r]/.test(trimmed)) {
+      if (isNaN(Number(trimmed))) {
+        s = "'" + s;
+      }
+    }
+  }
+
+  if (/[",\n\r;]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
   return s;
 }
 
@@ -20,7 +35,7 @@ export function buildCsv(rows: CsvRow[], columns?: string[]): string {
         return set;
       }, new Set<string>()),
     );
-  const header = cols.join(",");
+  const header = cols.map(escapeCell).join(",");
   const body = rows
     .map((r) => cols.map((c) => escapeCell(r[c as keyof typeof r])).join(","))
     .join("\n");

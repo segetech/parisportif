@@ -104,10 +104,16 @@
 
 @layer utilities {
   /* Masquer complètement la barre de défilement tout en préservant le scroll fluide */
-  .no-scrollbar::-webkit-scrollbar {
+  .no-scrollbar::-webkit-scrollbar,
+  aside::-webkit-scrollbar,
+  aside *::-webkit-scrollbar {
     display: none !important;
+    width: 0 !important;
+    height: 0 !important;
   }
-  .no-scrollbar {
+  .no-scrollbar,
+  aside,
+  aside * {
     -ms-overflow-style: none !important; /* IE et Edge */
     scrollbar-width: none !important; /* Firefox */
   }

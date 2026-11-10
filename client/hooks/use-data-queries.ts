@@ -8,6 +8,15 @@ import {
   invalidateRelatedQueries,
 } from "@/lib/queryClient";
 import { auditService, type AuditEntry } from "@/lib/audit";
+import {
+  computeDashboardStats,
+  computeWeeklyAnomalyTrend,
+  CalculatedDashboardStats,
+  RawBet,
+  RawTransaction,
+  RawVenue,
+  RawIllegalIncident,
+} from "@/lib/dashboard-calculator";
 
 // Cache configuration constants (compatibilité ascendante)
 export const CACHE_CONFIG = {
@@ -150,115 +159,225 @@ export interface DashboardStats {
   illegalActivityTrend: any[];
 }
 
+/**
+ * Parcourt de manière paginée et exhaustive une requête PostgREST pour contourner
+ * les plafonds de lignes et garantir des résultats 100% complets sans tronquage silencieux.
+ * 
+ * Règles strictes :
+ * 1. Avance toujours de data.length (et non pageSize) pour supporter les plafonds serveur stricts (ex: 500 max).
+ * 2. Si le count exact est renvoyé, s'arrête exactement dès que allRows.length >= count.
+ * 3. En cas d'erreur sur n'importe quelle page, retourne immédiatement { data: [], error } (jamais de total partiel masqué).
+ */
+export async function fetchAllRows<T = any>(
+  baseQueryFn: () => any,
+  pageSize = 1000
+): Promise<{ data: T[]; error: any; totalCount?: number }> {
+  let allRows: T[] = [];
+  let from = 0;
+  let totalCount: number | undefined;
+
+  while (true) {
+    const query = baseQueryFn();
+    const { data, error, count } = await query.range(from, from + pageSize - 1);
+    
+    if (error) {
+      return { data: [], error };
+    }
+
+    if (count !== null && count !== undefined && totalCount === undefined) {
+      totalCount = count;
+    }
+
+    if (!data || data.length === 0) {
+      break;
+    }
+
+    allRows.push(...data);
+
+    // Arrêt si tout a été consommé selon le décompte exact
+    if (typeof totalCount === "number" && allRows.length >= totalCount) {
+      break;
+    }
+
+    // Si le serveur a renvoyé 0 nouvelle ligne (protection anti-boucle)
+    if (data.length === 0) {
+      break;
+    }
+
+    from += data.length;
+  }
+
+  return { data: allRows, error: null, totalCount: totalCount ?? allRows.length };
+}
+
 export function useDashboardData() {
   const { user } = useAuth();
   const userId = user?.id || "guest-user";
+  const userRole = user?.role;
 
   return useQuery({
-    queryKey: queryKeys.dashboard(userId),
+    queryKey: queryKeys.dashboard(userId, userRole),
     queryFn: async (): Promise<DashboardStats> => {
-      const [
-        venuesRes,
-        betsCountRes,
-        recentBetsRes,
-        transactionsRes,
-        illegalBetsRes,
-        illegalTransactionsRes,
-      ] = await Promise.all([
-        supabase.from("venues").select("*"),
-        supabase.from("bets").select("*", { count: "exact" }),
-        supabase
-          .from("bets")
-          .select("id, date, time, operator, support, bet_type, amount_fcfa, status, amount_won_fcfa, validation_status")
-          .order("date", { ascending: false })
-          .order("time", { ascending: false })
-          .limit(30),
-        supabase.from("transactions").select("type, amount_fcfa, validation_status"),
-        supabase.from("illegal_bets").select("*", { count: "exact" }),
-        supabase.from("illegal_transactions").select("*", { count: "exact" }),
+      // 1. Tenter en priorité l'appel RPC sécurisé PostgreSQL get_dashboard_aggregates
+      let rpcData: any = null;
+      let rpcError: any = null;
+
+      try {
+        const rpcRes = await supabase.rpc(
+          "get_dashboard_aggregates",
+          userRole === "AGENT" && user?.id ? { p_agent_id: user.id } : {}
+        );
+        if (rpcRes.error) {
+          rpcError = rpcRes.error;
+          // Si l'erreur RPC est une erreur d'autorisation ou de compte bloqué, la propager directement
+          if (
+            isAuthError(rpcError) ||
+            rpcError.message?.includes("ACCOUNT_INACTIVE") ||
+            rpcError.message?.includes("PASSWORD_RENEWAL_REQUIRED") ||
+            rpcError.message?.includes("AUTHENTICATION_REQUIRED")
+          ) {
+            throw new Error(rpcError.message || "Accès non autorisé aux agrégats du tableau de bord.");
+          }
+        } else {
+          rpcData = rpcRes.data;
+        }
+      } catch (err: any) {
+        if (
+          err.message?.includes("ACCOUNT_INACTIVE") ||
+          err.message?.includes("PASSWORD_RENEWAL_REQUIRED") ||
+          err.message?.includes("AUTHENTICATION_REQUIRED")
+        ) {
+          throw err;
+        }
+        rpcError = err;
+      }
+
+      // 2. Requête ciblée pour les 30 paris les plus récents (ordre total et stable)
+      let recentBetsQuery = supabase
+        .from("bets")
+        .select("id, date, time, operator, support, bet_type, amount_fcfa, status, amount_won_fcfa, validation_status, created_by")
+        .order("date", { ascending: false })
+        .order("time", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(30);
+
+      if (userRole === "AGENT" && user?.id) {
+        recentBetsQuery = recentBetsQuery.eq("created_by", user.id);
+      }
+      const recentBetsRes = await recentBetsQuery;
+
+      // 3. Récupération exhaustive des salles et incidents pour les graphiques de tendance
+      const [venuesRes, illegalBetsRes, illegalTxRes] = await Promise.all([
+        fetchAllRows<RawVenue>(() => {
+          let q = supabase.from("venues").select("*");
+          if (userRole === "AGENT" && user?.id) {
+            q = q.eq("created_by", user.id);
+          }
+          return q.order("id", { ascending: true });
+        }),
+        fetchAllRows<RawIllegalIncident>(() =>
+          supabase.from("illegal_bets").select("id, date, created_at").order("id", { ascending: true })
+        ),
+        fetchAllRows<RawIllegalIncident>(() =>
+          supabase.from("illegal_transactions").select("id, date, created_at").order("id", { ascending: true })
+        ),
       ]);
 
-      const venues = venuesRes.data || [];
-      const recentBets = recentBetsRes.data || [];
-      const transactions = transactionsRes.data || [];
+      const listErrors = [
+        recentBetsRes.error,
+        venuesRes.error,
+        illegalBetsRes.error,
+        illegalTxRes.error,
+      ].filter(Boolean);
 
-      let totalBetsAmount = 0;
-      let totalKnownWinnings = 0;
-      let wonCount = 0;
-      let lostCount = 0;
-      let pendingCount = 0;
-      let pendingValidations = 0;
+      if (listErrors.length > 0) {
+        const firstErr = listErrors[0];
+        console.error("Erreur détectée dans les requêtes secondaires du tableau de bord:", firstErr);
+        if (isAuthError(firstErr)) {
+          throw new Error("Session expirée ou droits insuffisants pour charger le tableau de bord.");
+        }
+        throw new Error(firstErr.message || "Impossible de récupérer les données du tableau de bord.");
+      }
 
-      recentBets.forEach((b: any) => {
-        totalBetsAmount += Number(b.amount_fcfa) || 0;
-        if (b.amount_won_fcfa) totalKnownWinnings += Number(b.amount_won_fcfa);
-        const st = (b.status || "").toLowerCase();
-        if (st.includes("gagn") || st === "won") wonCount++;
-        else if (st.includes("perdu") || st === "lost") lostCount++;
-        else pendingCount++;
+      // 4. Si le RPC SQL a réussi, utiliser directement ses agrégats certifiés
+      if (rpcData && typeof rpcData === "object") {
+        const venues = venuesRes.data || [];
+        const opCountMap: Record<string, number> = {};
+        for (const v of venues) {
+          const op = (v.operator || "Autre").trim();
+          opCountMap[op] = (opCountMap[op] || 0) + 1;
+        }
+        const venuesByOperator = Object.entries(opCountMap).map(([name, count]) => ({
+          name,
+          count,
+        }));
 
-        if (b.validation_status === "en_attente") pendingValidations++;
+        const illegalActivityTrend = computeWeeklyAnomalyTrend(
+          illegalBetsRes.data || [],
+          illegalTxRes.data || [],
+          new Date()
+        );
+
+        return {
+          totalVenues: Number(rpcData.total_venues ?? venues.length),
+          totalBets: Number(rpcData.total_bets ?? 0),
+          totalBetsAmount: Number(rpcData.total_bets_amount ?? 0),
+          totalDeposits: Number(rpcData.total_deposits ?? 0),
+          totalWithdrawals: Number(rpcData.total_withdrawals ?? 0),
+          totalKnownWinnings: Number(rpcData.total_known_winnings ?? 0),
+          pendingValidationsCount: Number(rpcData.pending_validations_count ?? 0),
+          wonBetsCount: Number(rpcData.won_bets_count ?? 0),
+          lostBetsCount: Number(rpcData.lost_bets_count ?? 0),
+          pendingBetsCount: Number(rpcData.pending_bets_count ?? 0),
+          totalIllegalBets: Number(rpcData.total_illegal_bets ?? (illegalBetsRes.data?.length || 0)),
+          totalIllegalTransactions: Number(rpcData.total_illegal_transactions ?? (illegalTxRes.data?.length || 0)),
+          recentBets: recentBetsRes.data || [],
+          operatorsCount: venuesByOperator.length,
+          venuesByOperator,
+          illegalActivityTrend,
+        };
+      }
+
+      // 5. Fallback en cas d'absence du RPC (ex: tests hors ligne avec mocks PostgREST)
+      const [betsRes, txRes] = await Promise.all([
+        fetchAllRows<RawBet>(() => {
+          let q = supabase
+            .from("bets")
+            .select("id, date, time, operator, support, bet_type, amount_fcfa, status, amount_won_fcfa, validation_status, created_by")
+            .order("date", { ascending: false })
+            .order("time", { ascending: false })
+            .order("id", { ascending: false });
+          if (userRole === "AGENT" && user?.id) {
+            q = q.eq("created_by", user.id);
+          }
+          return q;
+        }),
+        fetchAllRows<RawTransaction>(() => {
+          let q = supabase
+            .from("transactions")
+            .select("id, type, amount_fcfa, validation_status, date, time, operator, created_by")
+            .order("date", { ascending: false })
+            .order("id", { ascending: false });
+          if (userRole === "AGENT" && user?.id) {
+            q = q.eq("created_by", user.id);
+          }
+          return q;
+        }),
+      ]);
+
+      if (betsRes.error || txRes.error) {
+        const err = betsRes.error || txRes.error;
+        throw new Error(err.message || "Erreur de chargement des transactions ou paris.");
+      }
+
+      return computeDashboardStats({
+        allBets: betsRes.data,
+        transactions: txRes.data,
+        venues: venuesRes.data || [],
+        illegalBets: illegalBetsRes.data || [],
+        illegalTransactions: illegalTxRes.data || [],
+        referenceDate: new Date(),
       });
-
-      // Calcul séparé des flux Dépôts vs Retraits
-      let totalDeposits = 0;
-      let totalWithdrawals = 0;
-      transactions.forEach((tx: any) => {
-        const amt = Number(tx.amount_fcfa) || 0;
-        if (tx.type === "Dépôt") totalDeposits += amt;
-        else if (tx.type === "Retrait") totalWithdrawals += amt;
-        if (tx.validation_status === "en_attente") pendingValidations++;
-      });
-
-      // Distribution des salles par opérateur
-      const opCountMap: Record<string, number> = {};
-      venues.forEach((v: any) => {
-        const op = v.operator || "Autre";
-        opCountMap[op] = (opCountMap[op] || 0) + 1;
-        if (v.validation_status === "en_attente") pendingValidations++;
-      });
-      const venuesByOp = Object.entries(opCountMap).map(([name, count]) => ({
-        name,
-        count,
-      }));
-
-      // Tendance des activités suspectes
-      const illegalTrend = [
-        { day: "Lun", paris: 0, transactions: 0 },
-        { day: "Mar", paris: 1, transactions: 0 },
-        { day: "Mer", paris: 0, transactions: 1 },
-        { day: "Jeu", paris: 1, transactions: 0 },
-        { day: "Ven", paris: 0, transactions: 0 },
-        { day: "Sam", paris: illegalBetsRes.count || 2, transactions: illegalTransactionsRes.count || 1 },
-        { day: "Dim", paris: 0, transactions: 0 },
-      ];
-
-      const opSet = new Set<string>();
-      venues.forEach((v: any) => {
-        if (v.operator) opSet.add(v.operator);
-      });
-      recentBets.forEach((b: any) => {
-        if (b.operator) opSet.add(b.operator);
-      });
-
-      return {
-        totalVenues: venues.length || 0,
-        totalBets: betsCountRes.count ?? recentBets.length,
-        totalBetsAmount,
-        totalDeposits,
-        totalWithdrawals,
-        totalKnownWinnings,
-        pendingValidationsCount: pendingValidations,
-        wonBetsCount: wonCount,
-        lostBetsCount: lostCount,
-        pendingBetsCount: pendingCount,
-        totalIllegalBets: illegalBetsRes.count || 0,
-        totalIllegalTransactions: illegalTransactionsRes.count || 0,
-        recentBets,
-        operatorsCount: Math.max(opSet.size, 1),
-        venuesByOperator: venuesByOp,
-        illegalActivityTrend: illegalTrend,
-      };
     },
     staleTime: CACHE_TIERS.DASHBOARD.staleTime,
     gcTime: CACHE_TIERS.DASHBOARD.gcTime,

@@ -63,7 +63,8 @@ export const queryClient = new QueryClient({
  * Chaque clé intègre le périmètre utilisateur et les filtres normalisés.
  */
 export const queryKeys = {
-  dashboard: (userId?: string) => ["dashboard", userId || "anon"] as const,
+  dashboard: (userId?: string, role?: string, filters?: any) =>
+    ["dashboard", userId || "anon", role || "user", filters || {}] as const,
   transactions: (userId?: string, filters?: any) =>
     ["transactions", userId || "anon", filters || {}] as const,
   transaction: (userId?: string, id?: string) =>

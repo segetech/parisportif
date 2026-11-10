@@ -68,6 +68,8 @@ export interface ParsedVenueGroup {
   support: string;
   address: string;
   games: string[];
+  secondaryLocations: string[];
+  isAmbiguous?: boolean;
   startRow: number;
   endRow: number;
   rawRows: number[];
@@ -117,8 +119,8 @@ export const BET_TYPE_ALIASES: Record<string, string> = {
   "spin 2 win": "Spin 2 Win roulette",
   "spin 2 win roulette": "Spin 2 Win roulette",
   "keno boule": "Keno boule",
-  "keno": "Keno boule",
-  "keno color": "Keno boule",
+  "keno": "Keno",
+  "keno color": "Keno color",
   "boule 1a80": "Boule 1 à 80",
   "boule 1 à 80": "Boule 1 à 80",
   "boule de 1 à 90": "Boule 1 à 90",
@@ -127,8 +129,8 @@ export const BET_TYPE_ALIASES: Record<string, string> = {
   "lotterie": "Loto PMU",
   "loterie": "Loto PMU",
   "casino": "Casino",
-  "roulette": "Casino",
-  "roulette live": "Casino",
+  "roulette": "Roulette",
+  "roulette live": "Roulette (Live)",
   "live sport": "Paris sportifs (Live)",
   "paris sportifs live": "Paris sportifs (Live)",
   "pre-event sport": "Paris sportifs (Avant-match)",
@@ -156,20 +158,37 @@ export const SUPPORT_ALIASES: Record<string, string> = {
 /**
  * Normalise un montant monétaire en FCFA
  * Ex: "1000F", "2 500 FCFA", "900F " -> 1000, 2500, 900
+ * Rejette strictement les formats non documentés comme "1000XYZ"
  */
 export function normalizeAmount(input: any): NormalizedAmount {
   if (input === null || input === undefined || input === "") {
     return { value: null, raw: "", isValid: false };
   }
 
+  if (typeof input === "number") {
+    if (isNaN(input) || input < 0) {
+      return { value: null, raw: String(input), isValid: false };
+    }
+    return { value: Math.round(input * 100) / 100, raw: String(input), isValid: true };
+  }
+
   const raw = String(input).trim();
-  // Remplacer virgule par point, supprimer 'F', 'FCFA', 'CFA' et espaces
+  if (!raw) {
+    return { value: null, raw: "", isValid: false };
+  }
+
+  // Contrôle strict du format numérique et des devises autorisées
+  const validPattern = /^[\d\s.,]+(?:f|cfa|fcfa)?$/i;
+  if (!validPattern.test(raw)) {
+    return { value: null, raw, isValid: false };
+  }
+
   const cleaned = raw
-    .replace(/[fFcCfFaA]/g, "")
+    .replace(/(?:fcfa|cfa|f)$/i, "")
     .replace(/\s+/g, "")
     .replace(/,/g, ".");
 
-  const num = parseFloat(cleaned);
+  const num = Number(cleaned);
   if (isNaN(num) || num < 0) {
     return { value: null, raw, isValid: false };
   }
@@ -179,13 +198,30 @@ export function normalizeAmount(input: any): NormalizedAmount {
 
 /**
  * Normalise une heure
- * Ex: "04H38", "4h24", "04:38:00", "04:38" -> "04:38"
+ * Ex: "04H38", "4h24", "04:38:00", "04:38", objets Date natifs Excel -> "04:38"
  */
 export function normalizeTime(input: any): NormalizedTime {
-  if (!input) return { value: null, raw: "", isValid: false };
+  if (input === null || input === undefined || input === "") {
+    return { value: null, raw: "", isValid: false };
+  }
+
+  // Gestion des objets Date natifs Excel
+  if (input instanceof Date && !isNaN(input.getTime())) {
+    const hours = String(input.getHours()).padStart(2, "0");
+    const minutes = String(input.getMinutes()).padStart(2, "0");
+    return { value: `${hours}:${minutes}`, raw: `${hours}:${minutes}`, isValid: true };
+  }
+
+  // Fraction de jour Excel (ex: 0.5 -> 12:00)
+  if (typeof input === "number" && input >= 0 && input < 1) {
+    const totalMinutes = Math.round(input * 24 * 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const formatted = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    return { value: formatted, raw: String(input), isValid: true };
+  }
 
   const raw = String(input).trim();
-  // Gestion du format avec 'H' ou 'h'
   let h = "";
   let m = "00";
 
@@ -198,7 +234,6 @@ export function normalizeTime(input: any): NormalizedTime {
     h = parts[0]?.trim() || "";
     m = parts[1]?.trim() || "00";
   } else if (!isNaN(parseInt(raw)) && raw.length <= 4) {
-    // Ex: "438" -> 04:38
     if (raw.length === 3) {
       h = raw.slice(0, 1);
       m = raw.slice(1);
@@ -249,28 +284,36 @@ export function normalizeProofStatus(input: any): "disponible" | "non_disponible
 }
 
 /**
- * Découpe un champ de type combiné (ex: "Dépôt Orange" -> Type: Dépôt, Moyen: Orange Money)
+ * Découpe un champ de type combiné sans inventer de valeur manquante
  */
-export function splitTypeAndPayment(rawType: string, rawPayment: string): { type: "Dépôt" | "Retrait"; payment: string } {
-  let type: "Dépôt" | "Retrait" = "Dépôt";
-  let payment = rawPayment ? resolveAlias(rawPayment, PAYMENT_OPERATOR_ALIASES) : "";
+export function splitTypeAndPayment(rawType: string, rawPayment: string): {
+  type: "Dépôt" | "Retrait" | null;
+  payment: string | null;
+} {
+  let type: "Dépôt" | "Retrait" | null = null;
+  let payment: string | null = rawPayment ? resolveAlias(rawPayment, PAYMENT_OPERATOR_ALIASES) : null;
 
   const t = String(rawType || "").toLowerCase().trim();
-  if (t.includes("retrait") || t.includes("rétrait")) {
+  if (t.includes("retrait") || t.includes("rétrait") || t.includes("ret")) {
     type = "Retrait";
-  } else {
+  } else if (t.includes("dépôt") || t.includes("depot") || t.includes("dep")) {
     type = "Dépôt";
   }
 
-  if (t.includes("orange") && !payment) {
-    payment = "Orange Money";
-  } else if (t.includes("moov") && !payment) {
-    payment = "Moov Money";
-  } else if (t.includes("wave") && !payment) {
-    payment = "Wave";
+  // Détection si l'opérateur de paiement est mélangé dans le libellé du type (ex: "Dépôt Orange")
+  if (!payment) {
+    if (t.includes("orange") || t.includes("om")) {
+      payment = "Orange Money";
+    } else if (t.includes("moov")) {
+      payment = "Moov Money";
+    } else if (t.includes("wave")) {
+      payment = "Wave";
+    } else if (t.includes("espece") || t.includes("cash")) {
+      payment = "Espèces";
+    }
   }
 
-  return { type, payment: payment || "Orange Money" };
+  return { type, payment: payment || null };
 }
 
 // -----------------------------------------------------------------------------
@@ -285,9 +328,9 @@ export function parseTransactionRow(
   const anomalies: Anomaly[] = [];
 
   const rawOp = rowValues["Opérateur de jeux"] || rowValues["Opérateur"] || rowValues["operator"] || "";
-  const rawPlatform = rowValues["Plateforme"] || rowValues["Support"] || rowValues["platform"] || "App mobile";
+  const rawPlatform = rowValues["Plateforme"] || rowValues["Support"] || rowValues["platform"] || "";
   const rawPayOp = rowValues["Opérateur de paiement"] || rowValues["Moyen de paiement"] || "";
-  const rawType = rowValues["Type"] || rowValues["type"] || "Dépôt";
+  const rawType = rowValues["Type"] || rowValues["type"] || "";
   const rawAmount = rowValues["Montant"] || rowValues["amount"] || "";
   const rawTime = rowValues["Heure"] || rowValues["time"] || "";
   const rawPhone = rowValues["Numéro de téléphone"] || rowValues["Téléphone"] || rowValues["phone"] || "";
@@ -306,12 +349,41 @@ export function parseTransactionRow(
     });
   }
 
-  // 2. Type et moyen de paiement
+  // Support / Plateforme
+  const platform = rawPlatform ? resolveAlias(rawPlatform, SUPPORT_ALIASES) : "";
+  if (!platform) {
+    anomalies.push({
+      row: rowNumber,
+      field: "platform",
+      message: "Support ou plateforme non renseigné",
+      severity: "warning",
+    });
+  }
+
+  // 2. Type et moyen de paiement (sans invention de valeurs)
   const { type, payment } = splitTypeAndPayment(rawType, rawPayOp);
+  if (!type) {
+    anomalies.push({
+      row: rowNumber,
+      field: "type",
+      message: "Type de flux manquant ou non reconnu (attendu: Dépôt ou Retrait)",
+      severity: "error",
+      rawValue: String(rawType),
+    });
+  }
+
+  if (!payment) {
+    anomalies.push({
+      row: rowNumber,
+      field: "paymentOperator",
+      message: "Opérateur de paiement non renseigné",
+      severity: "warning",
+    });
+  }
 
   // 3. Montant
   const parsedAmount = normalizeAmount(rawAmount);
-  if (!parsedAmount.isValid || !parsedAmount.value || parsedAmount.value <= 0) {
+  if (!parsedAmount.isValid || parsedAmount.value === null || parsedAmount.value < 0) {
     anomalies.push({
       row: rowNumber,
       field: "amount",
@@ -365,10 +437,10 @@ export function parseTransactionRow(
 
   return {
     rowNumber,
-    operator: operator || "Inconnu",
-    platform: resolveAlias(rawPlatform, SUPPORT_ALIASES) || "App mobile",
-    paymentOperator: payment || "Orange Money",
-    type,
+    operator: operator || "",
+    platform: platform || "",
+    paymentOperator: payment || "",
+    type: (type || "Dépôt") as "Dépôt" | "Retrait",
     amount: parsedAmount.value || 0,
     time: parsedTime.value,
     date,
@@ -393,7 +465,7 @@ export function parseBetRow(
   const anomalies: Anomaly[] = [];
 
   const rawOp = rowValues["Opérateur de jeux"] || rowValues["Opérateur"] || rowValues["operator"] || "";
-  const rawSupport = rowValues["Support"] || rowValues["Plateforme"] || "App mobile";
+  const rawSupport = rowValues["Support"] || rowValues["Plateforme"] || rowValues["platform"] || "";
   const rawBetType = rowValues["Type de Pari"] || rowValues["Type de pari"] || rowValues["bet_type"] || "";
   const rawAmount = rowValues["Montant"] || rowValues["amount"] || "";
   const rawTime = rowValues["Heure"] || rowValues["time"] || "";
@@ -414,13 +486,24 @@ export function parseBetRow(
     });
   }
 
+  // Support
+  const support = rawSupport ? resolveAlias(rawSupport, SUPPORT_ALIASES) : "";
+  if (!support) {
+    anomalies.push({
+      row: rowNumber,
+      field: "support",
+      message: "Support non renseigné",
+      severity: "warning",
+    });
+  }
+
   // 2. Type de pari
-  const betType = resolveAlias(rawBetType, BET_TYPE_ALIASES);
+  const betType = rawBetType ? resolveAlias(rawBetType, BET_TYPE_ALIASES) : "";
   if (!betType) {
     anomalies.push({
       row: rowNumber,
       field: "betType",
-      message: "Type de pari manquant",
+      message: "Type de pari / jeu manquant",
       severity: "error",
       rawValue: rawBetType,
     });
@@ -428,7 +511,7 @@ export function parseBetRow(
 
   // 3. Montant misé
   const parsedAmount = normalizeAmount(rawAmount);
-  if (!parsedAmount.isValid || !parsedAmount.value || parsedAmount.value <= 0) {
+  if (!parsedAmount.isValid || parsedAmount.value === null || parsedAmount.value <= 0) {
     anomalies.push({
       row: rowNumber,
       field: "amount",
@@ -499,9 +582,9 @@ export function parseBetRow(
 
   return {
     rowNumber,
-    operator: operator || "Inconnu",
-    support: resolveAlias(rawSupport, SUPPORT_ALIASES) || "App mobile",
-    betType: betType || "Paris sportifs",
+    operator: operator || "",
+    support: support || "",
+    betType: betType || "",
     amount: parsedAmount.value || 0,
     time: parsedTime.value,
     date,
@@ -542,14 +625,17 @@ export function parseVenuesGrouped(
     const betTypeRaw = row.betType ? String(row.betType).trim() : "";
     const locRaw = row.localisation ? String(row.localisation).trim() : "";
 
-    // Ignore header and empty stray rows
+    // Ignorer les lignes d'en-tête résiduelles ou totalement vides
     if (!rowNo && !quartier && !operatorRaw && !betTypeRaw) continue;
 
-    // A row with a valid number indicates a new establishment
+    // Détection d'un nouvel établissement numéroté
     const isNewEstablishment = rowNo !== null && !isNaN(rowNo);
 
-    if (isNewEstablishment) {
-      // Finalize previous group if open
+    // Détection de rupture de groupe sans nouveau numéro (quartier ou opérateur distinct)
+    const isQuartierBreak = currentGroup && quartier && normalizeQuartierName(quartier) !== currentGroup.quartier;
+    const isOperatorBreak = currentGroup && operatorRaw && resolveAlias(operatorRaw, OPERATOR_ALIASES) !== currentGroup.operator;
+
+    if (isNewEstablishment || isQuartierBreak || isOperatorBreak) {
       if (currentGroup) {
         validateVenueGroup(currentGroup);
         groups.push(currentGroup);
@@ -562,12 +648,23 @@ export function parseVenuesGrouped(
         support: resolveAlias(supportRaw, SUPPORT_ALIASES) || "Salle de jeux",
         address: normalizeAddress(locRaw),
         games: [],
+        secondaryLocations: [],
+        isAmbiguous: Boolean(isQuartierBreak || isOperatorBreak),
         startRow: row.rowNumber,
         endRow: row.rowNumber,
         rawRows: [row.rowNumber],
         anomalies: [],
         isValid: true,
       };
+
+      if (isQuartierBreak || isOperatorBreak) {
+        currentGroup.anomalies.push({
+          row: row.rowNumber,
+          field: "group",
+          message: `Rupture de groupe détectée (${isQuartierBreak ? "quartier distinct" : "opérateur distinct"}) sans numéro d'établissement`,
+          severity: "warning",
+        });
+      }
 
       if (betTypeRaw) {
         const canonicalGame = resolveAlias(betTypeRaw, BET_TYPE_ALIASES);
@@ -576,7 +673,6 @@ export function parseVenuesGrouped(
         }
       }
     } else if (currentGroup) {
-      // Continuation row for the same venue: add additional game!
       currentGroup.endRow = row.rowNumber;
       currentGroup.rawRows.push(row.rowNumber);
 
@@ -587,8 +683,10 @@ export function parseVenuesGrouped(
         }
       }
 
-      // Check for conflicting or multiple localisations
       if (locRaw && normalizeAddress(locRaw) !== currentGroup.address && currentGroup.address !== "Non renseignée") {
+        if (!currentGroup.secondaryLocations.includes(locRaw)) {
+          currentGroup.secondaryLocations.push(locRaw);
+        }
         currentGroup.anomalies.push({
           row: row.rowNumber,
           field: "address",
@@ -597,6 +695,32 @@ export function parseVenuesGrouped(
           rawValue: locRaw,
         });
       }
+    } else {
+      // Ligne isolée sans en-tête préalable
+      const isolatedGroup: ParsedVenueGroup = {
+        venueNumber: null,
+        quartier: normalizeQuartierName(quartier),
+        operator: resolveAlias(operatorRaw, OPERATOR_ALIASES) || "Opérateur",
+        support: resolveAlias(supportRaw, SUPPORT_ALIASES) || "Salle de jeux",
+        address: normalizeAddress(locRaw),
+        games: betTypeRaw ? [resolveAlias(betTypeRaw, BET_TYPE_ALIASES)] : [],
+        secondaryLocations: [],
+        isAmbiguous: true,
+        startRow: row.rowNumber,
+        endRow: row.rowNumber,
+        rawRows: [row.rowNumber],
+        anomalies: [
+          {
+            row: row.rowNumber,
+            field: "group",
+            message: "Ligne de salle isolée sans en-tête d'établissement",
+            severity: "warning",
+          },
+        ],
+        isValid: true,
+      };
+      validateVenueGroup(isolatedGroup);
+      groups.push(isolatedGroup);
     }
   }
 

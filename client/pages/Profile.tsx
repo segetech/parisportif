@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,13 +35,16 @@ export default function ProfilePage() {
 }
 
 function ProfileForm() {
-  const { user, updateUser, getAccessToken, logout, isLoggingOut } = useAuth();
+  const { user, updateUser, getAccessToken, logout, isLoggingOut, refreshUser } = useAuth();
+  const navigate = useNavigate();
   const [nom, setNom] = useState(user?.nom || "");
   const [prenom, setPrenom] = useState(user?.prenom || "");
   const [email] = useState(user?.email || "");
   const [loading, setLoading] = useState(false);
 
-  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(Boolean(user?.must_change_password));
+  const [pendingFinalization, setPendingFinalization] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -111,13 +115,18 @@ function ProfileForm() {
       return;
     }
 
+    if (newPassword === currentPassword) {
+      toast.error("Le nouveau mot de passe doit être différent du mot de passe temporaire actuel");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       toast.error("Les nouveaux mots de passe ne correspondent pas");
       return;
     }
 
-    if (newPassword.length < 6) {
-      toast.error("Le nouveau mot de passe doit contenir au moins 6 caractères");
+    if (newPassword.length < 8) {
+      toast.error("Le nouveau mot de passe doit contenir au moins 8 caractères");
       return;
     }
 
@@ -144,18 +153,59 @@ function ProfileForm() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.pendingFinalization) {
+          setPendingFinalization(true);
+          toast.warning(data.error);
+          return;
+        }
         throw new Error(data.error || "Erreur lors du changement de mot de passe");
       }
 
-      toast.success("Mot de passe changé avec succès");
+      toast.success("Mot de passe mis à jour avec succès. Vos accès sont débloqués.");
+      updateUser({ must_change_password: false });
+      await refreshUser();
+      setPendingFinalization(false);
       setShowChangePassword(false);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      navigate("/", { replace: true });
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors du changement de mot de passe");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleFinalizePassword() {
+    setIsFinalizing(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
+
+      const response = await fetch("/api/auth/finalize-password-change", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Échec de finalisation");
+      }
+
+      toast.success("Synchronisation terminée avec succès. Votre mot de passe est opérationnel.");
+      updateUser({ must_change_password: false });
+      await refreshUser();
+      setPendingFinalization(false);
+      setShowChangePassword(false);
+      navigate("/", { replace: true });
+    } catch (err: any) {
+      toast.error(err?.message || "Erreur de finalisation");
+    } finally {
+      setIsFinalizing(false);
     }
   }
 
@@ -187,6 +237,53 @@ function ProfileForm() {
           </div>
         </div>
       </div>
+
+      {/* Alerte renouvellement obligatoire & reprise de finalisation */}
+      {user?.must_change_password && !pendingFinalization && (
+        <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 flex items-start gap-3">
+          <Lock className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <p className="font-bold text-amber-950 text-sm">
+              Renouvellement obligatoire de votre mot de passe
+            </p>
+            <p className="text-amber-800 leading-relaxed">
+              Pour des raisons de sécurité, votre mot de passe temporaire doit être renouvelé dès votre première connexion. L'accès aux opérations de la plateforme est restreint tant que ce nouveau mot de passe n'a pas été enregistré.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Alerte état intermédiaire : Secret changé, finalisation métier en attente */}
+      {pendingFinalization && (
+        <div className="p-4 rounded-xl border border-blue-300 bg-blue-50 text-blue-950 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Lock className="h-5 w-5 text-blue-700 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <p className="font-bold text-blue-950 text-sm">
+                Secret changé — Finalisation du profil métier en attente
+              </p>
+              <p className="text-blue-800 leading-relaxed">
+                Votre nouveau mot de passe est déjà enregistré dans le service d'authentification. Cliquez sur le bouton ci-contre pour finaliser la synchronisation de votre profil sans avoir à ressaisir votre ancien mot de passe.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            disabled={isFinalizing}
+            onClick={handleFinalizePassword}
+            className="min-h-[44px] shrink-0 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold text-xs px-5 shadow-xs"
+          >
+            {isFinalizing ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Finalisation...
+              </>
+            ) : (
+              "Finaliser la synchronisation"
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Grille pleine largeur 3 colonnes */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">

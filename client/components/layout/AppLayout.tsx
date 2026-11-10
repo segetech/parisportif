@@ -126,7 +126,7 @@ export default function AppLayout({
           {
             to: "/illegal",
             label: "Activités Illégales",
-            icon: <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />,
+            icon: <AlertTriangle className="h-4 w-4 shrink-0" />,
             controllerOrAdmin: true,
           },
           {

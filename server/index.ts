@@ -11,10 +11,15 @@ import {
 import {
   handleUpdateProfile,
   handleChangePassword,
+  handleFinalizePasswordChange,
 } from "./routes/profile";
 import {
   handleCreateUserWithPassword,
   handleResetUserPassword,
+  handleUpdateUserRole,
+  handleUpdateUserStatus,
+  handleUpdateUserEmail,
+  handleUpdateUserProfile,
 } from "./routes/admin-users";
 import {
   handleListAuditLogs,
@@ -51,6 +56,7 @@ export function createServer() {
   // Auth routes (protected)
   app.post("/api/auth/update-profile", requireAuth, handleUpdateProfile);
   app.post("/api/auth/change-password", requireAuth, handleChangePassword);
+  app.post("/api/auth/finalize-password-change", requireAuth, handleFinalizePasswordChange);
 
   // Admin user management routes (strictly restricted to active ADMINs)
   app.post(
@@ -64,6 +70,36 @@ export function createServer() {
     requireAuth,
     requireRole(["ADMIN"]),
     handleResetUserPassword
+  );
+  app.patch(
+    "/api/admin/users/:userId/role",
+    requireAuth,
+    requireRole(["ADMIN"]),
+    handleUpdateUserRole
+  );
+  app.patch(
+    "/api/admin/users/:userId/status",
+    requireAuth,
+    requireRole(["ADMIN"]),
+    handleUpdateUserStatus
+  );
+  app.patch(
+    "/api/admin/users/:userId/email",
+    requireAuth,
+    requireRole(["ADMIN"]),
+    handleUpdateUserEmail
+  );
+  app.patch(
+    "/api/admin/users/:userId/profile",
+    requireAuth,
+    requireRole(["ADMIN"]),
+    handleUpdateUserProfile
+  );
+  app.patch(
+    "/api/admin/users/:userId",
+    requireAuth,
+    requireRole(["ADMIN"]),
+    handleUpdateUserProfile
   );
 
   // Dashboard routes (protected, role-isolated)

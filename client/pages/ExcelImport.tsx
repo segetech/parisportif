@@ -30,12 +30,12 @@ import {
   parseBetRow,
   parseVenuesGrouped,
   detectDuplicatesInTransactions,
-  sanitizeForSpreadsheet,
   ParsedTransactionRow,
   ParsedBetRow,
   ParsedVenueGroup,
   Anomaly,
 } from "@/lib/excel-import-engine";
+import { escapeCell } from "@/lib/csv";
 import { queryClient } from "@/lib/queryClient";
 
 type ImportStep = "upload" | "config" | "preview" | "importing" | "report";
@@ -54,6 +54,10 @@ export default function ExcelImportPage() {
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [detectedType, setDetectedType] = useState<TargetEntityType>("depotretrait");
+
+  // Référence persistante au classeur chargé et séquence de changement de feuille
+  const workbookRef = useRef<ExcelJS.Workbook | null>(null);
+  const sheetSequenceRef = useRef<number>(0);
 
   // Données brutes lues
   const [rawRows, setRawRows] = useState<Record<string, any>[]>([]);
@@ -85,79 +89,13 @@ export default function ExcelImportPage() {
   } | null>(null);
 
   // ---------------------------------------------------------------------------
-  // 1. LECTURE DU CLASSEUR EXCEL
+  // 1. LECTURE DU CLASSEUR EXCEL ET EXTRACTION DE FEUILLE
   // ---------------------------------------------------------------------------
 
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validation du format et de la taille
-    if (!file.name.match(/\.(xlsx|xls)$/i)) {
-      toast.error("Format de fichier non supporté. Veuillez choisir un fichier Excel (.xlsx ou .xls).");
-      return;
-    }
-
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error("Le fichier dépasse la limite maximale autorisée de 20 Mo.");
-      return;
-    }
-
-    setFileName(file.name);
-    setFileSize((file.size / 1024).toFixed(1) + " Ko");
-    setIsProcessing(true);
-
-    try {
-      const buffer = await file.arrayBuffer();
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(buffer);
-
-      const sheetNames: string[] = [];
-      workbook.eachSheet((s) => sheetNames.push(s.name));
-      setAvailableSheets(sheetNames);
-
-      // Reconnaissance automatique intelligente de la feuille
-      let defaultSheet = sheetNames[0] || "";
-      let type: TargetEntityType = "depotretrait";
-
-      for (const name of sheetNames) {
-        const lower = name.toLowerCase().trim();
-        if (lower.includes("depot") || lower.includes("retrait")) {
-          defaultSheet = name;
-          type = "depotretrait";
-          break;
-        } else if (lower.includes("pari")) {
-          defaultSheet = name;
-          type = "pari";
-          break;
-        } else if (lower.includes("salle")) {
-          defaultSheet = name;
-          type = "salles";
-          break;
-        }
-      }
-
-      setSelectedSheet(defaultSheet);
-      setDetectedType(type);
-
-      // Extraction des lignes de la feuille
-      await processSheetData(workbook, defaultSheet, type);
-
-      setCurrentStep("config");
-      toast.success(`Fichier "${file.name}" chargé avec succès (${sheetNames.length} feuille(s) détectée(s))`);
-    } catch (err: any) {
-      console.error("Erreur lecture Excel:", err);
-      toast.error("Erreur lors de la lecture du classeur Excel : " + (err.message || "Fichier corrompu"));
-    } finally {
-      setIsProcessing(false);
-    }
-  }
-
-  async function processSheetData(workbook: ExcelJS.Workbook, sheetName: string, type: TargetEntityType) {
+  function extractSheetRows(workbook: ExcelJS.Workbook, sheetName: string, type: TargetEntityType): Record<string, any>[] {
     const worksheet = workbook.getWorksheet(sheetName);
-    if (!worksheet) return;
+    if (!worksheet) return [];
 
-    // Détection des en-têtes
     const headers: { col: number; name: string }[] = [];
     const headerRow = worksheet.getRow(1);
     headerRow.eachCell((cell, colNumber) => {
@@ -168,12 +106,11 @@ export default function ExcelImportPage() {
     const rows: Record<string, any>[] = [];
 
     worksheet.eachRow((r, rowNumber) => {
-      if (rowNumber === 1) return; // Sauter la ligne d'en-tête
+      if (rowNumber === 1) return;
 
       const rowObj: Record<string, any> = { rowNumber };
       let hasData = false;
 
-      // Cas spécial pour la feuille Salles de jeux
       if (type === "salles") {
         const no = r.getCell(1).text?.trim();
         const quartier = r.getCell(2).text?.trim();
@@ -194,7 +131,6 @@ export default function ExcelImportPage() {
           });
         }
       } else {
-        // Feuilles depotretrait ou pari
         for (const h of headers) {
           const cellVal = r.getCell(h.col).text?.trim();
           rowObj[h.name] = cellVal || "";
@@ -206,7 +142,99 @@ export default function ExcelImportPage() {
       }
     });
 
-    setRawRows(rows);
+    return rows;
+  }
+
+  function handleSheetChange(newSheet: string, explicitType?: TargetEntityType) {
+    setSelectedSheet(newSheet);
+    const seq = ++sheetSequenceRef.current;
+
+    // Réinitialisation intégrale des états et aperçus devenus obsolètes
+    setParsedTransactions([]);
+    setParsedBets([]);
+    setParsedVenues([]);
+    setBatchResult(null);
+
+    let type: TargetEntityType = explicitType || "depotretrait";
+    if (!explicitType) {
+      const lower = newSheet.toLowerCase().trim();
+      if (lower.includes("depot") || lower.includes("retrait")) {
+        type = "depotretrait";
+      } else if (lower.includes("pari")) {
+        type = "pari";
+      } else if (lower.includes("salle")) {
+        type = "salles";
+      }
+    }
+    setDetectedType(type);
+
+    if (workbookRef.current) {
+      const rows = extractSheetRows(workbookRef.current, newSheet, type);
+      // Protection anti-race condition
+      if (sheetSequenceRef.current === seq) {
+        setRawRows(rows);
+      }
+    }
+  }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.match(/\.(xlsx|xls)$/i)) {
+      toast.error("Format de fichier non supporté. Veuillez choisir un fichier Excel (.xlsx ou .xls).");
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("Le fichier dépasse la limite maximale autorisée de 20 Mo.");
+      return;
+    }
+
+    setFileName(file.name);
+    setFileSize((file.size / 1024).toFixed(1) + " Ko");
+    setIsProcessing(true);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      workbookRef.current = workbook;
+
+      const sheetNames: string[] = [];
+      workbook.eachSheet((s) => sheetNames.push(s.name));
+      setAvailableSheets(sheetNames);
+
+      let defaultSheet = sheetNames[0] || "";
+      let type: TargetEntityType = "depotretrait";
+
+      for (const name of sheetNames) {
+        const lower = name.toLowerCase().trim();
+        if (lower.includes("depot") || lower.includes("retrait")) {
+          defaultSheet = name;
+          type = "depotretrait";
+          break;
+        } else if (lower.includes("pari")) {
+          defaultSheet = name;
+          type = "pari";
+          break;
+        } else if (lower.includes("salle")) {
+          defaultSheet = name;
+          type = "salles";
+          break;
+        }
+      }
+
+      handleSheetChange(defaultSheet, type);
+
+      setCurrentStep("config");
+      toast.success(`Fichier "${file.name}" chargé avec succès (${sheetNames.length} feuille(s) détectée(s))`);
+    } catch (err: any) {
+      console.error("Erreur lecture Excel:", err);
+      toast.error("Erreur lors de la lecture du classeur Excel : " + (err.message || "Fichier corrompu"));
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -305,6 +333,27 @@ export default function ExcelImportPage() {
     let imported = 0;
     let rejected = 0;
     let ignored = 0;
+
+    // Création initiale du lot d'import en statut "en_cours" pour traçabilité immédiate
+    try {
+      await supabase.from("import_batches").insert([
+        {
+          id: batchId,
+          file_name: fileName,
+          sheet_name: selectedSheet,
+          entity_type: detectedType,
+          total_rows: stats.total,
+          imported_rows: 0,
+          rejected_rows: 0,
+          ignored_rows: 0,
+          status: "en_cours",
+          anomalies: [],
+          imported_by: user?.id,
+        },
+      ]);
+    } catch (batchInitErr) {
+      console.warn("Initialisation import_batch en_cours:", batchInitErr);
+    }
 
     try {
       if (detectedType === "depotretrait") {
@@ -411,29 +460,30 @@ export default function ExcelImportPage() {
 
       setImportProgress(100);
 
-      // Traçabilité du lot d'import dans import_batches
-      const batchPayload = {
-        id: batchId,
-        file_name: fileName,
-        sheet_name: selectedSheet,
-        entity_type: detectedType,
-        total_rows: stats.total,
-        imported_rows: imported,
-        rejected_rows: rejected,
-        ignored_rows: ignored,
-        status: "termine",
-        anomalies: stats.allAnomalies.slice(0, 100),
-        imported_by: user?.id,
-      };
-
+      // Traçabilité finale du lot d'import (statut "termine")
+      const finalStatus = "termine";
       try {
-        await supabase.from("import_batches").insert([batchPayload]);
+        await supabase.from("import_batches").update({
+          total_rows: stats.total,
+          imported_rows: imported,
+          rejected_rows: rejected,
+          ignored_rows: ignored,
+          status: finalStatus,
+          anomalies: stats.allAnomalies.slice(0, 100),
+        }).eq("id", batchId);
       } catch (batchErr) {
-        console.warn("Enregistrement import_batch:", batchErr);
+        console.warn("Mise à jour finale import_batch:", batchErr);
       }
 
       // Invalidation ciblée des caches React Query
-      await queryClient.invalidateQueries();
+      if (detectedType === "depotretrait") {
+        await queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      } else if (detectedType === "pari") {
+        await queryClient.invalidateQueries({ queryKey: ["bets"] });
+      } else if (detectedType === "salles") {
+        await queryClient.invalidateQueries({ queryKey: ["venues"] });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
 
       setBatchResult({
         batchId,
@@ -448,6 +498,35 @@ export default function ExcelImportPage() {
       toast.success(`Import terminé avec succès : ${imported} élément(s) importé(s)`);
     } catch (importErr: any) {
       console.error("Erreur enregistrement import:", importErr);
+      // En cas d'échec partiel ou complet, marquer le lot "partiel" ou "echoue"
+      const failureStatus = imported > 0 ? "partiel" : "echoue";
+      try {
+        await supabase.from("import_batches").update({
+          imported_rows: imported,
+          rejected_rows: rejected,
+          ignored_rows: ignored,
+          status: failureStatus,
+          anomalies: [
+            ...stats.allAnomalies.slice(0, 50),
+            { row: 0, field: "import", message: importErr.message || "Erreur base de données", severity: "error" },
+          ],
+        }).eq("id", batchId);
+      } catch (batchErr) {
+        console.warn("Mise à jour import_batch en erreur:", batchErr);
+      }
+
+      // Invalidation ciblée même en cas d'erreur partielle pour synchroniser les données insérées
+      if (imported > 0) {
+        if (detectedType === "depotretrait") {
+          await queryClient.invalidateQueries({ queryKey: ["transactions"] });
+        } else if (detectedType === "pari") {
+          await queryClient.invalidateQueries({ queryKey: ["bets"] });
+        } else if (detectedType === "salles") {
+          await queryClient.invalidateQueries({ queryKey: ["venues"] });
+        }
+        await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      }
+
       toast.error("Erreur durant l'enregistrement : " + (importErr.message || "Erreur base de données"));
       setCurrentStep("preview");
     } finally {
@@ -456,7 +535,7 @@ export default function ExcelImportPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // 5. TÉLÉCHARGEMENT DU RAPPORT D'ANOMALIES (CSV SÉCURISÉ)
+  // 5. TÉLÉCHARGEMENT DU RAPPORT D'ANOMALIES (CSV SÉCURISÉ FORMULA INJECTION)
   // ---------------------------------------------------------------------------
 
   function downloadAnomalyReport() {
@@ -467,11 +546,11 @@ export default function ExcelImportPage() {
 
     const headers = ["Ligne", "Champ", "Gravité", "Message", "Valeur source"];
     const rows = stats.allAnomalies.map((a) => [
-      sanitizeForSpreadsheet(a.row),
-      sanitizeForSpreadsheet(a.field),
-      sanitizeForSpreadsheet(a.severity.toUpperCase()),
-      sanitizeForSpreadsheet(a.message),
-      sanitizeForSpreadsheet(a.rawValue || ""),
+      escapeCell(a.row),
+      escapeCell(a.field),
+      escapeCell(a.severity.toUpperCase()),
+      escapeCell(a.message),
+      escapeCell(a.rawValue || ""),
     ]);
 
     const csvContent = [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\r\n");
@@ -661,14 +740,7 @@ export default function ExcelImportPage() {
                 </label>
                 <select
                   value={selectedSheet}
-                  onChange={(e) => {
-                    const sheet = e.target.value;
-                    setSelectedSheet(sheet);
-                    const lower = sheet.toLowerCase();
-                    if (lower.includes("depot") || lower.includes("retrait")) setDetectedType("depotretrait");
-                    else if (lower.includes("pari")) setDetectedType("pari");
-                    else if (lower.includes("salle")) setDetectedType("salles");
-                  }}
+                  onChange={(e) => handleSheetChange(e.target.value)}
                   className="w-full min-h-[44px] px-3 py-2 text-sm bg-[#F5F8F5] border border-[#D8E6DB] rounded-xl text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
                 >
                   {availableSheets.map((s) => (
@@ -677,16 +749,21 @@ export default function ExcelImportPage() {
                     </option>
                   ))}
                 </select>
-                <p className="text-[11px] text-[#556B5C]">
-                  Type détecté :{" "}
-                  <span className="font-bold text-[#006B2D] uppercase">
-                    {detectedType === "depotretrait"
-                      ? "Transactions financières (Dépôt / Retrait)"
-                      : detectedType === "pari"
-                      ? "Paris sportifs & jeux"
-                      : "Points de vente physiques (Salles de jeux)"}
-                  </span>
-                </p>
+
+                <div className="pt-2">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                    Modèle métier cible (détecté ou forcé)
+                  </label>
+                  <select
+                    value={detectedType}
+                    onChange={(e) => handleSheetChange(selectedSheet, e.target.value as TargetEntityType)}
+                    className="w-full min-h-[44px] px-3 py-2 text-xs bg-[#F5F8F5] border border-[#D8E6DB] rounded-xl text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
+                  >
+                    <option value="depotretrait">Transactions financières (Dépôt / Retrait)</option>
+                    <option value="pari">Paris sportifs & jeux</option>
+                    <option value="salles">Points de vente physiques (Salles de jeux)</option>
+                  </select>
+                </div>
               </div>
 
               {/* Règle de date explicite (Obligatoire car absente du fichier Excel) */}
