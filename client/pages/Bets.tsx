@@ -68,6 +68,8 @@ interface Bet {
   amount_fcfa: number;
   status: string;
   amount_won_fcfa?: number;
+  phone?: string;
+  proof_status?: string;
   venue_id?: string;
   notes?: string;
   created_by?: string;
@@ -126,6 +128,8 @@ function Bets() {
     support: "",
     bet_type: "",
     amount_fcfa: 0,
+    phone: "",
+    proof_status: "non_renseignee" as string,
     status: "en attente",
     amount_won_fcfa: 0,
     notes: "",
@@ -214,6 +218,8 @@ function Bets() {
       support: supports[0] || "",
       bet_type: betTypes[0] || "",
       amount_fcfa: 0,
+      phone: "",
+      proof_status: "non_renseignee",
       status: "en attente",
       amount_won_fcfa: 0,
       notes: "",
@@ -234,6 +240,8 @@ function Bets() {
       support: bet.support,
       bet_type: bet.bet_type,
       amount_fcfa: bet.amount_fcfa,
+      phone: bet.phone || "",
+      proof_status: (bet.proof_status as "disponible" | "non_disponible" | "non_renseignee") || "non_renseignee",
       status: bet.status,
       amount_won_fcfa: bet.amount_won_fcfa || 0,
       notes: bet.notes || "",
@@ -1448,6 +1456,35 @@ function Bets() {
                 />
               </div>
             )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                  Téléphone du parieur
+                </label>
+                <Input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="Ex: 0701020304"
+                  className="bg-white border-[#D8E6DB]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                  Disponibilité de la preuve
+                </label>
+                <select
+                  className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
+                  value={formData.proof_status}
+                  onChange={(e) => setFormData({ ...formData, proof_status: e.target.value as "disponible" | "non_disponible" | "non_renseignee" })}
+                >
+                  <option value="non_renseignee">Non renseignée</option>
+                  <option value="disponible">Preuve disponible</option>
+                  <option value="non_disponible">Preuve absente</option>
+                </select>
+              </div>
+            </div>
 
             {/* AUTOMATISATION ANTI-DOUBLE SAISIE */}
             {!editingBet && (

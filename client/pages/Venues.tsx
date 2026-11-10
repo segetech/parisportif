@@ -21,7 +21,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { CreatableSelect } from "@/components/ui/creatable-select";
-import { Plus, Pencil, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw, Building, MapPin, Phone } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useVenues, useLookups, useCreateVenue, useUpdateVenue, useDeleteVenue } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
 
@@ -32,11 +33,13 @@ interface Venue {
   operator: string;
   support: string;
   bet_type: string;
+  games?: string[];
   address: string;
   contact_phone?: string;
   gps_lat?: number;
   gps_lng?: number;
   notes?: string;
+  validation_status?: string;
 }
 
 export default function VenuesPage() {
@@ -77,7 +80,7 @@ function Venues() {
     quartier_no: "",
     quartier: "",
     operator: "",
-    support: "",
+    support: "Salle de jeux",
     bet_type: "",
     address: "",
     contact_phone: "",
@@ -85,6 +88,7 @@ function Venues() {
     gps_lng: undefined as number | undefined,
     notes: "",
   });
+  const [selectedGames, setSelectedGames] = useState<string[]>([]);
 
   // Fonctions pour créer de nouveaux éléments
   async function createOperator(name: string) {
@@ -161,12 +165,14 @@ function Venues() {
   function openDialog(venue?: Venue) {
     if (venue) {
       setEditing(venue);
+      const existingGames = venue.games && venue.games.length > 0 ? venue.games : venue.bet_type ? [venue.bet_type] : [];
+      setSelectedGames(existingGames);
       setFormData({
         quartier_no: venue.quartier_no || "",
         quartier: venue.quartier,
         operator: venue.operator,
-        support: venue.support,
-        bet_type: venue.bet_type,
+        support: venue.support || "Salle de jeux",
+        bet_type: venue.bet_type || existingGames[0] || "",
         address: venue.address,
         contact_phone: venue.contact_phone || "",
         gps_lat: venue.gps_lat,
@@ -175,11 +181,12 @@ function Venues() {
       });
     } else {
       setEditing(null);
+      setSelectedGames([]);
       setFormData({
         quartier_no: "",
         quartier: "",
-        operator: "",
-        support: "",
+        operator: operators[0] || "",
+        support: "Salle de jeux",
         bet_type: "",
         address: "",
         contact_phone: "",
@@ -191,9 +198,16 @@ function Venues() {
     setDialogOpen(true);
   }
 
+  function toggleGame(gameName: string) {
+    setSelectedGames((prev) =>
+      prev.includes(gameName) ? prev.filter((g) => g !== gameName) : [...prev, gameName]
+    );
+  }
+
   async function handleSubmit() {
-    if (!formData.quartier || !formData.operator || !formData.bet_type || !formData.address) {
-      toast.error("Veuillez remplir tous les champs obligatoires");
+    const primaryGame = selectedGames[0] || formData.bet_type;
+    if (!formData.quartier || !formData.operator || !primaryGame || !formData.address) {
+      toast.error("Veuillez remplir le quartier, l'opérateur, l'adresse et au moins un type de jeu.");
       return;
     }
 
@@ -201,6 +215,8 @@ function Venues() {
       const isAgent = user?.role === "AGENT";
       const venueData = {
         ...formData,
+        bet_type: primaryGame,
+        games: selectedGames.length > 0 ? selectedGames : [primaryGame],
         quartier_no: formData.quartier_no || null,
         contact_phone: formData.contact_phone || null,
         gps_lat: formData.gps_lat || null,
@@ -219,14 +235,27 @@ function Venues() {
         if (error) throw error;
         toast.success("Salle mise à jour avec succès");
       } else {
-        const { error } = await supabase
+        const { data: newV, error } = await supabase
           .from("venues")
-          .insert([venueData]);
+          .insert([venueData])
+          .select("id")
+          .single();
         
         if (error) throw error;
+
+        // Insertion dans venue_games
+        if (newV && selectedGames.length > 0) {
+          const gameRecords = selectedGames.map((g) => ({
+            venue_id: newV.id,
+            game_name: g,
+            active: true,
+          }));
+          await supabase.from("venue_games").insert(gameRecords);
+        }
+
         toast.success(
           isAgent
-            ? "Salle créée avec succès. En attente de validation."
+            ? "Salle créée avec succès. En attente de validation par le contrôleur."
             : "Salle créée avec succès"
         );
       }
@@ -335,64 +364,76 @@ function Venues() {
           </div>
         </div>
 
-        {/* Tableau */}
-        <div className="rounded-md border">
+        {/* VUE TABLEAU DESKTOP (>= 768px) */}
+        <div className="hidden md:block rounded-xl border border-[#D8E6DB] bg-white overflow-hidden shadow-xs">
           <Table>
-            <TableHeader>
+            <TableHeader className="bg-[#F5F8F5]">
               <TableRow>
-                <TableHead>N° Quartier</TableHead>
-                <TableHead>Quartier</TableHead>
-                <TableHead>Opérateur</TableHead>
-                <TableHead>Type de pari</TableHead>
-                <TableHead>Adresse</TableHead>
-                <TableHead>Téléphone</TableHead>
-                <TableHead>GPS</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">N° Quartier</TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">Quartier</TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">Opérateur</TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">Jeux proposés</TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">Adresse</TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">Téléphone</TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">GPS</TableHead>
+                <TableHead className="text-right text-xs font-bold text-[#556B5C]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredVenues.length > 0 ? (
-                filteredVenues.map((venue) => (
-                  <TableRow key={venue.id}>
-                    <TableCell>{venue.quartier_no || "—"}</TableCell>
-                    <TableCell className="font-medium">{venue.quartier}</TableCell>
-                    <TableCell>{venue.operator}</TableCell>
-                    <TableCell>{venue.bet_type}</TableCell>
-                    <TableCell>{venue.address}</TableCell>
-                    <TableCell>{venue.contact_phone || "—"}</TableCell>
-                    <TableCell>
-                      {venue.gps_lat && venue.gps_lng
-                        ? `${venue.gps_lat.toFixed(4)}, ${venue.gps_lng.toFixed(4)}`
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openDialog(venue)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        {isAdmin && (
+                filteredVenues.map((venue) => {
+                  const venueGames = venue.games && venue.games.length > 0 ? venue.games : [venue.bet_type];
+                  return (
+                    <TableRow key={venue.id} className="hover:bg-[#F5F8F5]/60 transition-colors">
+                      <TableCell className="text-xs text-[#556B5C] font-mono">{venue.quartier_no || "—"}</TableCell>
+                      <TableCell className="font-bold text-xs text-[#17251C]">{venue.quartier}</TableCell>
+                      <TableCell className="text-xs font-semibold text-[#17251C]">{venue.operator}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1 max-w-xs">
+                          {venueGames.map((g, gi) => (
+                            <Badge key={gi} variant="outline" className="text-[10px] bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]">
+                              {g}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-[#556B5C] max-w-xs truncate">{venue.address}</TableCell>
+                      <TableCell className="text-xs text-[#556B5C]">{venue.contact_phone || "—"}</TableCell>
+                      <TableCell className="text-xs text-[#556B5C]">
+                        {venue.gps_lat && venue.gps_lng
+                          ? `${venue.gps_lat.toFixed(4)}, ${venue.gps_lng.toFixed(4)}`
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1.5">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDelete(venue.id)}
-                            className="text-red-600 hover:text-red-700"
+                            onClick={() => openDialog(venue)}
+                            className="h-8 w-8 p-0 text-[#556B5C] hover:text-[#006B2D] hover:bg-[#F5F8F5]"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(venue.id)}
+                              className="h-8 w-8 p-0 text-[#E52329] hover:bg-red-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               ) : (
                 <TableRow>
                   <TableCell
                     colSpan={8}
-                    className="text-center text-sm text-muted-foreground py-8"
+                    className="text-center text-sm text-[#556B5C] py-12"
                   >
                     Aucune salle trouvée
                   </TableCell>
@@ -402,6 +443,81 @@ function Venues() {
           </Table>
         </div>
 
+        {/* VUE CARTES MOBILE (< 768px) ERGONOMIQUE ET ACCESSIBLE AU TOUCHER */}
+        <div className="block md:hidden space-y-3">
+          {filteredVenues.length > 0 ? (
+            filteredVenues.map((venue) => {
+              const venueGames = venue.games && venue.games.length > 0 ? venue.games : [venue.bet_type];
+              return (
+                <div
+                  key={venue.id}
+                  className="p-4 bg-white rounded-2xl border border-[#D8E6DB] space-y-2.5 shadow-xs"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black px-2 py-0.5 rounded bg-[#006B2D]/10 text-[#006B2D] border border-[#006B2D]/20">
+                        {venue.quartier_no ? `N° ${venue.quartier_no}` : "Salle"}
+                      </span>
+                      <span className="font-extrabold text-sm text-[#17251C]">{venue.quartier}</span>
+                    </div>
+                    <Badge className="bg-[#17251C] text-white font-bold text-xs">{venue.operator}</Badge>
+                  </div>
+
+                  <div className="text-xs text-[#556B5C] flex items-start gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-[#006B2D] mt-0.5" />
+                    <span>{venue.address}</span>
+                  </div>
+
+                  {venue.contact_phone && (
+                    <div className="text-xs text-[#556B5C] flex items-center gap-1.5">
+                      <Phone className="h-3.5 w-3.5 shrink-0 text-[#006B2D]" />
+                      <span>{venue.contact_phone}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-1 border-t border-[#D8E6DB]/60">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                      Jeux rattachés ({venueGames.length}) :
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {venueGames.map((g, gi) => (
+                        <Badge key={gi} variant="outline" className="text-[11px] bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]">
+                          {g}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#D8E6DB]/60">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openDialog(venue)}
+                      className="min-h-[44px] px-4 text-xs font-semibold border-[#D8E6DB] text-[#17251C]"
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" /> Modifier
+                    </Button>
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(venue.id)}
+                        className="min-h-[44px] px-3 text-xs text-[#E52329] hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Supprimer
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="p-8 text-center text-sm text-[#556B5C] bg-white rounded-2xl border border-[#D8E6DB]">
+              Aucune salle trouvée
+            </div>
+          )}
+        </div>
+
         <div className="text-sm text-muted-foreground">
           Total : {filteredVenues.length} salle(s)
         </div>
@@ -409,39 +525,41 @@ function Venues() {
 
       {/* Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
           <DialogHeader>
-            <DialogTitle>
-              {editing ? "Modifier" : "Nouvelle"} salle
+            <DialogTitle className="text-base sm:text-lg font-bold text-[#17251C]">
+              {editing ? "Modifier la salle" : "Nouvelle salle de jeux"}
             </DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4">
+          <div className="grid gap-4 pt-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium">N° Quartier</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">N° Quartier</label>
                 <Input
                   value={formData.quartier_no}
                   onChange={(e) => setFormData({ ...formData, quartier_no: e.target.value })}
-                  placeholder="Optionnel"
+                  placeholder="Ex: 1, 2..."
+                  className="bg-white border-[#D8E6DB]"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium">Quartier *</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Quartier *</label>
                 <Input
                   value={formData.quartier}
                   onChange={(e) => setFormData({ ...formData, quartier: e.target.value })}
-                  placeholder="Nom du quartier"
+                  placeholder="Ex: Niamana, Faladié..."
+                  className="bg-white border-[#D8E6DB]"
                 />
               </div>
             </div>
 
             <CreatableSelect
-              label="Opérateur"
+              label="Opérateur de jeux"
               required
               value={formData.operator}
               onChange={(value) => setFormData({ ...formData, operator: value })}
               options={operators}
-              placeholder="Tapez pour rechercher ou créer..."
+              placeholder="Ex: Bet223, PremierBet, 1xBet, MALIBET..."
               onCreateNew={createOperator}
             />
 
@@ -451,77 +569,119 @@ function Venues() {
               value={formData.support}
               onChange={(value) => setFormData({ ...formData, support: value })}
               options={supports}
-              placeholder="Tapez pour rechercher ou créer..."
+              placeholder="Salle de jeux, Guichet..."
               onCreateNew={createSupport}
             />
 
-            <CreatableSelect
-              label="Type de pari"
-              required
-              value={formData.bet_type}
-              onChange={(value) => setFormData({ ...formData, bet_type: value })}
-              options={betTypes}
-              placeholder="Tapez pour rechercher ou créer..."
-              onCreateNew={createBetType}
-            />
+            {/* SÉLECTEUR MULTI-JEUX POUR UN SEUL ÉTABLISSEMENT */}
+            <div className="space-y-2 p-3 bg-[#F5F8F5] rounded-xl border border-[#D8E6DB]">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold uppercase tracking-wider text-[#17251C] block">
+                  Jeux disponibles dans cet établissement *
+                </label>
+                <span className="text-[10px] text-[#006B2D] font-bold">
+                  {selectedGames.length} jeu(x) sélectionné(s)
+                </span>
+              </div>
+              <p className="text-[11px] text-[#556B5C]">
+                Cochez tous les jeux proposés par cette salle (un seul établissement, plusieurs jeux).
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-1 max-h-48 overflow-y-auto no-scrollbar">
+                {betTypes.map((bt) => {
+                  const isChecked = selectedGames.includes(bt);
+                  return (
+                    <label
+                      key={bt}
+                      onClick={() => toggleGame(bt)}
+                      className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                        isChecked
+                          ? "bg-[#006B2D]/10 border-[#006B2D] text-[#006B2D] font-bold"
+                          : "bg-white border-[#D8E6DB] text-[#17251C] hover:bg-slate-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {}} // handled by label onClick
+                        className="h-3.5 w-3.5 text-[#006B2D] rounded border-[#D8E6DB]"
+                      />
+                      <span className="truncate">{bt}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
 
             <div>
-              <label className="text-xs font-medium">Adresse *</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Adresse / Localisation *</label>
               <Input
                 value={formData.address}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Adresse complète"
+                placeholder="Ex: Ancienne poste du 11e arrondissement..."
+                className="bg-white border-[#D8E6DB]"
               />
             </div>
 
             <div>
-              <label className="text-xs font-medium">Téléphone</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Téléphone de contact</label>
               <Input
+                type="tel"
                 value={formData.contact_phone}
                 onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
-                placeholder="Ex: +223..."
+                placeholder="Ex: 0701020304"
+                className="bg-white border-[#D8E6DB]"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium">Latitude</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Latitude GPS</label>
                 <Input
                   type="number"
                   step="any"
                   value={formData.gps_lat || ""}
                   onChange={(e) => setFormData({ ...formData, gps_lat: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="Ex: 12.6392"
+                  className="bg-white border-[#D8E6DB]"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium">Longitude</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Longitude GPS</label>
                 <Input
                   type="number"
                   step="any"
                   value={formData.gps_lng || ""}
                   onChange={(e) => setFormData({ ...formData, gps_lng: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="Ex: -8.0029"
+                  className="bg-white border-[#D8E6DB]"
                 />
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-medium">Notes</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Notes & Observations</label>
               <Textarea
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Notes additionnelles..."
-                rows={3}
+                placeholder="Informations additionnelles..."
+                rows={2}
+                className="bg-white border-[#D8E6DB]"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <div className="flex justify-end gap-2 pt-3 border-t border-[#D8E6DB]">
+              <Button
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+                className="min-h-[44px] px-4 border-[#D8E6DB] text-[#556B5C]"
+              >
                 Annuler
               </Button>
-              <Button onClick={handleSubmit}>
-                Enregistrer
+              <Button
+                onClick={handleSubmit}
+                className="min-h-[44px] px-6 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold rounded-xl shadow-xs"
+              >
+                Enregistrer la salle
               </Button>
             </div>
           </div>

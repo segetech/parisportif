@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,6 +112,11 @@ export default function AppLayout({
             to: "/venues",
             label: "Salles de jeux",
             icon: <Building2 className="h-4 w-4 shrink-0" />,
+          },
+          {
+            to: "/import-excel",
+            label: "Import Excel",
+            icon: <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-300" />,
           },
         ],
       },
@@ -409,11 +415,89 @@ export default function AppLayout({
         </header>
 
         {/* Contenu principal de la page */}
-        <main className="flex-1 w-full min-w-0 p-4 md:p-6 lg:p-8 bg-[#F5F8F5] text-[#17251C] overflow-y-auto">
+        <main className="flex-1 w-full min-w-0 p-4 md:p-6 lg:p-8 pb-24 md:pb-8 bg-[#F5F8F5] text-[#17251C] overflow-y-auto">
           <div className="w-full min-w-0">
             {children}
           </div>
         </main>
+
+        {/* ========================================================================= */}
+        {/* BARRE DE NAVIGATION INFÉRIEURE MOBILE (Thumb Zone, cibles tactiles >= 44px)*/}
+        {/* ========================================================================= */}
+        <nav
+          aria-label="Navigation mobile principale"
+          className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#D8E6DB] md:hidden px-2 py-1.5 flex items-center justify-around safe-area-pb"
+        >
+          <NavLink
+            to="/"
+            className={({ isActive }) =>
+              cn(
+                "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
+                isActive
+                  ? "text-[#006B2D] scale-105"
+                  : "text-[#556B5C] hover:text-[#17251C]"
+              )
+            }
+          >
+            <LayoutDashboard className="h-5 w-5 mb-0.5" />
+            <span>Accueil</span>
+          </NavLink>
+
+          <NavLink
+            to="/transactions"
+            className={({ isActive }) =>
+              cn(
+                "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
+                isActive
+                  ? "text-[#006B2D] scale-105"
+                  : "text-[#556B5C] hover:text-[#17251C]"
+              )
+            }
+          >
+            <CreditCard className="h-5 w-5 mb-0.5" />
+            <span>Flux</span>
+          </NavLink>
+
+          <NavLink
+            to="/bets"
+            className={({ isActive }) =>
+              cn(
+                "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
+                isActive
+                  ? "text-[#006B2D] scale-105"
+                  : "text-[#556B5C] hover:text-[#17251C]"
+              )
+            }
+          >
+            <Trophy className="h-5 w-5 mb-0.5" />
+            <span>Paris</span>
+          </NavLink>
+
+          <NavLink
+            to="/venues"
+            className={({ isActive }) =>
+              cn(
+                "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
+                isActive
+                  ? "text-[#006B2D] scale-105"
+                  : "text-[#556B5C] hover:text-[#17251C]"
+              )
+            }
+          >
+            <Building2 className="h-5 w-5 mb-0.5" />
+            <span>Salles</span>
+          </NavLink>
+
+          <button
+            type="button"
+            onClick={() => setMobileDrawerOpen(true)}
+            className="flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold text-[#556B5C] hover:text-[#17251C] transition-all"
+            aria-label="Ouvrir le menu complet"
+          >
+            <Menu className="h-5 w-5 mb-0.5" />
+            <span>Menu</span>
+          </button>
+        </nav>
       </div>
     </div>
   );

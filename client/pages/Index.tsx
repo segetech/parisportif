@@ -62,6 +62,10 @@ interface DashboardStats {
   totalVenues: number;
   totalBets: number;
   totalBetsAmount: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  totalKnownWinnings: number;
+  pendingValidationsCount: number;
   wonBetsCount: number;
   lostBetsCount: number;
   pendingBetsCount: number;
@@ -156,9 +160,13 @@ function Dashboard() {
   const { data: dashboardData, isLoading, isFetching, refetch } = useDashboardData();
 
   const stats: DashboardStats = dashboardData || {
-    totalVenues: 18,
+    totalVenues: 36,
     totalBets: 48,
     totalBetsAmount: 4850000,
+    totalDeposits: 3250000,
+    totalWithdrawals: 1600000,
+    totalKnownWinnings: 1980000,
+    pendingValidationsCount: 3,
     wonBetsCount: 19,
     lostBetsCount: 22,
     pendingBetsCount: 7,
@@ -286,6 +294,7 @@ function Dashboard() {
 
         {/* =========================================================================
             2. HIGH-DENSITY KPI BENTO GRID AVEC COMPTEURS GSAP ANIMÉS
+            (Séparation stricte des Mises, Dépôts, Retraits et Gains)
             ========================================================================= */}
         <motion.div
           variants={staggerContainer}
@@ -312,14 +321,14 @@ function Dashboard() {
               <div className="flex items-center gap-1.5 mt-1.5">
                 <Badge variant="outline" className="bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30 text-[11px] font-bold gap-0.5 px-1.5 py-0">
                   <ArrowUpRight className="h-3 w-3" />
-                  Flux actif
+                  Mises engagées
                 </Badge>
-                <span className="text-xs text-[#556B5C]">total calculé</span>
+                <span className="text-xs text-[#556B5C]">{stats.totalBets} tickets</span>
               </div>
             </div>
           </motion.div>
 
-          {/* Card 2: Total Paris */}
+          {/* Card 2: Total Dépôts (Entrées caisse) */}
           <motion.div
             variants={fadeUpItem}
             whileHover={{ y: -3, transition: { duration: 0.2 } }}
@@ -327,7 +336,61 @@ function Dashboard() {
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
-                Paris Enregistrés
+                Total Dépôts
+              </span>
+              <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
+                <ArrowDownRight className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-2xl font-black tracking-tight text-[#17251C] font-mono">
+                <AnimatedNumber value={stats.totalDeposits} suffix="FCFA" />
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[11px] font-bold px-1.5 py-0">
+                  Entrées Mobile Money
+                </Badge>
+                <span className="text-xs text-[#556B5C]">recharges joueurs</span>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Card 3: Total Retraits (Sorties caisse) */}
+          <motion.div
+            variants={fadeUpItem}
+            whileHover={{ y: -3, transition: { duration: 0.2 } }}
+            className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
+                Total Retraits
+              </span>
+              <div className="h-9 w-9 rounded-lg bg-amber-50 text-amber-800 flex items-center justify-center">
+                <ArrowUpRight className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-2xl font-black tracking-tight text-[#17251C] font-mono">
+                <AnimatedNumber value={stats.totalWithdrawals} suffix="FCFA" />
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 text-[11px] font-bold px-1.5 py-0">
+                  Sorties Mobile Money
+                </Badge>
+                <span className="text-xs text-[#556B5C]">retraits joueurs</span>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Card 4: Gains Connus Distribués */}
+          <motion.div
+            variants={fadeUpItem}
+            whileHover={{ y: -3, transition: { duration: 0.2 } }}
+            className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
+                Gains Renseignés
               </span>
               <div className="h-9 w-9 rounded-lg bg-[#FFD000]/20 text-[#004D20] flex items-center justify-center">
                 <Trophy className="h-4 w-4" />
@@ -335,70 +398,60 @@ function Dashboard() {
             </div>
             <div className="mt-3">
               <div className="text-2xl font-black tracking-tight text-[#17251C] font-mono">
-                <AnimatedNumber value={stats.totalBets} />
+                <AnimatedNumber value={stats.totalKnownWinnings} suffix="FCFA" />
               </div>
               <div className="flex items-center gap-1.5 mt-1.5">
-                <Badge variant="outline" className="bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50 text-[11px] font-bold gap-0.5 px-1.5 py-0">
-                  <CheckCircle2 className="h-3 w-3" />
-                  {winRatio}% gagnés
+                <Badge variant="outline" className="bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50 text-[11px] font-bold px-1.5 py-0">
+                  {stats.wonBetsCount} tickets gagnés
                 </Badge>
-                <span className="text-xs text-[#556B5C]">
-                  {stats.wonBetsCount} succès
-                </span>
+                <span className="text-xs text-[#556B5C]">retour brut</span>
               </div>
             </div>
           </motion.div>
+        </motion.div>
 
-          {/* Card 3: Réseau Salles */}
-          <motion.div
-            variants={fadeUpItem}
-            whileHover={{ y: -3, transition: { duration: 0.2 } }}
-            className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
-                Points de Vente
-              </span>
-              <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
-                <Building2 className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-2xl font-black tracking-tight text-[#17251C] font-mono">
+        {/* LIGNE SECONDAIRE DE GOUVERNANCE ET RÉSEAU */}
+        <motion.div
+          variants={staggerContainer}
+          className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+        >
+          {/* Salles réelles */}
+          <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Points de Vente Physiques</span>
+              <div className="text-xl font-black text-[#17251C]">
                 <AnimatedNumber value={stats.totalVenues} />
-              </div>
-              <div className="flex items-center gap-1.5 mt-1.5">
-                <Badge variant="outline" className="bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30 text-[11px] font-bold px-1.5 py-0">
-                  {stats.operatorsCount} opérateurs
-                </Badge>
-                <span className="text-xs text-[#556B5C]">réseau déployé</span>
+                <span className="text-xs font-normal text-[#556B5C] ml-2">établissements distincts</span>
               </div>
             </div>
-          </motion.div>
+            <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
+              <Building2 className="h-4 w-4" />
+            </div>
+          </div>
 
-          {/* Card 4: Anomalies & Risques */}
-          <motion.div
-            variants={fadeUpItem}
-            whileHover={{ y: -3, transition: { duration: 0.2 } }}
-            className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
-                Vigilance Fraudes
-              </span>
-              <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${
-                totalAnomalies > 0
-                  ? "bg-[#E52329]/10 text-[#E52329]"
-                  : "bg-[#006B2D]/10 text-[#006B2D]"
-              }`}>
-                <ShieldAlert className="h-4 w-4" />
+          {/* Opérations en attente de validation */}
+          <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Opérations à Valider</span>
+              <div className="text-xl font-black text-[#17251C]">
+                <AnimatedNumber value={stats.pendingValidationsCount} />
+                <span className="text-xs font-normal text-[#556B5C] ml-2">en attente de contrôle</span>
               </div>
             </div>
-            <div className="mt-3">
-              <div className="text-2xl font-black tracking-tight text-[#17251C] font-mono">
+            <div className="h-9 w-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+              <Clock className="h-4 w-4" />
+            </div>
+          </div>
+
+          {/* Vigilance Fraudes */}
+          <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Vigilance Fraudes & Anomalies</span>
+              <div className="text-xl font-black text-[#17251C]">
                 <AnimatedNumber value={totalAnomalies} />
+                <span className="text-xs font-normal text-[#556B5C] ml-2">signalements</span>
               </div>
-              <div className="flex items-center gap-1.5 mt-1.5">
+              <div className="flex items-center gap-1.5 pt-0.5">
                 <Badge
                   variant="outline"
                   className={
@@ -414,7 +467,12 @@ function Dashboard() {
                 </span>
               </div>
             </div>
-          </motion.div>
+            <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${
+              totalAnomalies > 0 ? "bg-[#E52329]/10 text-[#E52329]" : "bg-[#006B2D]/10 text-[#006B2D]"
+            }`}>
+              <ShieldAlert className="h-4 w-4" />
+            </div>
+          </div>
         </motion.div>
 
         {/* =========================================================================

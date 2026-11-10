@@ -1,3 +1,5 @@
+import { sanitizeForSpreadsheet } from "./excel-import-engine";
+
 /**
  * Moteur d'exportation Excel Haute Définition avec ExcelJS
  * Stylisation corporate professionnelle :
@@ -307,7 +309,7 @@ export async function exportStyledExcel({
         cell.numFmt = '#,##0 "FCFA"';
         cell.alignment = { horizontal: "right", vertical: "middle" };
       } else {
-        cell.value = val ?? "";
+        cell.value = typeof val === "string" ? sanitizeForSpreadsheet(val) : (val ?? "");
         cell.alignment = {
           horizontal: col.align || "left",
           vertical: "middle",
@@ -458,6 +460,130 @@ export async function exportStyledExcel({
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Génère et télécharge un modèle Excel vierge officiel prêt à l'importation
+ * Conforme aux spécifications des feuilles : depotretrait, pari, ou Salle jeux
+ */
+export async function generateBlankImportTemplate(type: "depotretrait" | "pari" | "salles") {
+  const ExcelJS = await getExcelJS();
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Système de Gestion des Paris";
+
+  let sheetName = "Données";
+  let headers: string[] = [];
+  let sampleRow: (string | number)[] = [];
+  let filename = "";
+
+  if (type === "depotretrait") {
+    sheetName = "depotretrait";
+    filename = "modele_officiel_depot_retrait.xlsx";
+    headers = [
+      "Opérateur de jeux",
+      "Plateforme",
+      "Opérateur de paiement",
+      "Type",
+      "Montant",
+      "Heure",
+      "Numéro de téléphone",
+      "Référence",
+      "preuve",
+    ];
+    sampleRow = [
+      "1xBet",
+      "App mobile",
+      "Orange",
+      "Dépôt",
+      1000,
+      "04:38",
+      "0701020304",
+      "CI250326.0438.B13742",
+      "dispo",
+    ];
+  } else if (type === "pari") {
+    sheetName = "pari";
+    filename = "modele_officiel_paris.xlsx";
+    headers = [
+      "Opérateur de jeux",
+      "Support",
+      "Type de Pari",
+      "Montant",
+      "Heure",
+      "Numéro de téléphone",
+      "Référence",
+      "statut",
+      "montant gagné",
+    ];
+    sampleRow = [
+      "1xBet",
+      "App mobile",
+      "Casino",
+      1000,
+      "04:38",
+      "0701020304",
+      "CI250326.0438.B13742",
+      "gagné",
+      3500,
+    ];
+  } else {
+    sheetName = "Salle jeux";
+    filename = "modele_officiel_salles_de_jeux.xlsx";
+    headers = [
+      "N°",
+      "Quartier",
+      "Opérateur de jeux",
+      "Support",
+      "Type de Pari",
+      "localisation",
+    ];
+    sampleRow = [
+      1,
+      "Niamana",
+      "Bet223",
+      "Salle de jeux",
+      "Keno boule",
+      "Ancienne poste du 11e arrondissement",
+    ];
+  }
+
+  const worksheet = workbook.addWorksheet(sheetName);
+  const headerRow = worksheet.getRow(1);
+  headerRow.values = headers;
+  headerRow.height = 24;
+
+  headerRow.eachCell((cell) => {
+    cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF006B2D" },
+    };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+  });
+
+  const row2 = worksheet.getRow(2);
+  row2.values = sampleRow;
+  row2.font = { name: "Segoe UI", size: 9.5 };
+
+  // Ajustement des largeurs
+  headers.forEach((h, idx) => {
+    worksheet.getColumn(idx + 1).width = Math.max(h.length + 5, 16);
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);

@@ -135,6 +135,10 @@ export interface DashboardStats {
   totalVenues: number;
   totalBets: number;
   totalBetsAmount: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  totalKnownWinnings: number;
+  pendingValidationsCount: number;
   wonBetsCount: number;
   lostBetsCount: number;
   pendingBetsCount: number;
@@ -157,6 +161,7 @@ export function useDashboardData() {
         venuesRes,
         betsCountRes,
         recentBetsRes,
+        transactionsRes,
         illegalBetsRes,
         illegalTransactionsRes,
       ] = await Promise.all([
@@ -164,28 +169,45 @@ export function useDashboardData() {
         supabase.from("bets").select("*", { count: "exact" }),
         supabase
           .from("bets")
-          .select("id, date, time, operator, support, bet_type, amount_fcfa, status, amount_won_fcfa")
+          .select("id, date, time, operator, support, bet_type, amount_fcfa, status, amount_won_fcfa, validation_status")
           .order("date", { ascending: false })
           .order("time", { ascending: false })
           .limit(30),
+        supabase.from("transactions").select("type, amount_fcfa, validation_status"),
         supabase.from("illegal_bets").select("*", { count: "exact" }),
         supabase.from("illegal_transactions").select("*", { count: "exact" }),
       ]);
 
       const venues = venuesRes.data || [];
       const recentBets = recentBetsRes.data || [];
+      const transactions = transactionsRes.data || [];
 
-      let totalAmount = 0;
+      let totalBetsAmount = 0;
+      let totalKnownWinnings = 0;
       let wonCount = 0;
       let lostCount = 0;
       let pendingCount = 0;
+      let pendingValidations = 0;
 
       recentBets.forEach((b: any) => {
-        totalAmount += Number(b.amount_fcfa) || 0;
+        totalBetsAmount += Number(b.amount_fcfa) || 0;
+        if (b.amount_won_fcfa) totalKnownWinnings += Number(b.amount_won_fcfa);
         const st = (b.status || "").toLowerCase();
         if (st.includes("gagn") || st === "won") wonCount++;
         else if (st.includes("perdu") || st === "lost") lostCount++;
         else pendingCount++;
+
+        if (b.validation_status === "en_attente") pendingValidations++;
+      });
+
+      // Calcul séparé des flux Dépôts vs Retraits
+      let totalDeposits = 0;
+      let totalWithdrawals = 0;
+      transactions.forEach((tx: any) => {
+        const amt = Number(tx.amount_fcfa) || 0;
+        if (tx.type === "Dépôt") totalDeposits += amt;
+        else if (tx.type === "Retrait") totalWithdrawals += amt;
+        if (tx.validation_status === "en_attente") pendingValidations++;
       });
 
       // Distribution des salles par opérateur
@@ -193,6 +215,7 @@ export function useDashboardData() {
       venues.forEach((v: any) => {
         const op = v.operator || "Autre";
         opCountMap[op] = (opCountMap[op] || 0) + 1;
+        if (v.validation_status === "en_attente") pendingValidations++;
       });
       const venuesByOp = Object.entries(opCountMap).map(([name, count]) => ({
         name,
@@ -221,7 +244,11 @@ export function useDashboardData() {
       return {
         totalVenues: venues.length || 0,
         totalBets: betsCountRes.count ?? recentBets.length,
-        totalBetsAmount: totalAmount,
+        totalBetsAmount,
+        totalDeposits,
+        totalWithdrawals,
+        totalKnownWinnings,
+        pendingValidationsCount: pendingValidations,
         wonBetsCount: wonCount,
         lostBetsCount: lostCount,
         pendingBetsCount: pendingCount,

@@ -42,6 +42,9 @@ export interface Transaction {
   phone?: string;
   reference: string;
   proof: boolean;
+  proof_status?: string;
+  proof_attachment_url?: string;
+  import_batch_id?: string;
   notes?: string;
   created_at: string;
   created_by: string;
@@ -63,10 +66,13 @@ export interface Bet {
   support: string;
   bet_type: string;
   amount_fcfa: number;
+  phone?: string;
   reference: string;
   status: "gagné" | "perdu" | "en attente";
   amount_won_fcfa?: number;
   ticket_url?: string;
+  proof_status?: string;
+  import_batch_id?: string;
   notes?: string;
   created_at: string;
   created_by: string;
@@ -87,11 +93,14 @@ export interface Venue {
   operator: string;
   support: string;
   bet_type: string;
+  games?: string[];
   address: string;
   contact_phone?: string;
   gps_lat?: number;
   gps_lng?: number;
   notes?: string;
+  validation_status?: ValidationStatus;
+  import_batch_id?: string;
 }
 
 export type LookupKey =

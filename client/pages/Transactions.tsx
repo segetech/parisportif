@@ -28,6 +28,8 @@ import { useTransactions, useLookups, useVenues } from "@/hooks/use-data-queries
 import { invalidateRelatedQueries } from "@/lib/queryClient";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
 
+import { Badge } from "@/components/ui/badge";
+
 interface Transaction {
   id: string;
   date: string;
@@ -36,6 +38,9 @@ interface Transaction {
   operator: string;
   support?: string;
   amount_fcfa: number;
+  payment_operator?: string;
+  phone?: string;
+  proof_status?: string;
   venue_id?: string;
   notes?: string;
   created_by?: string;
@@ -81,6 +86,9 @@ function Transactions() {
     operator: "",
     support: "",
     amount_fcfa: 0,
+    phone: "",
+    payment_operator: "",
+    proof_status: "non_renseignee" as "disponible" | "non_disponible" | "non_renseignee",
     notes: "",
   });
 
@@ -148,6 +156,24 @@ function Transactions() {
     toast.success(`Support "${name}" créé avec succès`);
   }
 
+  async function createPaymentOperator(name: string) {
+    const { error } = await supabase
+      .from("payment_operators")
+      .insert([{ name }]);
+    
+    if (error) {
+      if (error.code === "23505") {
+        toast.error("Cet opérateur de paiement existe déjà");
+      } else {
+        toast.error("Erreur lors de la création");
+      }
+      throw error;
+    }
+    
+    invalidateRelatedQueries("lookups");
+    toast.success(`Opérateur de paiement "${name}" créé avec succès`);
+  }
+
   function openDialog() {
     setEditingTransaction(null);
     setTicketRef("");
@@ -160,6 +186,9 @@ function Transactions() {
       operator: operators[0] || "",
       support: supports[0] || "",
       amount_fcfa: 0,
+      phone: "",
+      payment_operator: paymentOperators[0] || "",
+      proof_status: "non_renseignee",
       notes: "",
     });
     setDialogOpen(true);
@@ -177,6 +206,9 @@ function Transactions() {
       operator: transaction.operator,
       support: transaction.support,
       amount_fcfa: transaction.amount_fcfa,
+      phone: transaction.phone || "",
+      payment_operator: transaction.payment_operator || "",
+      proof_status: (transaction.proof_status as any) || "non_renseignee",
       notes: transaction.notes || "",
     });
     setDialogOpen(true);
@@ -197,7 +229,15 @@ function Transactions() {
         .join(" | ");
 
       const transactionData = {
-        ...formData,
+        date: formData.date,
+        time: formData.time || null,
+        type: formData.type,
+        operator: formData.operator,
+        support: formData.support || null,
+        amount_fcfa: formData.amount_fcfa,
+        phone: formData.phone.trim() || null,
+        payment_operator: formData.payment_operator || null,
+        proof_status: formData.proof_status,
         notes: fullNotes || null,
       };
 
@@ -248,7 +288,10 @@ function Transactions() {
     return (
       tx.operator.toLowerCase().includes(searchLower) ||
       tx.type.toLowerCase().includes(searchLower) ||
-      tx.notes?.toLowerCase().includes(searchLower)
+      (tx.notes && tx.notes.toLowerCase().includes(searchLower)) ||
+      (tx.phone && tx.phone.toLowerCase().includes(searchLower)) ||
+      (tx.payment_operator && tx.payment_operator.toLowerCase().includes(searchLower)) ||
+      tx.id.toLowerCase().includes(searchLower)
     );
   });
 
@@ -278,11 +321,14 @@ function Transactions() {
       { header: "DATE", key: "date", width: 14, align: "center" as const },
       { header: "HEURE", key: "time", width: 10, align: "center" as const },
       { header: "TYPE", key: "type", width: 14, align: "center" as const, isStatus: true },
-      { header: "OPÉRATEUR", key: "operator", width: 22, align: "left" as const },
-      { header: "SUPPORT", key: "support", width: 16, align: "center" as const },
-      { header: "MONTANT", key: "amount_fcfa", width: 20, align: "right" as const, isCurrency: true },
-      { header: "STATUT", key: "validation_status", width: 16, align: "center" as const, isStatus: true },
-      { header: "NOTES", key: "notes", width: 30, align: "left" as const },
+      { header: "OPÉRATEUR", key: "operator", width: 20, align: "left" as const },
+      { header: "SUPPORT", key: "support", width: 14, align: "center" as const },
+      { header: "PAIEMENT", key: "payment_operator", width: 16, align: "center" as const },
+      { header: "TÉLÉPHONE", key: "phone", width: 14, align: "center" as const },
+      { header: "PREUVE", key: "proof_status", width: 14, align: "center" as const },
+      { header: "MONTANT", key: "amount_fcfa", width: 18, align: "right" as const, isCurrency: true },
+      { header: "STATUT", key: "validation_status", width: 14, align: "center" as const, isStatus: true },
+      { header: "NOTES", key: "notes", width: 28, align: "left" as const },
     ];
 
     const data = filteredTransactions.map((tx, idx) => ({
@@ -292,6 +338,9 @@ function Transactions() {
       type: tx.type,
       operator: tx.operator,
       support: tx.support || "—",
+      payment_operator: tx.payment_operator || "—",
+      phone: tx.phone || "—",
+      proof_status: tx.proof_status === "disponible" ? "Disponible" : tx.proof_status === "non_disponible" ? "Non dispo" : "Non renseig.",
       amount_fcfa: Number(tx.amount_fcfa) || 0,
       validation_status: tx.validation_status === "valide" ? "Validé" : tx.validation_status === "refuse" ? "Refusé" : "En attente",
       notes: tx.notes || "—",
@@ -534,17 +583,112 @@ function Transactions() {
           </div>
         </div>
 
-        {/* Tableau */}
-        <div className="rounded-2xl border border-[#D8E6DB] bg-white shadow-xs overflow-hidden">
+        {/* Vue Cartes Responsive (Mobile) */}
+        <div className="block md:hidden space-y-3">
+          {filteredTransactions.length > 0 ? (
+            filteredTransactions.map((tx) => (
+              <div
+                key={tx.id}
+                onClick={() => openEditDialog(tx)}
+                className="p-4 rounded-xl border border-[#D8E6DB] bg-white shadow-xs active:bg-[#F5F8F5] transition-colors cursor-pointer space-y-2.5"
+              >
+                <div className="flex items-center justify-between">
+                  <div
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border"
+                    style={{
+                      backgroundColor: tx.type === "Dépôt" ? "#EBF7EE" : "#FEECEB",
+                      borderColor: tx.type === "Dépôt" ? "#86EFAC" : "#F87171",
+                      color: tx.type === "Dépôt" ? "#006B2D" : "#E52329",
+                    }}
+                  >
+                    {tx.type === "Dépôt" ? (
+                      <TrendingUp className="h-3 w-3" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3" />
+                    )}
+                    <span>{tx.type}</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#556B5C]">
+                    {new Date(tx.date).toLocaleDateString("fr-FR")} {tx.time || ""}
+                  </span>
+                </div>
+
+                <div className="flex items-baseline justify-between">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-[#17251C]">{tx.operator}</h4>
+                    <p className="text-xs text-[#556B5C]">{tx.support || "Support non précisé"}</p>
+                  </div>
+                  <div
+                    className={`text-lg font-black font-mono ${
+                      tx.type === "Dépôt" ? "text-[#006B2D]" : "text-[#E52329]"
+                    }`}
+                  >
+                    {tx.type === "Dépôt" ? "+" : "-"}
+                    {formatAmount(tx.amount_fcfa)}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#E2ECE4] flex flex-wrap items-center justify-between gap-1.5 text-xs text-[#556B5C]">
+                  <div className="flex items-center gap-2">
+                    {tx.payment_operator && (
+                      <span className="font-semibold text-[#17251C]">{tx.payment_operator}</span>
+                    )}
+                    {tx.phone && (
+                      <span className="font-mono text-[11px] bg-[#F5F8F5] px-1.5 py-0.5 rounded border border-[#D8E6DB]">
+                        {tx.phone}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {tx.proof_status === "disponible" ? (
+                      <Badge variant="outline" className="text-[10px] bg-[#EBF7EE] text-[#006B2D] border-[#86EFAC]">
+                        Preuve reçue
+                      </Badge>
+                    ) : tx.proof_status === "non_disponible" ? (
+                      <Badge variant="outline" className="text-[10px] bg-[#FEECEB] text-[#E52329] border-[#F87171]">
+                        Sans preuve
+                      </Badge>
+                    ) : null}
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] font-bold ${
+                        tx.validation_status === "valide"
+                          ? "bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30"
+                          : tx.validation_status === "refuse"
+                          ? "bg-[#E52329]/10 text-[#E52329] border-[#E52329]/30"
+                          : "bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50"
+                      }`}
+                    >
+                      {tx.validation_status === "valide"
+                        ? "Validé"
+                        : tx.validation_status === "refuse"
+                        ? "Refusé"
+                        : "En attente"}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center text-sm text-[#556B5C] bg-white rounded-xl border border-[#D8E6DB]">
+              Aucune transaction trouvée
+            </div>
+          )}
+        </div>
+
+        {/* Tableau (Desktop) */}
+        <div className="hidden md:block rounded-2xl border border-[#D8E6DB] bg-white shadow-xs overflow-hidden">
           <Table>
             <TableHeader className="bg-[#F5F8F5] border-b border-[#D8E6DB]">
               <TableRow>
-                <TableHead className="text-xs font-bold text-[#17251C]">Date</TableHead>
-                <TableHead className="text-xs font-bold text-[#17251C]">Heure</TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">Date & Heure</TableHead>
                 <TableHead className="text-xs font-bold text-[#17251C]">Type</TableHead>
                 <TableHead className="text-xs font-bold text-[#17251C]">Opérateur</TableHead>
                 <TableHead className="text-xs font-bold text-[#17251C]">Support</TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">Paiement / Tél</TableHead>
                 <TableHead className="text-right text-xs font-bold text-[#17251C]">Montant</TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">Preuve</TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">Statut</TableHead>
                 <TableHead className="text-xs font-bold text-[#17251C]">Notes</TableHead>
               </TableRow>
             </TableHeader>
@@ -557,15 +701,18 @@ function Transactions() {
                     onClick={() => openEditDialog(tx)}
                   >
                     <TableCell className="text-xs font-semibold text-[#17251C]">
-                      {new Date(tx.date).toLocaleDateString("fr-FR")}
+                      <div>{new Date(tx.date).toLocaleDateString("fr-FR")}</div>
+                      <div className="text-[11px] text-[#556B5C] font-mono">{tx.time || "—"}</div>
                     </TableCell>
-                    <TableCell className="text-xs text-[#556B5C] font-mono">{tx.time || "—"}</TableCell>
                     <TableCell>
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border" style={{
-                        backgroundColor: tx.type === "Dépôt" ? "#EBF7EE" : "#FEECEB",
-                        borderColor: tx.type === "Dépôt" ? "#86EFAC" : "#F87171",
-                        color: tx.type === "Dépôt" ? "#006B2D" : "#E52329",
-                      }}>
+                      <div
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border"
+                        style={{
+                          backgroundColor: tx.type === "Dépôt" ? "#EBF7EE" : "#FEECEB",
+                          borderColor: tx.type === "Dépôt" ? "#86EFAC" : "#F87171",
+                          color: tx.type === "Dépôt" ? "#006B2D" : "#E52329",
+                        }}
+                      >
                         {tx.type === "Dépôt" ? (
                           <TrendingUp className="h-3 w-3" />
                         ) : (
@@ -575,7 +722,13 @@ function Transactions() {
                       </div>
                     </TableCell>
                     <TableCell className="text-xs font-bold text-[#17251C]">{tx.operator}</TableCell>
-                    <TableCell className="text-xs text-[#556B5C]">{tx.support}</TableCell>
+                    <TableCell className="text-xs text-[#556B5C]">{tx.support || "—"}</TableCell>
+                    <TableCell className="text-xs text-[#17251C]">
+                      <div>{tx.payment_operator || "—"}</div>
+                      {tx.phone && (
+                        <span className="font-mono text-[11px] text-[#556B5C]">{tx.phone}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right font-mono text-xs font-bold">
                       <span
                         className={
@@ -588,6 +741,37 @@ function Transactions() {
                         {formatAmount(tx.amount_fcfa)}
                       </span>
                     </TableCell>
+                    <TableCell>
+                      {tx.proof_status === "disponible" ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#EBF7EE] text-[#006B2D] border border-[#86EFAC]">
+                          Dispo
+                        </span>
+                      ) : tx.proof_status === "non_disponible" ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FEECEB] text-[#E52329] border border-[#F87171]">
+                          Non dispo
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-[#556B5C]">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`text-[11px] font-bold ${
+                          tx.validation_status === "valide"
+                            ? "bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30"
+                            : tx.validation_status === "refuse"
+                            ? "bg-[#E52329]/10 text-[#E52329] border-[#E52329]/30"
+                            : "bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50"
+                        }`}
+                      >
+                        {tx.validation_status === "valide"
+                          ? "Validé"
+                          : tx.validation_status === "refuse"
+                          ? "Refusé"
+                          : "En attente"}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="max-w-xs truncate text-xs text-[#556B5C]">
                       {tx.notes || "—"}
                     </TableCell>
@@ -596,7 +780,7 @@ function Transactions() {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={9}
                     className="text-center text-sm text-[#556B5C] py-12"
                   >
                     Aucune transaction trouvée
@@ -711,6 +895,46 @@ function Transactions() {
               placeholder="En ligne, Salle de jeux, Guichet..."
               onCreateNew={createSupport}
             />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <CreatableSelect
+                  label="Opérateur de paiement"
+                  value={formData.payment_operator}
+                  onChange={(value) => setFormData({ ...formData, payment_operator: value })}
+                  options={paymentOperators}
+                  placeholder="Orange Money, Moov, Wave, Espèces..."
+                  onCreateNew={createPaymentOperator}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                  Téléphone (Momo)
+                </label>
+                <Input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="Ex: 70123456"
+                  className="bg-white border-[#D8E6DB]"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                Disponibilité de la preuve
+              </label>
+              <select
+                className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
+                value={formData.proof_status}
+                onChange={(e) => setFormData({ ...formData, proof_status: e.target.value as any })}
+              >
+                <option value="non_renseignee">Non renseignée</option>
+                <option value="disponible">Preuve disponible (Reçu/SMS)</option>
+                <option value="non_disponible">Preuve non disponible</option>
+              </select>
+            </div>
 
             {/* SÉLECTEUR EN CASCADE DES SALLES DE JEUX PHYSIQUES */}
             {formData.support === "Salle de jeux" && venues.length > 0 && (

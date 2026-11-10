@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import LookupDialog from "@/components/common/LookupDialog";
 import { fetchExportData, exportToCSV, exportToExcel, exportToPDF } from "@/lib/exports";
+import { generateBlankImportTemplate } from "@/lib/excel-export";
 import { toast } from "sonner";
 import api, { Lookups, LookupKey } from "@/data/api";
 import { Pencil, Trash, Plus, FileText, Download } from "lucide-react";
@@ -801,6 +802,50 @@ export function ExportsPage() {
               </Button>
               <Button variant="outline" onClick={doExportCSV} disabled={disableExport || loading}>
                 Exporter en CSV
+              </Button>
+            </div>
+          </div>
+
+          {/* SÉPARATION EXPLICITE : GÉNÉRATION DES MODÈLES VIERGES D'IMPORTATION */}
+          <div className="mt-8 p-5 rounded-2xl border border-[#D8E6DB] bg-white space-y-3 shadow-xs">
+            <div className="flex items-center gap-2">
+              <Download className="h-5 w-5 text-[#006B2D]" />
+              <div>
+                <h3 className="text-sm font-bold text-[#17251C]">
+                  Modèles d'Importation Excel Vierges (Templates Officiels)
+                </h3>
+                <p className="text-xs text-[#556B5C]">
+                  Téléchargez un gabarit pré-formaté avec les en-têtes officiels et des exemples conformes pour préparer vos saisies d'agents.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => generateBlankImportTemplate("depotretrait")}
+                className="justify-start gap-2 border-[#D8E6DB] bg-[#F5F8F5] hover:bg-white text-[#17251C] text-xs font-semibold min-h-[44px]"
+              >
+                <Download className="h-4 w-4 text-[#006B2D]" />
+                Modèle Dépôts & Retraits (.xlsx)
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => generateBlankImportTemplate("pari")}
+                className="justify-start gap-2 border-[#D8E6DB] bg-[#F5F8F5] hover:bg-white text-[#17251C] text-xs font-semibold min-h-[44px]"
+              >
+                <Download className="h-4 w-4 text-[#006B2D]" />
+                Modèle Paris & Mises (.xlsx)
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => generateBlankImportTemplate("salles")}
+                className="justify-start gap-2 border-[#D8E6DB] bg-[#F5F8F5] hover:bg-white text-[#17251C] text-xs font-semibold min-h-[44px]"
+              >
+                <Download className="h-4 w-4 text-[#006B2D]" />
+                Modèle Salles de jeux (.xlsx)
               </Button>
             </div>
           </div>
