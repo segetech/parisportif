@@ -150,7 +150,7 @@ export function purgeAllAppCaches(): void {
     console.warn("Erreur vidage React Query cache:", e);
   }
 
-  // 3. Vider le cache de localStorage lié aux sessions et requêtes
+  // 3. Vider uniquement le cache applicatif local (sans toucher au stockage auth géré par Supabase ni aux préférences utilisateur)
   const storage =
     typeof window !== "undefined" && window.localStorage
       ? window.localStorage
@@ -164,13 +164,7 @@ export function purgeAllAppCaches(): void {
       const len = storage.length || 0;
       for (let i = 0; i < len; i++) {
         const k = storage.key(i);
-        if (
-          k &&
-          (k.startsWith("cache:") ||
-            k.startsWith("ps.") ||
-            k.startsWith("supabase.auth.") ||
-            k.includes("auth-token"))
-        ) {
+        if (k && k.startsWith("cache:")) {
           keysToRemove.push(k);
         }
       }

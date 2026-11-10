@@ -37,17 +37,15 @@ import { initializeApp } from "@/lib/init";
 // Initialize app (clean up service workers and caches)
 initializeApp().catch(console.error);
 
-
-
 const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <AuthProvider>
-          <SettingsProvider>
-            <BrowserRouter>
+        <BrowserRouter>
+          <AuthProvider>
+            <SettingsProvider>
               <SyncStatus />
               <Routes>
                 <Route path="/login" element={<Login />} />
@@ -70,9 +68,9 @@ const App = () => (
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
-            </BrowserRouter>
-          </SettingsProvider>
-        </AuthProvider>
+            </SettingsProvider>
+          </AuthProvider>
+        </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
   </ErrorBoundary>

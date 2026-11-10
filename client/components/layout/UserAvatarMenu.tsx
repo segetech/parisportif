@@ -19,6 +19,7 @@ import {
   History,
   LogOut,
   LogIn,
+  Loader2,
   ChevronDown,
   CheckCircle2,
 } from "lucide-react";
@@ -37,16 +38,15 @@ export function UserAvatarMenu({
   side = "top",
   className,
 }: UserAvatarMenuProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoggingOut } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
+    if (isLoggingOut) return;
     try {
       await logout();
     } catch (err) {
       console.warn("Erreur lors de la déconnexion:", err);
-    } finally {
-      window.location.href = "/login";
     }
   };
 
@@ -227,29 +227,47 @@ export function UserAvatarMenu({
 
         {user ? (
           <DropdownMenuItem
+            disabled={isLoggingOut}
             onClick={handleLogout}
-            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#E52329] cursor-pointer hover:bg-[#FEECEB] hover:text-[#E52329] focus:bg-[#FEECEB] focus:text-[#E52329]"
+            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#E52329] cursor-pointer hover:bg-[#FEECEB] hover:text-[#E52329] focus:bg-[#FEECEB] focus:text-[#E52329] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <LogOut className="h-4 w-4 shrink-0" />
-            <span>Déconnexion</span>
+            {isLoggingOut ? (
+              <>
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#E52329]" />
+                <span>Déconnexion en cours…</span>
+              </>
+            ) : (
+              <>
+                <LogOut className="h-4 w-4 shrink-0" />
+                <span>Déconnexion</span>
+              </>
+            )}
           </DropdownMenuItem>
         ) : (
           <div className="space-y-1">
             <DropdownMenuItem
-              onClick={() => {
-                window.location.href = "/login";
-              }}
+              onClick={() => navigate("/login")}
               className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#006B2D] cursor-pointer hover:bg-[#F5F8F5] hover:text-[#004D20] focus:bg-[#F5F8F5] focus:text-[#004D20]"
             >
               <LogIn className="h-4 w-4 shrink-0" />
               <span>Se connecter à un compte</span>
             </DropdownMenuItem>
             <DropdownMenuItem
+              disabled={isLoggingOut}
               onClick={handleLogout}
-              className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#E52329] cursor-pointer hover:bg-[#FEECEB] hover:text-[#E52329] focus:bg-[#FEECEB] focus:text-[#E52329]"
+              className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#E52329] cursor-pointer hover:bg-[#FEECEB] hover:text-[#E52329] focus:bg-[#FEECEB] focus:text-[#E52329] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <LogOut className="h-4 w-4 shrink-0" />
-              <span>Déconnexion / Quitter l'aperçu</span>
+              {isLoggingOut ? (
+                <>
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#E52329]" />
+                  <span>Déconnexion en cours…</span>
+                </>
+              ) : (
+                <>
+                  <LogOut className="h-4 w-4 shrink-0" />
+                  <span>Déconnexion / Quitter l'aperçu</span>
+                </>
+              )}
             </DropdownMenuItem>
           </div>
         )}

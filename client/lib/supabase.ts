@@ -17,10 +17,6 @@ export const supabase = createClient(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      // Évite les blocages de verrous (deadlocks) du LockManager du navigateur
-      lock: async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => {
-        return await fn();
-      },
     },
   }
 );

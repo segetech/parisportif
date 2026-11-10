@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Lock,
   LogOut,
+  Loader2,
   Save,
 } from "lucide-react";
 import { RequireAuth } from "@/context/AuthContext";
@@ -33,7 +34,7 @@ export default function ProfilePage() {
 }
 
 function ProfileForm() {
-  const { user, updateUser, getAccessToken, logout } = useAuth();
+  const { user, updateUser, getAccessToken, logout, isLoggingOut } = useAuth();
   const [nom, setNom] = useState(user?.nom || "");
   const [prenom, setPrenom] = useState(user?.prenom || "");
   const [email] = useState(user?.email || "");
@@ -267,17 +268,24 @@ function ProfileForm() {
             <div className="pt-4 border-t border-[#D8E6DB]">
               <Button
                 variant="outline"
+                disabled={isLoggingOut}
                 onClick={async () => {
-                  try {
-                    await logout();
-                  } finally {
-                    window.location.href = "/login";
-                  }
+                  if (isLoggingOut) return;
+                  await logout();
                 }}
-                className="w-full text-xs font-bold text-[#E52329] border-[#E52329]/30 bg-[#E52329]/10 hover:bg-[#E52329]/20 hover:text-[#E52329] gap-2 h-10 rounded-xl"
+                className="w-full text-xs font-bold text-[#E52329] border-[#E52329]/30 bg-[#E52329]/10 hover:bg-[#E52329]/20 hover:text-[#E52329] gap-2 h-10 rounded-xl disabled:opacity-50"
               >
-                <LogOut className="h-4 w-4" />
-                <span>Se déconnecter de la session</span>
+                {isLoggingOut ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-[#E52329]" />
+                    <span>Déconnexion en cours…</span>
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="h-4 w-4" />
+                    <span>Se déconnecter de la session</span>
+                  </>
+                )}
               </Button>
             </div>
           </div>
