@@ -18,6 +18,7 @@ import {
   HardDrive,
   History,
   LogOut,
+  LogIn,
   ChevronDown,
   CheckCircle2,
 } from "lucide-react";
@@ -38,6 +39,16 @@ export function UserAvatarMenu({
 }: UserAvatarMenuProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (err) {
+      console.warn("Erreur lors de la déconnexion:", err);
+    } finally {
+      window.location.href = "/login";
+    }
+  };
 
   const fullName = useMemo(() => {
     if (!user) return "Invité";
@@ -98,10 +109,12 @@ export function UserAvatarMenu({
                 </AvatarFallback>
               </Avatar>
               {/* Point de présence en ligne actif */}
-              <span
-                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#10b981] border-2 border-[#004D20]"
-                title="En ligne"
-              />
+              {user && (
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#10b981] border-2 border-[#004D20]"
+                  title="En ligne"
+                />
+              )}
             </div>
 
             {!collapsed && (
@@ -110,7 +123,7 @@ export function UserAvatarMenu({
                   {fullName}
                 </span>
                 <span className="text-[11px] text-white/70 truncate">
-                  {user?.email || "non connecté"}
+                  {user?.email || "Mode aperçu"}
                 </span>
               </div>
             )}
@@ -151,11 +164,20 @@ export function UserAvatarMenu({
                 </Badge>
               </div>
               <span className="text-[11px] text-[#556B5C] truncate mt-0.5">
-                {user?.email}
+                {user?.email || "Mode aperçu (non connecté)"}
               </span>
-              <div className="flex items-center gap-1 text-[10px] text-[#006B2D] mt-1 font-semibold">
-                <CheckCircle2 className="h-3 w-3" />
-                <span>Compte actif</span>
+              <div className="flex items-center gap-1.5 text-[10px] mt-1 font-semibold">
+                {user ? (
+                  <>
+                    <CheckCircle2 className="h-3 w-3 text-[#006B2D]" />
+                    <span className="text-[#006B2D]">Compte actif</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    <span className="text-amber-700">Non connecté</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -203,13 +225,34 @@ export function UserAvatarMenu({
 
         <DropdownMenuSeparator className="bg-[#E2ECE4] my-1.5" />
 
-        <DropdownMenuItem
-          onClick={logout}
-          className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#E52329] cursor-pointer hover:bg-[#FEECEB] hover:text-[#E52329] focus:bg-[#FEECEB] focus:text-[#E52329]"
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          <span>Déconnexion</span>
-        </DropdownMenuItem>
+        {user ? (
+          <DropdownMenuItem
+            onClick={handleLogout}
+            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#E52329] cursor-pointer hover:bg-[#FEECEB] hover:text-[#E52329] focus:bg-[#FEECEB] focus:text-[#E52329]"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span>Déconnexion</span>
+          </DropdownMenuItem>
+        ) : (
+          <div className="space-y-1">
+            <DropdownMenuItem
+              onClick={() => {
+                window.location.href = "/login";
+              }}
+              className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#006B2D] cursor-pointer hover:bg-[#F5F8F5] hover:text-[#004D20] focus:bg-[#F5F8F5] focus:text-[#004D20]"
+            >
+              <LogIn className="h-4 w-4 shrink-0" />
+              <span>Se connecter à un compte</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={handleLogout}
+              className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#E52329] cursor-pointer hover:bg-[#FEECEB] hover:text-[#E52329] focus:bg-[#FEECEB] focus:text-[#E52329]"
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              <span>Déconnexion / Quitter l'aperçu</span>
+            </DropdownMenuItem>
+          </div>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

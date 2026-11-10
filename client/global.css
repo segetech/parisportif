@@ -101,3 +101,31 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  /* Masquer complètement la barre de défilement tout en préservant le scroll fluide */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none !important; /* IE et Edge */
+    scrollbar-width: none !important; /* Firefox */
+  }
+}
+
+/* Style de défilement moderne et discret pour toute l'application */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+

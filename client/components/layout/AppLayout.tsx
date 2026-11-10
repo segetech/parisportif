@@ -234,7 +234,7 @@ export default function AppLayout({
       {/* ========================================================================= */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[#003816] bg-[#004D20] text-white transition-all duration-300 md:sticky md:top-0 md:h-screen shrink-0 overflow-y-auto",
+          "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[#003816] bg-[#004D20] text-white transition-all duration-300 md:sticky md:top-0 md:h-screen shrink-0 overflow-hidden no-scrollbar",
           // Mobile responsive: slide in/out
           mobileDrawerOpen
             ? "translate-x-0 w-64 shadow-2xl"
@@ -286,8 +286,8 @@ export default function AppLayout({
           </button>
         </div>
 
-        {/* Liens de navigation groupés */}
-        <nav className="flex-1 overflow-y-auto px-2.5 py-4 space-y-6">
+        {/* Liens de navigation groupés - aucun affichage de scrollbar natif */}
+        <nav className="flex-1 overflow-y-auto no-scrollbar px-2.5 py-3 space-y-4">
           {navigationSections.map((section, idx) => (
             <div key={idx} className="space-y-1">
               {(!sidebarCollapsed || mobileDrawerOpen) && (

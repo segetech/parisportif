@@ -267,9 +267,12 @@ function ProfileForm() {
             <div className="pt-4 border-t border-[#D8E6DB]">
               <Button
                 variant="outline"
-                onClick={() => {
-                  logout();
-                  window.location.href = "/login";
+                onClick={async () => {
+                  try {
+                    await logout();
+                  } finally {
+                    window.location.href = "/login";
+                  }
                 }}
                 className="w-full text-xs font-bold text-[#E52329] border-[#E52329]/30 bg-[#E52329]/10 hover:bg-[#E52329]/20 hover:text-[#E52329] gap-2 h-10 rounded-xl"
               >

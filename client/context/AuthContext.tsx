@@ -136,12 +136,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       async logout() {
         try {
-          await supabase.auth.signOut();
+          await Promise.race([
+            supabase.auth.signOut(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Timeout signOut")), 1500)
+            ),
+          ]);
         } catch (e) {
           console.warn("Erreur déconnexion supabase:", e);
+        } finally {
+          setUser(null);
+          purgeAllAppCaches();
+          if (typeof window !== "undefined") {
+            window.location.href = "/login";
+          }
         }
-        setUser(null);
-        purgeAllAppCaches();
       },
       updateUser(updatedFields: Partial<User>) {
         setUser((prev) => (prev ? { ...prev, ...updatedFields } : null));
