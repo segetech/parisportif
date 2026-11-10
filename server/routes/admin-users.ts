@@ -4,9 +4,33 @@ import { sendEmail } from "../lib/email";
 import { recordAuditLog } from "../lib/audit-server";
 import crypto from "crypto";
 import { UserRole } from "../types/auth";
+import { validateAdminPassword } from "../../shared/admin-password";
 
 const ALLOWED_ROLES: UserRole[] = ["ADMIN", "CONTROLEUR", "AGENT"];
 const ALLOWED_STATUSES = ["actif", "suspendu", "desactive", "invitation_envoyee"] as const;
+
+class PasswordSelectionError extends Error {}
+
+function selectPassword(body: Record<string, unknown>) {
+  const { password, newPassword, passwordMode } = body;
+  if (passwordMode !== undefined && passwordMode !== "manual" && passwordMode !== "generate") {
+    throw new PasswordSelectionError("Choix de mot de passe invalide.");
+  }
+  // Accept the old field during rollout, but never silently ignore a supplied value.
+  if (password !== undefined && newPassword !== undefined && password !== newPassword) {
+    throw new PasswordSelectionError("Deux mots de passe différents ont été transmis. Veuillez réessayer.");
+  }
+  const supplied = password !== undefined ? password : newPassword;
+  const mode = passwordMode ?? (supplied !== undefined ? "manual" : "generate");
+  if (mode === "generate") {
+    if (supplied !== undefined) throw new PasswordSelectionError("Retirez la saisie manuelle avant de demander une génération automatique.");
+    return { password: generateCryptographicPassword(), passwordSource: "generated" as const };
+  }
+  const error = validateAdminPassword(supplied);
+  if (error) throw new PasswordSelectionError(error);
+  // Passwords are opaque secrets: preserve whitespace and every character exactly.
+  return { password: supplied as string, passwordSource: "manual" as const };
+}
 
 /**
  * Générateur cryptographique fort de mot de passe (sans Math.random)
@@ -72,7 +96,7 @@ export const handleCreateUserWithPassword: RequestHandler = async (req, res) => 
       return res.status(403).json({ error: "Opération réservée aux administrateurs" });
     }
 
-    const { nom, prenom, email, role, password, sendEmail: shouldSendEmail } = req.body;
+    const { nom, prenom, email, role, sendEmail: shouldSendEmail } = req.body;
 
     if (!nom || typeof nom !== "string" || !nom.trim()) {
       return res.status(400).json({ error: "Le nom est requis" });
@@ -86,6 +110,7 @@ export const handleCreateUserWithPassword: RequestHandler = async (req, res) => 
       return res.status(400).json({ error: "Rôle invalide (ADMIN, CONTROLEUR ou AGENT)" });
     }
 
+    const { password: finalPassword, passwordSource } = selectPassword(req.body);
     const admin = getSupabaseAdmin();
     const emailLower = email.toLowerCase().trim();
 
@@ -99,12 +124,6 @@ export const handleCreateUserWithPassword: RequestHandler = async (req, res) => 
     if (existingUser) {
       return res.status(400).json({ error: "Un utilisateur avec cet email existe déjà" });
     }
-
-    // Source unique de vérité pour le mot de passe
-    const finalPassword =
-      typeof password === "string" && password.trim().length >= 8
-        ? password.trim()
-        : generateCryptographicPassword();
 
     // Création Supabase Auth
     const { data: authData, error: authError } = await admin.auth.admin.createUser({
@@ -187,11 +206,13 @@ export const handleCreateUserWithPassword: RequestHandler = async (req, res) => 
     res.status(201).json({
       user: userData,
       temporaryPassword: finalPassword,
+      passwordSource,
       message: shouldSendEmail
         ? "Utilisateur créé et invitation envoyée par email"
         : "Utilisateur créé avec succès",
     });
   } catch (error: any) {
+    if (error instanceof PasswordSelectionError) return res.status(400).json({ error: error.message });
     console.error("Create user error:", error);
     res.status(500).json({ error: "Erreur interne du serveur lors de la création" });
   }
@@ -208,13 +229,14 @@ export const handleResetUserPassword: RequestHandler = async (req, res) => {
     }
 
     const { userId } = req.params;
-    const { newPassword, sendEmail: shouldSendEmail } = req.body;
+    const { sendEmail: shouldSendEmail } = req.body;
 
     const targetUserId = userId || req.body.userId;
     if (!targetUserId) {
       return res.status(400).json({ error: "L'identifiant de l'utilisateur est requis" });
     }
 
+    const { password: finalPassword, passwordSource } = selectPassword(req.body);
     const admin = getSupabaseAdmin();
 
     const { data: targetUser, error: userError } = await admin
@@ -226,12 +248,6 @@ export const handleResetUserPassword: RequestHandler = async (req, res) => {
     if (userError || !targetUser) {
       return res.status(404).json({ error: "Utilisateur introuvable" });
     }
-
-    // Source unique de vérité
-    const finalPassword =
-      typeof newPassword === "string" && newPassword.trim().length >= 8
-        ? newPassword.trim()
-        : generateCryptographicPassword();
 
     // Mise à jour Auth Supabase
     const { error: updateError } = await admin.auth.admin.updateUserById(targetUserId, {
@@ -285,11 +301,13 @@ export const handleResetUserPassword: RequestHandler = async (req, res) => {
 
     res.json({
       temporaryPassword: finalPassword,
+      passwordSource,
       message: shouldSendEmail
         ? "Mot de passe réinitialisé et envoyé par email"
         : "Mot de passe réinitialisé avec succès",
     });
   } catch (error: any) {
+    if (error instanceof PasswordSelectionError) return res.status(400).json({ error: error.message });
     console.error("Reset user password error:", error);
     res.status(500).json({ error: "Erreur interne lors de la réinitialisation" });
   }

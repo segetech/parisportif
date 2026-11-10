@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Copy, Check, Eye, EyeOff, ShieldCheck, AlertCircle, Info } from "lucide-react";
 import { toast } from "sonner";
+import type { AdminPasswordSource } from "@shared/admin-password";
 
 export interface CredentialsModalProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export interface CredentialsModalProps {
     password?: string;
     role?: string;
     nom?: string;
+    passwordSource?: AdminPasswordSource;
   } | null;
 }
 
@@ -35,25 +37,35 @@ export function CredentialsModal({
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyFallback, setCopyFallback] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
   const fallbackRef = useRef<HTMLTextAreaElement>(null);
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const copyGeneration = useRef(0);
 
   // Nettoyage des timers au démontage
   useEffect(() => {
     return () => {
+      copyGeneration.current++;
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
     };
   }, []);
 
-  // Focus initial sur le bouton de copie ou confirmation
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => {
-        confirmButtonRef.current?.focus();
-      }, 50);
+    copyGeneration.current++;
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    setShowPassword(false);
+    setCopied(false);
+    setCopyFallback(false);
+    setIsCopying(false);
+  }, [isOpen, credentials]);
+
+  useEffect(() => {
+    if (copyFallback) {
+      fallbackRef.current?.focus();
+      fallbackRef.current?.select();
     }
-  }, [isOpen]);
+  }, [copyFallback]);
 
   if (!credentials) return null;
 
@@ -63,12 +75,16 @@ Rôle : ${credentials.role || "Non spécifié"}
 Email : ${credentials.email}
 Mot de passe : ${credentials.password || "Non modifié"}
 
-⚠️ Ce mot de passe est temporaire. Veuillez le modifier dès votre première connexion.`;
+Ce mot de passe initial doit être renouvelé lors de votre prochaine connexion.`;
 
   async function handleCopy() {
+    if (isCopying) return;
+    const generation = copyGeneration.current;
+    setIsCopying(true);
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(formattedText);
+        if (generation !== copyGeneration.current) return;
         setCopied(true);
         toast.success("Identifiants copiés dans le presse-papiers");
         if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
@@ -77,19 +93,17 @@ Mot de passe : ${credentials.password || "Non modifié"}
         throw new Error("Presse-papiers non disponible dans ce contexte");
       }
     } catch {
+      if (generation !== copyGeneration.current) return;
       // Fallback si l'API presse-papiers est bloquée par les permissions du navigateur
       setCopyFallback(true);
-      setTimeout(() => {
-        if (fallbackRef.current) {
-          fallbackRef.current.focus();
-          fallbackRef.current.select();
-        }
-      }, 100);
       toast.info("Sélectionnez le texte ci-dessous pour le copier manuellement.");
+    } finally {
+      if (generation === copyGeneration.current) setIsCopying(false);
     }
   }
 
   function handleClose() {
+    copyGeneration.current++;
     if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
     setShowPassword(false);
     setCopied(false);
@@ -109,18 +123,19 @@ Mot de passe : ${credentials.password || "Non modifié"}
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
-        className="max-w-md w-full bg-slate-900 border border-slate-800 text-white shadow-2xl p-6 sm:rounded-xl"
+        onOpenAutoFocus={(event) => { event.preventDefault(); confirmButtonRef.current?.focus(); }}
+        className="max-w-lg w-[calc(100%_-_2rem)] max-h-[calc(100dvh_-_2rem)] overflow-y-auto border-border bg-card p-5 text-card-foreground shadow-none sm:rounded-xl sm:p-6"
       >
         <DialogHeader className="space-y-2">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800/50">
+            <div className="rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
               <ShieldCheck className="h-5 w-5" />
             </div>
-            <DialogTitle className="text-xl font-bold tracking-tight text-white">
+            <DialogTitle className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
               {title}
             </DialogTitle>
           </div>
-          <DialogDescription className="text-xs text-slate-400 leading-relaxed">
+          <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
             {description}
           </DialogDescription>
         </DialogHeader>
@@ -128,13 +143,14 @@ Mot de passe : ${credentials.password || "Non modifié"}
         <div className="space-y-4 py-3">
           {/* Email */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-slate-300">
+            <Label htmlFor="credentials-email" className="text-sm font-medium text-foreground">
               Adresse e-mail
             </Label>
             <Input
               readOnly
+              id="credentials-email"
               value={credentials.email}
-              className="bg-slate-950 border-slate-800 text-slate-100 font-mono text-sm select-all h-10"
+              className="h-11 min-w-0 border-input bg-background font-mono text-base text-foreground sm:text-sm"
             />
           </div>
 
@@ -142,25 +158,27 @@ Mot de passe : ${credentials.password || "Non modifié"}
           {credentials.password && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-medium text-slate-300">
-                  Mot de passe généré
+                <Label htmlFor="credentials-password" className="text-sm font-medium text-foreground">
+                  {credentials.passwordSource === "manual" ? "Mot de passe choisi" : credentials.passwordSource === "generated" ? "Mot de passe généré" : "Mot de passe enregistré"}
                 </Label>
-                <span className="text-[11px] text-amber-400 font-medium">
-                  Usage temporaire
+                <span className="rounded bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
+                  À renouveler
                 </span>
               </div>
               <div className="relative">
                 <Input
                   readOnly
+                  id="credentials-password"
                   type={showPassword ? "text" : "password"}
                   value={credentials.password}
-                  className="bg-slate-950 border-slate-800 text-slate-100 font-mono text-sm select-all pr-10 h-10 tracking-wider"
+                  className="h-11 min-w-0 border-input bg-background pr-12 font-mono text-base text-foreground sm:text-sm"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-white rounded transition-colors"
+                  aria-pressed={showPassword}
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-md text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -175,29 +193,30 @@ Mot de passe : ${credentials.password || "Non modifié"}
           {/* Rôle */}
           {credentials.role && (
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-300">
+              <Label htmlFor="credentials-role" className="text-sm font-medium text-foreground">
                 Rôle attribué
               </Label>
               <Input
                 readOnly
+                id="credentials-role"
                 value={credentials.role}
-                className="bg-slate-950 border-slate-800 text-slate-100 text-sm h-10 uppercase tracking-wide"
+                className="h-11 border-input bg-background text-sm uppercase tracking-wide text-foreground"
               />
             </div>
           )}
 
           {/* Avertissement non-persistance en clair */}
-          <div className="p-3 rounded-lg border border-slate-800 bg-slate-950/70 flex items-start gap-2.5 text-xs text-slate-400">
-            <Info className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2.5 rounded-lg border border-border bg-background p-3 text-xs leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
             <span>
-              Par sécurité, ces identifiants ne sont stockés nulle part en clair. Si cette fenêtre est fermée sans qu'ils soient transmis, vous devrez réinitialiser le mot de passe.
+              Ce mot de passe ne sera plus consultable dans l’application après confirmation. Transmettez-le de manière confidentielle ; en cas de perte, réinitialisez-le.
             </span>
           </div>
 
           {/* Fallback de copie manuelle */}
           {copyFallback && (
             <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5 text-amber-400 text-xs font-medium">
+              <div role="status" className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                 <AlertCircle className="h-3.5 w-3.5" />
                 <span>Sélectionnez et copiez manuellement (Ctrl+C / Cmd+C) :</span>
               </div>
@@ -206,20 +225,21 @@ Mot de passe : ${credentials.password || "Non modifié"}
                 readOnly
                 rows={4}
                 value={formattedText}
-                className="w-full bg-slate-950 border border-amber-500/40 text-slate-200 text-xs p-2 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                aria-label="Identifiants à copier manuellement"
+                className="w-full rounded-lg border border-input bg-background p-3 font-mono text-base text-foreground focus:outline-none focus:ring-2 focus:ring-ring sm:text-sm"
               />
             </div>
           )}
         </div>
 
         {/* Actions */}
-        <div className="flex flex-col-reverse sm:flex-row items-center gap-2 pt-2">
+        <div className="flex flex-col-reverse items-stretch gap-2 border-t border-border pt-4 sm:flex-row">
           <Button
             ref={confirmButtonRef}
             type="button"
             variant="outline"
             onClick={handleClose}
-            className="w-full sm:w-auto flex-1 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-white border-slate-700 text-sm font-medium"
+            className="h-auto min-h-[44px] w-full flex-1 whitespace-normal border-border bg-card px-3 py-3 text-sm font-medium text-foreground hover:bg-secondary sm:w-auto"
           >
             J'ai bien noté les identifiants
           </Button>
@@ -227,21 +247,18 @@ Mot de passe : ${credentials.password || "Non modifié"}
           <Button
             type="button"
             onClick={handleCopy}
-            className={`w-full sm:w-auto flex-1 min-h-[44px] text-sm font-semibold transition-all ${
-              copied
-                ? "bg-[#004D20] text-[#FFD000]"
-                : "bg-[#006B2D] hover:bg-[#004D20] text-white"
-            }`}
+            disabled={isCopying}
+            className="h-auto min-h-[44px] w-full flex-1 whitespace-normal px-3 py-3 text-sm font-semibold sm:w-auto"
           >
             {copied ? (
               <>
-                <Check className="h-4 w-4 mr-2 text-[#FFD000]" />
+                <Check className="mr-2 h-4 w-4" />
                 Copié !
               </>
             ) : (
               <>
                 <Copy className="h-4 w-4 mr-2" />
-                Copier les identifiants
+                {isCopying ? "Copie en cours…" : "Copier les identifiants"}
               </>
             )}
           </Button>

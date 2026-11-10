@@ -117,6 +117,7 @@ describe("Real Isolated PostgreSQL 18 Integration Tests (Dedicated Instance)", (
         "06_unified_business_model.sql",
         "07_atomic_admin_and_password_policy.sql",
         "08_secure_dashboard_and_password_policy.sql",
+        "09_restore_lookup_tables_rls.sql",
       ];
 
       for (const file of migrationFiles) {
@@ -582,6 +583,28 @@ describe("Real Isolated PostgreSQL 18 Integration Tests (Dedicated Instance)", (
       await impersonate(client, PENDING_PWD_ID);
       const readBlocked = await client.query(`SELECT * FROM public.venue_games;`);
       expect(readBlocked.rows.length).toBe(0);
+      await client.query("ROLLBACK;");
+    });
+
+    it("doit permettre la lecture publique (anon et authenticated) des tables de référentiels (opérateurs, types de pari)", async () => {
+      const client = await createTestClient();
+
+      // 1. Lecture en mode anon
+      await client.query("BEGIN;");
+      await client.query("SET LOCAL role = 'anon';");
+      const opsAnon = await client.query("SELECT count(*) as count FROM public.operators;");
+      expect(Number(opsAnon.rows[0].count)).toBeGreaterThan(0);
+      const typesAnon = await client.query("SELECT count(*) as count FROM public.bet_types;");
+      expect(Number(typesAnon.rows[0].count)).toBeGreaterThan(0);
+      await client.query("ROLLBACK;");
+
+      // 2. Lecture en mode authenticated
+      await client.query("BEGIN;");
+      await impersonate(client, AGENT_A_ID);
+      const opsAuth = await client.query("SELECT count(*) as count FROM public.operators;");
+      expect(Number(opsAuth.rows[0].count)).toBeGreaterThan(0);
+      const typesAuth = await client.query("SELECT count(*) as count FROM public.bet_types;");
+      expect(Number(typesAuth.rows[0].count)).toBeGreaterThan(0);
       await client.query("ROLLBACK;");
     });
   });

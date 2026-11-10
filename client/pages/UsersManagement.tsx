@@ -35,6 +35,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { CredentialsModal } from "@/components/ui/CredentialsModal";
+import { AdminPasswordChoice } from "@/components/common/AdminPasswordChoice";
+import { buildAdminPasswordRequest, type AdminPasswordMode, type AdminPasswordSource } from "@shared/admin-password";
 
 interface User {
   id: string;
@@ -83,6 +85,7 @@ function UsersManagement() {
       password?: string;
       role?: string;
       nom?: string;
+      passwordSource?: AdminPasswordSource;
     } | null;
   }>({
     isOpen: false,
@@ -100,6 +103,8 @@ function UsersManagement() {
   });
 
   const [manualResetPassword, setManualResetPassword] = useState("");
+  const [createPasswordMode, setCreatePasswordMode] = useState<AdminPasswordMode>("manual");
+  const [resetPasswordMode, setResetPasswordMode] = useState<AdminPasswordMode>("manual");
 
   // Calcul du nombre d'administrateurs actifs pour le garde-fou
   const activeAdminCount = useMemo(() => {
@@ -111,6 +116,7 @@ function UsersManagement() {
   }
 
   function openDialog(user?: User) {
+    setCreatePasswordMode("manual");
     if (user) {
       setEditingUser(user);
       setFormData({
@@ -211,6 +217,7 @@ function UsersManagement() {
   }
 
   async function handleCreateUser() {
+    if (isSubmitting) return;
     if (!formData.nom || !formData.email) {
       toast.error("Veuillez renseigner le nom et l'adresse email.");
       return;
@@ -218,6 +225,7 @@ function UsersManagement() {
 
     setIsSubmitting(true);
     try {
+      const passwordRequest = buildAdminPasswordRequest(createPasswordMode, formData.password);
       const token = await getAccessToken();
       if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
 
@@ -233,7 +241,7 @@ function UsersManagement() {
           prenom: formData.prenom.trim() || undefined,
           email: formData.email.trim(),
           role: formData.role,
-          password: formData.password || undefined,
+          ...passwordRequest,
           sendEmail: false,
         }),
       });
@@ -242,21 +250,22 @@ function UsersManagement() {
       if (!res.ok) throw new Error(data.error || "Erreur lors de la création de l'utilisateur");
 
       setDialogOpen(false);
-      await refetch();
-
       // Présentation immédiate des identifiants exacts dans la modal
       setCredentialsModal({
         isOpen: true,
         title: "Compte utilisateur créé avec succès",
         description:
-          "Le mot de passe a été généré de manière cryptographique et sécurisée. Transmettez ces identifiants à l'utilisateur.",
+          "Le compte est créé. Transmettez le mot de passe effectivement enregistré à l’utilisateur.",
         credentials: {
           email: formData.email.trim(),
           password: data.temporaryPassword,
+          passwordSource: data.passwordSource,
           role: formData.role,
           nom: `${formData.prenom} ${formData.nom}`.trim(),
         },
       });
+      setFormData((previous) => ({ ...previous, password: "" }));
+      void refetch();
     } catch (error: any) {
       console.error("Erreur création utilisateur:", error);
       toast.error(error.message || "Erreur lors de la création");
@@ -336,14 +345,16 @@ function UsersManagement() {
   function openPasswordDialog(user: User) {
     setUserForPasswordReset(user);
     setManualResetPassword("");
+    setResetPasswordMode("manual");
     setPasswordDialogOpen(true);
   }
 
   async function handleResetPassword() {
-    if (!userForPasswordReset) return;
+    if (!userForPasswordReset || isResettingPassword || isSendingLink) return;
 
     setIsResettingPassword(true);
     try {
+      const passwordRequest = buildAdminPasswordRequest(resetPasswordMode, manualResetPassword);
       const token = await getAccessToken();
       if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
 
@@ -356,7 +367,7 @@ function UsersManagement() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            password: manualResetPassword || undefined,
+            ...passwordRequest,
             sendEmail: false,
           }),
         }
@@ -375,10 +386,12 @@ function UsersManagement() {
         credentials: {
           email: userForPasswordReset.email,
           password: data.temporaryPassword,
+          passwordSource: data.passwordSource,
           role: userForPasswordReset.role,
           nom: `${userForPasswordReset.prenom || ""} ${userForPasswordReset.nom}`.trim(),
         },
       });
+      setManualResetPassword("");
     } catch (error: any) {
       console.error("Erreur réinitialisation mot de passe:", error);
       toast.error(error.message || "Impossible de réinitialiser le mot de passe.");
@@ -388,7 +401,7 @@ function UsersManagement() {
   }
 
   async function handleSendResetLink() {
-    if (!userForPasswordReset) return;
+    if (!userForPasswordReset || isSendingLink || isResettingPassword) return;
 
     setIsSendingLink(true);
     try {
@@ -700,7 +713,11 @@ function UsersManagement() {
       {/* =========================================================================
           DIALOG DE CRÉATION / MODIFICATION D'UTILISATEUR
           ========================================================================= */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => !isSubmitting && setDialogOpen(open)}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        if (isSubmitting) return;
+        setDialogOpen(open);
+        if (!open) setFormData((previous) => ({ ...previous, password: "" }));
+      }}>
         <DialogContent className="max-w-md bg-white border border-[#D8E6DB] text-[#17251C] shadow-2xl p-6">
           <DialogHeader className="space-y-1">
             <DialogTitle className="text-lg font-bold text-[#17251C]">
@@ -709,7 +726,7 @@ function UsersManagement() {
             <DialogDescription className="text-xs text-[#556B5C]">
               {editingUser
                 ? "Mettez à jour les informations du compte. Les synchronisations d'accès sont automatiques."
-                : "Renseignez les coordonnées. Un mot de passe temporaire cryptographique sera généré par le serveur."}
+                : "Renseignez les coordonnées et choisissez comment définir le mot de passe initial."}
             </DialogDescription>
           </DialogHeader>
 
@@ -765,21 +782,7 @@ function UsersManagement() {
 
             {/* Option mot de passe en mode création */}
             {!editingUser && (
-              <div className="space-y-1.5 pt-1">
-                <label className="text-xs font-semibold text-[#17251C] block">
-                  Mot de passe temporaire (optionnel)
-                </label>
-                <Input
-                  type="text"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="Laisser vide pour génération automatique forte"
-                  className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-xs h-10 font-mono"
-                />
-                <p className="text-[11px] text-[#556B5C]">
-                  Si laissé vide, le serveur génère un mot de passe aléatoire cryptographique (14 caractères avec minuscules, majuscules, chiffres et symboles).
-                </p>
-              </div>
+              <AdminPasswordChoice mode={createPasswordMode} password={formData.password} onModeChange={setCreatePasswordMode} onPasswordChange={(password) => setFormData((previous) => ({ ...previous, password }))} disabled={isSubmitting} />
             )}
 
             <div className="flex justify-end gap-2 pt-3 border-t border-[#D8E6DB]">
@@ -787,7 +790,7 @@ function UsersManagement() {
                 type="button"
                 variant="outline"
                 disabled={isSubmitting}
-                onClick={() => setDialogOpen(false)}
+                onClick={() => { setDialogOpen(false); setFormData((previous) => ({ ...previous, password: "" })); }}
                 className="min-h-[44px] bg-[#F5F8F5] hover:bg-[#E2EBE4] text-[#17251C] border-[#D8E6DB] text-xs font-medium"
               >
                 Annuler
@@ -819,7 +822,11 @@ function UsersManagement() {
           ========================================================================= */}
       <Dialog
         open={passwordDialogOpen}
-        onOpenChange={(open) => !isResettingPassword && !isSendingLink && setPasswordDialogOpen(open)}
+        onOpenChange={(open) => {
+          if (isResettingPassword || isSendingLink) return;
+          setPasswordDialogOpen(open);
+          if (!open) setManualResetPassword("");
+        }}
       >
         <DialogContent className="max-w-md bg-white border border-[#D8E6DB] text-[#17251C] shadow-2xl p-6">
           <DialogHeader className="space-y-1">
@@ -843,31 +850,22 @@ function UsersManagement() {
 
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-[#17251C] block">
-                    Option 1 : Générer un nouveau mot de passe serveur
-                  </label>
-                  <Input
-                    type="text"
-                    value={manualResetPassword}
-                    onChange={(e) => setManualResetPassword(e.target.value)}
-                    placeholder="Laisser vide pour génération automatique forte"
-                    className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-xs h-10 font-mono"
-                  />
+                  <AdminPasswordChoice mode={resetPasswordMode} password={manualResetPassword} onModeChange={setResetPasswordMode} onPasswordChange={setManualResetPassword} disabled={isResettingPassword || isSendingLink} />
                   <Button
                     type="button"
-                    disabled={isResettingPassword}
+                    disabled={isResettingPassword || isSendingLink}
                     onClick={handleResetPassword}
                     className="w-full min-h-[44px] bg-[#006B2D] hover:bg-[#004D20] text-white text-xs font-semibold shadow-xs"
                   >
                     {isResettingPassword ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Génération en cours...
+                        Application en cours...
                       </>
                     ) : (
                       <>
                         <Key className="h-4 w-4 mr-2" />
-                        Appliquer ce nouveau mot de passe
+                        {resetPasswordMode === "manual" ? "Appliquer le mot de passe saisi" : "Générer et appliquer un mot de passe"}
                       </>
                     )}
                   </Button>
@@ -889,7 +887,7 @@ function UsersManagement() {
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={isSendingLink}
+                    disabled={isSendingLink || isResettingPassword}
                     onClick={handleSendResetLink}
                     className="w-full min-h-[44px] bg-[#F5F8F5] border-[#D8E6DB] hover:bg-[#E2EBE4] text-[#17251C] text-xs font-semibold"
                   >
@@ -912,7 +910,8 @@ function UsersManagement() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setPasswordDialogOpen(false)}
+                  disabled={isResettingPassword || isSendingLink}
+                  onClick={() => { setPasswordDialogOpen(false); setManualResetPassword(""); }}
                   className="min-h-[44px] bg-[#F5F8F5] hover:bg-[#E2EBE4] text-[#17251C] border-[#D8E6DB] text-xs font-medium"
                 >
                   Fermer
