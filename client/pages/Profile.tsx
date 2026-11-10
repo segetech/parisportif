@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 import {
   Eye,
   EyeOff,
@@ -21,6 +22,8 @@ import {
   LogOut,
   Loader2,
   Save,
+  Camera,
+  Trash2,
 } from "lucide-react";
 import { RequireAuth } from "@/context/AuthContext";
 
@@ -40,7 +43,78 @@ function ProfileForm() {
   const [nom, setNom] = useState(user?.nom || "");
   const [prenom, setPrenom] = useState(user?.prenom || "");
   const [email] = useState(user?.email || "");
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || "");
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+
+  async function handleAvatarChange(file: File) {
+    if (!file || !user) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("La photo dépasse la taille maximale autorisée (5 Mo).");
+      return;
+    }
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type.toLowerCase())) {
+      toast.error("Format d'image non valide (JPG, PNG, WEBP uniquement).");
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", "avatars");
+
+      const res = await fetch("/api/upload?folder=avatars", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Échec du téléversement");
+      }
+
+      const newUrl = data.url;
+      // Mettre à jour Supabase
+      const { error } = await supabase
+        .from("users")
+        .update({ avatar_url: newUrl, mis_a_jour_le: new Date().toISOString() })
+        .eq("id", user.id);
+
+      if (error) {
+        console.warn("Mise à jour en base:", error);
+      }
+
+      setAvatarUrl(newUrl);
+      updateUser({ avatar_url: newUrl });
+      toast.success("Photo de profil mise à jour et stockée sur Cloudflare R2 !");
+    } catch (err: any) {
+      toast.error(err.message || "Erreur lors de la mise à jour de la photo");
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  }
+
+  async function handleDeleteAvatar() {
+    if (!user) return;
+    try {
+      setIsUploadingAvatar(true);
+      await supabase
+        .from("users")
+        .update({ avatar_url: null, mis_a_jour_le: new Date().toISOString() })
+        .eq("id", user.id);
+
+      setAvatarUrl("");
+      updateUser({ avatar_url: undefined });
+      toast.info("Photo de profil supprimée.");
+    } catch (err: any) {
+      toast.error("Erreur lors de la suppression de la photo.");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  }
 
   const [showChangePassword, setShowChangePassword] = useState(Boolean(user?.must_change_password));
   const [pendingFinalization, setPendingFinalization] = useState(false);
@@ -294,17 +368,78 @@ function ProfileForm() {
           {/* Carte Résumé Profil */}
           <div className="rounded-2xl border border-[#D8E6DB] bg-white p-6 space-y-6 shadow-xs">
             <div className="flex flex-col items-center text-center">
-              <div className="relative mb-3">
-                <Avatar className="h-24 w-24 rounded-2xl border-2 border-[#D8E6DB] bg-[#F5F8F5] text-[#17251C] shadow-xs">
+              {/* Photo de profil avec téléversement vers Cloudflare R2 */}
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleAvatarChange(e.target.files[0]);
+                  }
+                }}
+              />
+              <div className="relative mb-3 group">
+                <Avatar className="h-24 w-24 rounded-2xl border-2 border-[#D8E6DB] bg-[#F5F8F5] text-[#17251C] shadow-xs overflow-hidden">
+                  {avatarUrl ? (
+                    <AvatarImage src={avatarUrl} alt="Photo de profil" className="object-cover h-full w-full" />
+                  ) : null}
                   <AvatarFallback className="font-extrabold text-2xl tracking-wider bg-[#004D20] text-white">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
+
+                {isUploadingAvatar ? (
+                  <div className="absolute inset-0 rounded-2xl bg-black/60 flex items-center justify-center text-white">
+                    <Loader2 className="h-6 w-6 animate-spin text-[#FFD000]" />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="absolute inset-0 rounded-2xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 cursor-pointer"
+                    title="Changer la photo de profil"
+                  >
+                    <Camera className="h-5 w-5" />
+                    <span>Modifier</span>
+                  </button>
+                )}
+
                 <span
                   className="absolute bottom-0 right-0 h-4 w-4 rounded-full bg-[#006B2D] border-2 border-white"
                   title="En ligne"
                 />
               </div>
+
+              {/* Actions Photo */}
+              <div className="flex items-center gap-2 mb-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isUploadingAvatar}
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="h-7 text-[11px] px-2.5 border-[#D8E6DB] text-[#006B2D] hover:bg-[#F5F8F5] gap-1"
+                >
+                  <Camera className="h-3 w-3" />
+                  <span>{avatarUrl ? "Changer la photo" : "Ajouter une photo"}</span>
+                </Button>
+                {avatarUrl && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isUploadingAvatar}
+                    onClick={handleDeleteAvatar}
+                    className="h-7 text-[11px] px-2 text-[#E52329] hover:bg-red-50 hover:text-[#E52329]"
+                    title="Supprimer la photo"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+
               <h2 className="text-lg font-bold text-[#17251C] truncate max-w-full">
                 {[nom, prenom].filter(Boolean).join(" ") || "Utilisateur"}
               </h2>

@@ -4,9 +4,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, RequireAuth, RequireRole } from "@/context/AuthContext";
 import { toast } from "sonner";
 import ExcelJS from "exceljs";
+import {
+  getImportSession,
+  saveImportSession,
+  clearImportSession,
+  checkBatchInsertedCount,
+  acquireBatchTabLock,
+  releaseBatchTabLock,
+  reconcileRemainingRows,
+  ExcelImportSessionState,
+} from "@/lib/excel-import-resumption";
 import {
   FileSpreadsheet,
   Upload,
@@ -25,6 +35,7 @@ import {
   RotateCcw,
   Sparkles,
 } from "lucide-react";
+import { DatePickerCustom } from "@/components/ui/date-picker-custom";
 import {
   parseTransactionRow,
   parseBetRow,
@@ -43,11 +54,56 @@ type ImportStep = "upload" | "config" | "preview" | "importing" | "report";
 type TargetEntityType = "depotretrait" | "pari" | "salles";
 
 export default function ExcelImportPage() {
+  return (
+    <RequireAuth>
+      <RequireRole allow={["ADMIN", "CONTROLEUR", "AGENT"]}>
+        <ExcelImportContent />
+      </RequireRole>
+    </RequireAuth>
+  );
+}
+
+function ExcelImportContent() {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const tabId = useRef<string>(crypto.randomUUID()).current;
+
+  // Session d'importation persistante pour reprise sans doublon
+  const [activeSession, setActiveSession] = useState<ExcelImportSessionState | null>(() => {
+    return user ? getImportSession(user.id) : null;
+  });
 
   // Étape du flux
   const [currentStep, setCurrentStep] = useState<ImportStep>("upload");
+
+  function handleDiscardSession() {
+    if (user) {
+      clearImportSession(user.id);
+    }
+    setActiveSession(null);
+    toast.info("Le lot d'import en attente a été clôturé.");
+  }
+
+  function handleResumeSession() {
+    if (!activeSession) return;
+    setFileName(activeSession.fileName);
+    setFileSize(activeSession.fileSize);
+    setAvailableSheets(activeSession.availableSheets);
+    setSelectedSheet(activeSession.selectedSheet);
+    setDetectedType(activeSession.detectedType);
+    setSelectedDate(activeSession.selectedDate);
+    setPreventDuplicates(activeSession.preventDuplicates);
+
+    if (!workbookRef.current) {
+      toast.info(
+        `Pour reprendre ce lot sans doublon, veuillez resélectionner le fichier "${activeSession.fileName}".`,
+        { duration: 5000 }
+      );
+      setCurrentStep("upload");
+    } else {
+      setCurrentStep(activeSession.step === "importing" ? "preview" : activeSession.step);
+    }
+  }
 
   // Fichier et feuilles détectées
   const [fileName, setFileName] = useState<string>("");
@@ -329,7 +385,24 @@ export default function ExcelImportPage() {
 
     const isAgent = user?.role === "AGENT";
     const initialStatus = isAgent ? "en_attente" : "valide";
-    const batchId = crypto.randomUUID();
+
+    // Si nous reprenons un lot existant sur le même fichier, conserver son ID pour continuité exacte
+    const batchId =
+      activeSession &&
+      activeSession.fileName === fileName &&
+      activeSession.batchId
+        ? activeSession.batchId
+        : crypto.randomUUID();
+
+    // Verrouillage inter-onglets pour empêcher des imports concurrents simultanés du même lot
+    if (!acquireBatchTabLock(batchId, tabId)) {
+      toast.error(
+        "Ce lot d'importation est déjà en cours de traitement dans un autre onglet.",
+      );
+      setIsProcessing(false);
+      setCurrentStep("preview");
+      return;
+    }
 
     let imported = 0;
     let rejected = 0;
@@ -338,9 +411,24 @@ export default function ExcelImportPage() {
 
     try {
       if (!user) throw new Error("Session requise pour importer des données.");
-      const targetTable = detectedType === "depotretrait" ? "transactions" : detectedType === "pari" ? "bets" : "venues";
+      const targetTable =
+        detectedType === "depotretrait"
+          ? "transactions"
+          : detectedType === "pari"
+            ? "bets"
+            : "venues";
       await verifyImportSchema(supabase, targetTable);
-      await createImportBatch(supabase, {
+
+      // Consulter l'état réellement enregistré en base avant toute écriture pour reprise sans doublon
+      const alreadyInsertedInDb = await checkBatchInsertedCount(
+        supabase,
+        targetTable,
+        batchId,
+      );
+      imported = alreadyInsertedInDb;
+
+      if (alreadyInsertedInDb === 0) {
+        await createImportBatch(supabase, {
           id: batchId,
           file_name: fileName,
           sheet_name: selectedSheet,
@@ -352,108 +440,203 @@ export default function ExcelImportPage() {
           status: "en_cours",
           anomalies: [],
           imported_by: user?.id,
-      });
+        });
+      }
       batchCreated = true;
+
       if (detectedType === "depotretrait") {
         const rowsToInsert = parsedTransactions.filter((tx) => tx.isValid);
         rejected = parsedTransactions.length - rowsToInsert.length;
 
-        const chunks = chunkArray(rowsToInsert, 25);
-        let progress = 10;
-        const step = 80 / (chunks.length || 1);
+        const { remainingRows, isAlreadyCompleted } = reconcileRemainingRows(
+          rowsToInsert,
+          alreadyInsertedInDb,
+        );
 
-        for (const chunk of chunks) {
-          const records = chunk.map((tx) => ({
-            date: tx.date,
-            time: tx.time ? `${tx.time}:00` : null,
-            operator: tx.operator,
-            platform: tx.platform,
-            payment_operator: tx.paymentOperator,
-            type: tx.type,
-            amount_fcfa: tx.amount,
-            phone: tx.phone,
-            reference: tx.reference,
-            proof_status: tx.proofStatus,
-            created_by: user?.id,
-            validation_status: initialStatus,
-            import_batch_id: batchId,
-          }));
+        if (!isAlreadyCompleted) {
+          const chunks = chunkArray(remainingRows, 25);
+          let progress = Math.min(
+            90,
+            Math.round((imported / (rowsToInsert.length || 1)) * 100),
+          );
+          const step = (90 - progress) / (chunks.length || 1);
 
-          const { error } = await supabase.from("transactions").insert(records);
-          if (error) throw error;
-          imported += chunk.length;
-          progress += step;
-          setImportProgress(Math.min(90, Math.round(progress)));
+          for (const chunk of chunks) {
+            const records = chunk.map((tx) => ({
+              date: tx.date,
+              time: tx.time ? `${tx.time}:00` : null,
+              operator: tx.operator,
+              platform: tx.platform,
+              payment_operator: tx.paymentOperator,
+              type: tx.type,
+              amount_fcfa: tx.amount,
+              phone: tx.phone,
+              reference: tx.reference,
+              proof_status: tx.proofStatus,
+              created_by: user?.id,
+              validation_status: initialStatus,
+              import_batch_id: batchId,
+            }));
+
+            const { error } = await supabase.from("transactions").insert(records);
+            if (error) {
+              // Vérifier si la réponse réseau perdue n'a pas en réalité inséré les lignes
+              const recount = await checkBatchInsertedCount(
+                supabase,
+                "transactions",
+                batchId,
+              );
+              if (recount > imported) {
+                imported = recount;
+              } else {
+                throw error;
+              }
+            } else {
+              imported += chunk.length;
+            }
+
+            progress += step;
+            setImportProgress(Math.min(90, Math.round(progress)));
+
+            saveImportSession(user.id, {
+              batchId,
+              step: "importing",
+              fileName,
+              fileSize,
+              availableSheets,
+              selectedSheet,
+              detectedType,
+              selectedDate,
+              preventDuplicates,
+              totalRows: stats.total,
+              validCount: stats.validCount,
+              errorCount: stats.errorCount,
+              importedCount: imported,
+              rejectedCount: rejected,
+              ignoredCount: ignored,
+              status: "in_progress",
+            });
+          }
         }
       } else if (detectedType === "pari") {
         const rowsToInsert = parsedBets.filter((b) => b.isValid);
         rejected = parsedBets.length - rowsToInsert.length;
 
-        const chunks = chunkArray(rowsToInsert, 25);
-        let progress = 10;
-        const step = 80 / (chunks.length || 1);
+        const { remainingRows, isAlreadyCompleted } = reconcileRemainingRows(
+          rowsToInsert,
+          alreadyInsertedInDb,
+        );
 
-        for (const chunk of chunks) {
-          const records = chunk.map((b) => ({
-            date: b.date,
-            time: b.time ? `${b.time}:00` : null,
-            operator: b.operator,
-            support: b.support,
-            bet_type: b.betType,
-            amount_fcfa: b.amount,
-            phone: b.phone,
-            reference: b.reference,
-            status: b.status,
-            amount_won_fcfa: b.amountWon,
-            proof_status: b.proofStatus,
-            created_by: user?.id,
-            validation_status: initialStatus,
-            import_batch_id: batchId,
-          }));
+        if (!isAlreadyCompleted) {
+          const chunks = chunkArray(remainingRows, 25);
+          let progress = Math.min(
+            90,
+            Math.round((imported / (rowsToInsert.length || 1)) * 100),
+          );
+          const step = (90 - progress) / (chunks.length || 1);
 
-          const { error } = await supabase.from("bets").insert(records);
-          if (error) throw error;
-          imported += chunk.length;
-          progress += step;
-          setImportProgress(Math.min(90, Math.round(progress)));
+          for (const chunk of chunks) {
+            const records = chunk.map((b) => ({
+              date: b.date,
+              time: b.time ? `${b.time}:00` : null,
+              operator: b.operator,
+              support: b.support,
+              bet_type: b.betType,
+              amount_fcfa: b.amount,
+              phone: b.phone,
+              reference: b.reference,
+              status: b.status,
+              amount_won_fcfa: b.amountWon,
+              proof_status: b.proofStatus,
+              created_by: user?.id,
+              validation_status: initialStatus,
+              import_batch_id: batchId,
+            }));
+
+            const { error } = await supabase.from("bets").insert(records);
+            if (error) {
+              const recount = await checkBatchInsertedCount(
+                supabase,
+                "bets",
+                batchId,
+              );
+              if (recount > imported) {
+                imported = recount;
+              } else {
+                throw error;
+              }
+            } else {
+              imported += chunk.length;
+            }
+
+            progress += step;
+            setImportProgress(Math.min(90, Math.round(progress)));
+
+            saveImportSession(user.id, {
+              batchId,
+              step: "importing",
+              fileName,
+              fileSize,
+              availableSheets,
+              selectedSheet,
+              detectedType,
+              selectedDate,
+              preventDuplicates,
+              totalRows: stats.total,
+              validCount: stats.validCount,
+              errorCount: stats.errorCount,
+              importedCount: imported,
+              rejectedCount: rejected,
+              ignoredCount: ignored,
+              status: "in_progress",
+            });
+          }
         }
       } else if (detectedType === "salles") {
         const rowsToInsert = parsedVenues.filter((v) => v.isValid);
         rejected = parsedVenues.length - rowsToInsert.length;
 
-        for (const v of rowsToInsert) {
-          const venueRecord = {
-            quartier_no: v.venueNumber ? String(v.venueNumber) : null,
-            quartier: v.quartier,
-            operator: v.operator,
-            support: v.support,
-            bet_type: v.games[0] || "Jeux variés",
-            games: v.games,
-            address: v.address,
-            validation_status: initialStatus,
-            created_by: user?.id,
-            import_batch_id: batchId,
-          };
+        const { remainingRows, isAlreadyCompleted } = reconcileRemainingRows(
+          rowsToInsert,
+          alreadyInsertedInDb,
+        );
 
-          const { data: insertedVenue, error: vErr } = await supabase
-            .from("venues")
-            .insert([venueRecord])
-            .select("id")
-            .single();
+        if (!isAlreadyCompleted) {
+          for (const v of remainingRows) {
+            const venueRecord = {
+              quartier_no: v.venueNumber ? String(v.venueNumber) : null,
+              quartier: v.quartier,
+              operator: v.operator,
+              support: v.support,
+              bet_type: v.games[0] || "Jeux variés",
+              games: v.games,
+              address: v.address,
+              validation_status: initialStatus,
+              created_by: user?.id,
+              import_batch_id: batchId,
+            };
 
-          if (vErr) throw vErr;
-          // The venue already exists even if its games fail to save afterwards.
-          imported++;
+            const { data: insertedVenue, error: vErr } = await supabase
+              .from("venues")
+              .insert([venueRecord])
+              .select("id")
+              .single();
 
-          // Insertion des jeux rattachés à l'établissement dans venue_games
-          if (insertedVenue && v.games.length > 0) {
-            const gameRecords = v.games.map((g) => ({
-              venue_id: insertedVenue.id,
-              game_name: g,
-              active: true,
-            }));
-            const { error: gameError } = await supabase.from("venue_games").insert(gameRecords);
-            if (gameError) throw importDatabaseError(gameError, "Jeux de la salle");
+            if (vErr) throw vErr;
+            imported++;
+
+            if (insertedVenue && v.games.length > 0) {
+              const gameRecords = v.games.map((g) => ({
+                venue_id: insertedVenue.id,
+                game_name: g,
+                active: true,
+              }));
+              const { error: gameError } = await supabase
+                .from("venue_games")
+                .insert(gameRecords);
+              if (gameError)
+                throw importDatabaseError(gameError, "Jeux de la salle");
+            }
           }
         }
       }
@@ -462,15 +645,21 @@ export default function ExcelImportPage() {
 
       // Traçabilité finale du lot d'import (statut "termine")
       const finalStatus = "termine";
-      const { error: batchError } = await supabase.from("import_batches").update({
+      const { error: batchError } = await supabase
+        .from("import_batches")
+        .update({
           total_rows: stats.total,
           imported_rows: imported,
           rejected_rows: rejected,
           ignored_rows: ignored,
           status: finalStatus,
           anomalies: stats.allAnomalies.slice(0, 100),
-        }).eq("id", batchId).select("id").single();
-      if (batchError) throw importDatabaseError(batchError, "Finalisation du lot d'import");
+        })
+        .eq("id", batchId)
+        .select("id")
+        .single();
+      if (batchError)
+        throw importDatabaseError(batchError, "Finalisation du lot d'import");
 
       // Invalidation ciblée des caches React Query
       if (detectedType === "depotretrait") {
@@ -482,6 +671,10 @@ export default function ExcelImportPage() {
       }
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
 
+      clearImportSession(user.id);
+      releaseBatchTabLock(batchId, tabId);
+      setActiveSession(null);
+
       setBatchResult({
         batchId,
         total: stats.total,
@@ -492,25 +685,60 @@ export default function ExcelImportPage() {
       });
 
       setCurrentStep("report");
-      toast.success(`Import terminé avec succès : ${imported} élément(s) importé(s)`);
+      toast.success(
+        `Import terminé avec succès : ${imported} élément(s) importé(s)`,
+      );
     } catch (importErr: any) {
       console.error("Erreur enregistrement import:", importErr);
-      // En cas d'échec partiel ou complet, marquer le lot "partiel" ou "echoue"
       const failureStatus = imported > 0 ? "partiel" : "echoue";
-      if (batchCreated) try {
-        const { error: failureError } = await supabase.from("import_batches").update({
-          imported_rows: imported,
-          rejected_rows: rejected,
-          ignored_rows: ignored,
-          status: failureStatus,
-          anomalies: [
-            ...stats.allAnomalies.slice(0, 50),
-            { row: 0, field: "import", message: importErr.message || "Erreur base de données", severity: "error" },
-          ],
-        }).eq("id", batchId);
-        if (failureError) console.warn("État d'échec du lot non enregistré:", failureError);
-      } catch (batchErr) {
-        console.warn("Mise à jour import_batch en erreur:", batchErr);
+      if (batchCreated) {
+        try {
+          const { error: failureError } = await supabase
+            .from("import_batches")
+            .update({
+              imported_rows: imported,
+              rejected_rows: rejected,
+              ignored_rows: ignored,
+              status: failureStatus,
+              anomalies: [
+                ...stats.allAnomalies.slice(0, 50),
+                {
+                  row: 0,
+                  field: "import",
+                  message: importErr.message || "Erreur base de données",
+                  severity: "error",
+                },
+              ],
+            })
+            .eq("id", batchId);
+          if (failureError)
+            console.warn("État d'échec du lot non enregistré:", failureError);
+        } catch (batchErr) {
+          console.warn("Mise à jour import_batch en erreur:", batchErr);
+        }
+      }
+
+      // Sauvegarder la session pour reprise ultérieure sans doublon
+      if (user) {
+        saveImportSession(user.id, {
+          batchId,
+          step: "preview",
+          fileName,
+          fileSize,
+          availableSheets,
+          selectedSheet,
+          detectedType,
+          selectedDate,
+          preventDuplicates,
+          totalRows: stats.total,
+          validCount: stats.validCount,
+          errorCount: stats.errorCount,
+          importedCount: imported,
+          rejectedCount: rejected,
+          ignoredCount: ignored,
+          status: "paused",
+        });
+        setActiveSession(getImportSession(user.id));
       }
 
       // Invalidation ciblée même en cas d'erreur partielle pour synchroniser les données insérées
@@ -525,9 +753,13 @@ export default function ExcelImportPage() {
         await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       }
 
-      toast.error("Erreur durant l'enregistrement : " + (importErr.message || "Erreur base de données"));
+      toast.error(
+        "Erreur durant l'enregistrement : " +
+          (importErr.message || "Erreur base de données"),
+      );
       setCurrentStep("preview");
     } finally {
+      releaseBatchTabLock(batchId, tabId);
       setIsProcessing(false);
     }
   }
@@ -594,6 +826,41 @@ export default function ExcelImportPage() {
             </span>
           </div>
         </div>
+
+        {/* BANNIÈRE DE REPRISE DE LOT PERSISTANTE */}
+        {activeSession && activeSession.status !== "completed" && (
+          <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 font-bold text-sm text-amber-900">
+                <RotateCcw className="h-4 w-4 text-amber-700" />
+                Reprise d'importation disponible : {activeSession.fileName}
+              </div>
+              <p className="text-amber-800">
+                Feuille : <strong>{activeSession.selectedSheet}</strong> • Type : <strong>{activeSession.detectedType}</strong> • {activeSession.importedCount}/{activeSession.totalRows} enregistrements déjà inscrits en base.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleResumeSession}
+                className="bg-[#006B2D] hover:bg-[#004D20] text-white font-semibold min-h-[44px] sm:min-h-0"
+              >
+                <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                Reprendre ce lot
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleDiscardSession}
+                className="bg-white border-amber-300 text-amber-900 hover:bg-amber-100 min-h-[44px] sm:min-h-0"
+              >
+                Clôturer ce lot
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* INDICATEUR D'ÉTAPES RESPONSIVE */}
         <div className="grid grid-cols-4 gap-2 text-xs font-semibold">
@@ -776,11 +1043,9 @@ export default function ExcelImportPage() {
                       Règle explicite requise
                     </span>
                   </div>
-                  <Input
-                    type="date"
+                  <DatePickerCustom
                     value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="min-h-[44px] bg-[#F5F8F5] border-[#D8E6DB] text-sm"
+                    onChange={setSelectedDate}
                   />
                   <p className="text-[11px] text-[#556B5C]">
                     La colonne Date étant absente du fichier source, cette date sera appliquée à chaque ligne (aucune déduction silencieuse).

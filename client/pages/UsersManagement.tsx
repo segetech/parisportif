@@ -1,3 +1,5 @@
+import { RecordForm } from "@/components/common/RecordForm";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +38,11 @@ import {
 } from "lucide-react";
 import { CredentialsModal } from "@/components/ui/CredentialsModal";
 import { AdminPasswordChoice } from "@/components/common/AdminPasswordChoice";
-import { buildAdminPasswordRequest, type AdminPasswordMode, type AdminPasswordSource } from "@shared/admin-password";
+import {
+  buildAdminPasswordRequest,
+  type AdminPasswordMode,
+  type AdminPasswordSource,
+} from "@shared/admin-password";
 
 interface User {
   id: string;
@@ -47,6 +53,7 @@ interface User {
   statut: "actif" | "suspendu" | "invitation_envoyee" | "desactive";
   derniere_connexion?: string;
   cree_le: string;
+  mis_a_jour_le?: string;
 }
 
 export default function UsersManagementPage() {
@@ -68,7 +75,9 @@ function UsersManagement() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [userForPasswordReset, setUserForPasswordReset] = useState<User | null>(null);
+  const [userForPasswordReset, setUserForPasswordReset] = useState<User | null>(
+    null,
+  );
 
   // Soumissions en cours
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -99,20 +108,41 @@ function UsersManagement() {
     prenom: "",
     email: "",
     role: "AGENT" as "ADMIN" | "CONTROLEUR" | "AGENT",
+    statut: "actif" as User["statut"],
     password: "",
   });
 
+  const {
+    hasDraft,
+    savedAtFormatted,
+    hasConflict,
+    saveStatus,
+    restoreDraft,
+    discardDraft,
+    clearDraftOnSuccess,
+    notifyChange,
+  } = useFormDraft(formData, setFormData, {
+    entityType: "users",
+    recordId: editingUser?.id || "new",
+    serverUpdatedAt: editingUser?.mis_a_jour_le || editingUser?.cree_le,
+  });
+
   const [manualResetPassword, setManualResetPassword] = useState("");
-  const [createPasswordMode, setCreatePasswordMode] = useState<AdminPasswordMode>("manual");
-  const [resetPasswordMode, setResetPasswordMode] = useState<AdminPasswordMode>("manual");
+  const [createPasswordMode, setCreatePasswordMode] =
+    useState<AdminPasswordMode>("manual");
+  const [resetPasswordMode, setResetPasswordMode] =
+    useState<AdminPasswordMode>("manual");
 
   // Calcul du nombre d'administrateurs actifs pour le garde-fou
   const activeAdminCount = useMemo(() => {
-    return users.filter((u) => u.role === "ADMIN" && u.statut === "actif").length;
+    return users.filter((u) => u.role === "ADMIN" && u.statut === "actif")
+      .length;
   }, [users]);
 
   function isLastActiveAdmin(user: User): boolean {
-    return user.role === "ADMIN" && user.statut === "actif" && activeAdminCount <= 1;
+    return (
+      user.role === "ADMIN" && user.statut === "actif" && activeAdminCount <= 1
+    );
   }
 
   function openDialog(user?: User) {
@@ -124,6 +154,7 @@ function UsersManagement() {
         prenom: user.prenom || "",
         email: user.email,
         role: user.role,
+        statut: user.statut,
         password: "",
       });
     } else {
@@ -133,6 +164,7 @@ function UsersManagement() {
         prenom: "",
         email: "",
         role: "AGENT",
+        statut: "actif",
         password: "",
       });
     }
@@ -158,8 +190,17 @@ function UsersManagement() {
     setIsSubmitting(true);
     try {
       const token = await getAccessToken();
-      if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
+      if (!token)
+        throw new Error("Session expirée. Veuillez vous reconnecter.");
 
+      if (
+        isLastActiveAdmin(editingUser) &&
+        (formData.role !== "ADMIN" || formData.statut !== "actif")
+      ) {
+        throw new Error(
+          "Impossible de suspendre ou rétrograder le dernier administrateur actif.",
+        );
+      }
       // 1. Si le rôle a changé, appel à l'API Admin serveur protégée
       if (formData.role !== editingUser.role) {
         const roleRes = await fetch(`/api/admin/users/${editingUser.id}/role`, {
@@ -171,41 +212,74 @@ function UsersManagement() {
           body: JSON.stringify({ role: formData.role }),
         });
         const roleData = await roleRes.json();
-        if (!roleRes.ok) throw new Error(roleData.error || "Erreur de mise à jour du rôle");
+        if (!roleRes.ok)
+          throw new Error(roleData.error || "Erreur de mise à jour du rôle");
       }
 
       // 2. Si l'email a changé, synchronisation auth.users + table users
       if (formData.email.toLowerCase() !== editingUser.email.toLowerCase()) {
-        const emailRes = await fetch(`/api/admin/users/${editingUser.id}/email`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+        const emailRes = await fetch(
+          `/api/admin/users/${editingUser.id}/email`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ email: formData.email }),
           },
-          body: JSON.stringify({ email: formData.email }),
-        });
+        );
         const emailData = await emailRes.json();
-        if (!emailRes.ok) throw new Error(emailData.error || "Erreur de synchronisation de l'email");
+        if (!emailRes.ok)
+          throw new Error(
+            emailData.error || "Erreur de synchronisation de l'email",
+          );
       }
 
       // 3. Mise à jour des informations d'identité (nom, prénom) via l'API Admin serveur
-      if (formData.nom !== editingUser.nom || formData.prenom !== (editingUser.prenom || "")) {
-        const profileRes = await fetch(`/api/admin/users/${editingUser.id}/profile`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+      if (
+        formData.nom !== editingUser.nom ||
+        formData.prenom !== (editingUser.prenom || "")
+      ) {
+        const profileRes = await fetch(
+          `/api/admin/users/${editingUser.id}/profile`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              nom: formData.nom.trim(),
+              prenom: formData.prenom.trim() || null,
+            }),
           },
-          body: JSON.stringify({
-            nom: formData.nom.trim(),
-            prenom: formData.prenom.trim() || null,
-          }),
-        });
+        );
         const profileData = await profileRes.json();
-        if (!profileRes.ok) throw new Error(profileData.error || "Erreur de mise à jour du profil");
+        if (!profileRes.ok)
+          throw new Error(
+            profileData.error || "Erreur de mise à jour du profil",
+          );
       }
 
+      if (formData.statut !== editingUser.statut) {
+        const response = await fetch(
+          `/api/admin/users/${editingUser.id}/status`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ statut: formData.statut }),
+          },
+        );
+        const result = await response.json();
+        if (!response.ok)
+          throw new Error(result.error || "Erreur de modification du statut");
+      }
       toast.success("Utilisateur mis à jour avec succès");
+      clearDraftOnSuccess();
       setDialogOpen(false);
       await refetch();
     } catch (error: any) {
@@ -225,9 +299,13 @@ function UsersManagement() {
 
     setIsSubmitting(true);
     try {
-      const passwordRequest = buildAdminPasswordRequest(createPasswordMode, formData.password);
+      const passwordRequest = buildAdminPasswordRequest(
+        createPasswordMode,
+        formData.password,
+      );
       const token = await getAccessToken();
-      if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
+      if (!token)
+        throw new Error("Session expirée. Veuillez vous reconnecter.");
 
       // Création centralisée via l'API Admin (source unique de vérité pour le mot de passe)
       const res = await fetch("/api/admin/users/create", {
@@ -247,8 +325,12 @@ function UsersManagement() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erreur lors de la création de l'utilisateur");
+      if (!res.ok)
+        throw new Error(
+          data.error || "Erreur lors de la création de l'utilisateur",
+        );
 
+      clearDraftOnSuccess();
       setDialogOpen(false);
       // Présentation immédiate des identifiants exacts dans la modal
       setCredentialsModal({
@@ -274,74 +356,6 @@ function UsersManagement() {
     }
   }
 
-  async function handleUpdateStatus(user: User, newStatus: User["statut"]) {
-    if (user.statut === newStatus) return;
-
-    if (isLastActiveAdmin(user) && newStatus !== "actif") {
-      toast.error(
-        "Action refusée : Impossible de désactiver ou suspendre le dernier administrateur actif du système."
-      );
-      return;
-    }
-
-    try {
-      const token = await getAccessToken();
-      if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
-
-      const res = await fetch(`/api/admin/users/${user.id}/status`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ statut: newStatus }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erreur de modification du statut");
-
-      toast.success(`Statut mis à jour : ${newStatus}`);
-      await refetch();
-    } catch (error: any) {
-      console.error("Erreur statut:", error);
-      toast.error(error.message || "Erreur lors de la modification du statut");
-    }
-  }
-
-  async function handleUpdateRole(user: User, newRole: User["role"]) {
-    if (user.role === newRole) return;
-
-    if (isLastActiveAdmin(user) && newRole !== "ADMIN") {
-      toast.error(
-        "Action refusée : Impossible de rétrograder le dernier administrateur actif du système."
-      );
-      return;
-    }
-
-    try {
-      const token = await getAccessToken();
-      if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
-
-      const res = await fetch(`/api/admin/users/${user.id}/role`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ role: newRole }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erreur de modification du rôle");
-
-      toast.success(`Rôle mis à jour : ${newRole}`);
-      await refetch();
-    } catch (error: any) {
-      console.error("Erreur rôle:", error);
-      toast.error(error.message || "Erreur lors de la modification du rôle");
-    }
-  }
-
   function openPasswordDialog(user: User) {
     setUserForPasswordReset(user);
     setManualResetPassword("");
@@ -354,9 +368,13 @@ function UsersManagement() {
 
     setIsResettingPassword(true);
     try {
-      const passwordRequest = buildAdminPasswordRequest(resetPasswordMode, manualResetPassword);
+      const passwordRequest = buildAdminPasswordRequest(
+        resetPasswordMode,
+        manualResetPassword,
+      );
       const token = await getAccessToken();
-      if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
+      if (!token)
+        throw new Error("Session expirée. Veuillez vous reconnecter.");
 
       const res = await fetch(
         `/api/admin/users/${userForPasswordReset.id}/reset-password`,
@@ -370,11 +388,12 @@ function UsersManagement() {
             ...passwordRequest,
             sendEmail: false,
           }),
-        }
+        },
       );
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erreur lors de la réinitialisation");
+      if (!res.ok)
+        throw new Error(data.error || "Erreur lors de la réinitialisation");
 
       setPasswordDialogOpen(false);
 
@@ -394,7 +413,9 @@ function UsersManagement() {
       setManualResetPassword("");
     } catch (error: any) {
       console.error("Erreur réinitialisation mot de passe:", error);
-      toast.error(error.message || "Impossible de réinitialiser le mot de passe.");
+      toast.error(
+        error.message || "Impossible de réinitialiser le mot de passe.",
+      );
     } finally {
       setIsResettingPassword(false);
     }
@@ -409,12 +430,14 @@ function UsersManagement() {
         userForPasswordReset.email,
         {
           redirectTo: `${window.location.origin}/reset-password`,
-        }
+        },
       );
 
       if (error) throw error;
 
-      toast.success(`Email de réinitialisation envoyé à ${userForPasswordReset.email}`);
+      toast.success(
+        `Email de réinitialisation envoyé à ${userForPasswordReset.email}`,
+      );
       setPasswordDialogOpen(false);
     } catch (error: any) {
       console.error("Erreur envoi lien:", error);
@@ -456,7 +479,9 @@ function UsersManagement() {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3">
         <Loader2 className="h-8 w-8 animate-spin text-[#006B2D]" />
-        <div className="text-sm text-[#556B5C]">Chargement de la gouvernance des comptes...</div>
+        <div className="text-sm text-[#556B5C]">
+          Chargement de la gouvernance des comptes...
+        </div>
       </div>
     );
   }
@@ -475,7 +500,8 @@ function UsersManagement() {
             </span>
           </div>
           <p className="text-xs sm:text-sm text-[#556B5C] mt-1">
-            Contrôle des accès, rôles opérationnels et sécurité des habilitations
+            Contrôle des accès, rôles opérationnels et sécurité des
+            habilitations
           </p>
         </div>
 
@@ -486,7 +512,9 @@ function UsersManagement() {
             onClick={() => refetch()}
             className="min-h-[44px] h-10 px-3 bg-white border-[#D8E6DB] hover:bg-[#F5F8F5] text-[#17251C]"
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin text-[#006B2D]" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin text-[#006B2D]" : ""}`}
+            />
             Actualiser
           </Button>
 
@@ -509,7 +537,9 @@ function UsersManagement() {
               Sécurité Critique : 1 seul administrateur actif détecté
             </p>
             <p className="text-amber-700">
-              Le système protège automatiquement le dernier administrateur actif contre toute rétrogradation, suspension ou suppression pour garantir la continuité de gestion.
+              Le système protège automatiquement le dernier administrateur actif
+              contre toute rétrogradation, suspension ou suppression pour
+              garantir la continuité de gestion.
             </p>
           </div>
         </div>
@@ -542,10 +572,10 @@ function UsersManagement() {
                       {u.statut === "invitation_envoyee"
                         ? "Invitation en attente"
                         : u.statut === "desactive"
-                        ? "Désactivé"
-                        : u.statut === "suspendu"
-                        ? "Suspendu"
-                        : "Actif"}
+                          ? "Désactivé"
+                          : u.statut === "suspendu"
+                            ? "Suspendu"
+                            : "Actif"}
                     </span>
                   </div>
                 </div>
@@ -558,11 +588,15 @@ function UsersManagement() {
                 )}
 
                 <div className="text-[11px] text-[#556B5C] flex justify-between pt-1 border-t border-[#D8E6DB]">
-                  <span>Créé le {new Date(u.cree_le).toLocaleDateString("fr-FR")}</span>
+                  <span>
+                    Créé le {new Date(u.cree_le).toLocaleDateString("fr-FR")}
+                  </span>
                   <span>
                     Dernière conn. :{" "}
                     {u.derniere_connexion
-                      ? new Date(u.derniere_connexion).toLocaleDateString("fr-FR")
+                      ? new Date(u.derniere_connexion).toLocaleDateString(
+                          "fr-FR",
+                        )
                       : "Jamais"}
                   </span>
                 </div>
@@ -603,13 +637,27 @@ function UsersManagement() {
         <Table>
           <TableHeader className="bg-[#F5F8F5] border-b border-[#D8E6DB]">
             <TableRow className="border-[#D8E6DB] hover:bg-transparent">
-              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">Nom complet</TableHead>
-              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">Email</TableHead>
-              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">Rôle opérationnel</TableHead>
-              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">Statut du compte</TableHead>
-              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">Dernière connexion</TableHead>
-              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">Créé le</TableHead>
-              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5 text-right">Actions</TableHead>
+              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">
+                Nom complet
+              </TableHead>
+              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">
+                Email
+              </TableHead>
+              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">
+                Rôle opérationnel
+              </TableHead>
+              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">
+                Statut du compte
+              </TableHead>
+              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">
+                Dernière connexion
+              </TableHead>
+              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5">
+                Créé le
+              </TableHead>
+              <TableHead className="text-[#556B5C] font-semibold text-xs py-3.5 text-right">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="divide-y divide-[#D8E6DB]">
@@ -617,10 +665,15 @@ function UsersManagement() {
               users.map((u) => {
                 const isProtectedAdmin = isLastActiveAdmin(u);
                 return (
-                  <TableRow key={u.id} className="border-[#D8E6DB] hover:bg-[#F5F8F5]/60 transition-colors">
+                  <TableRow
+                    key={u.id}
+                    className="border-[#D8E6DB] hover:bg-[#F5F8F5]/60 transition-colors"
+                  >
                     <TableCell className="font-medium text-[#17251C] text-xs py-3">
                       <div className="flex items-center gap-2">
-                        <span>{u.nom} {u.prenom}</span>
+                        <span>
+                          {u.nom} {u.prenom}
+                        </span>
                         {isProtectedAdmin && (
                           <span
                             title="Dernier administrateur actif du système (protégé)"
@@ -631,37 +684,22 @@ function UsersManagement() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-[#556B5C] font-mono text-xs py-3">{u.email}</TableCell>
-                    <TableCell className="py-3">
-                      <select
-                        aria-label="Modifier le rôle"
-                        disabled={isProtectedAdmin}
-                        className={`${getRoleBadge(u.role)} bg-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
-                        value={u.role}
-                        onChange={(e) =>
-                          handleUpdateRole(u, e.target.value as "ADMIN" | "CONTROLEUR" | "AGENT")
-                        }
-                      >
-                        <option value="ADMIN">ADMIN</option>
-                        <option value="CONTROLEUR">CONTROLEUR</option>
-                        <option value="AGENT">AGENT</option>
-                      </select>
+                    <TableCell className="text-[#556B5C] font-mono text-xs py-3">
+                      {u.email}
                     </TableCell>
                     <TableCell className="py-3">
-                      <select
-                        aria-label="Modifier le statut"
-                        disabled={isProtectedAdmin}
-                        className={`${getStatusBadge(u.statut)} bg-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
-                        value={u.statut}
-                        onChange={(e) =>
-                          handleUpdateStatus(u, e.target.value as User["statut"])
-                        }
-                      >
-                        <option value="actif">Actif</option>
-                        <option value="suspendu">Suspendu</option>
-                        <option value="invitation_envoyee">Invitation en attente</option>
-                        <option value="desactive">Désactivé</option>
-                      </select>
+                      <span className={getRoleBadge(u.role)}>{u.role}</span>
+                    </TableCell>
+                    <TableCell className="py-3">
+                      <span className={getStatusBadge(u.statut)}>
+                        {u.statut === "invitation_envoyee"
+                          ? "Invitation en attente"
+                          : u.statut === "actif"
+                            ? "Actif"
+                            : u.statut === "suspendu"
+                              ? "Suspendu"
+                              : "Désactivé"}
+                      </span>
                     </TableCell>
                     <TableCell className="text-[#556B5C] text-xs py-3">
                       {u.derniere_connexion
@@ -678,7 +716,7 @@ function UsersManagement() {
                           size="sm"
                           onClick={() => openDialog(u)}
                           className="h-8 w-8 p-0 text-[#556B5C] hover:text-[#17251C] hover:bg-[#F5F8F5]"
-                          title="Modifier l'utilisateur"
+                          title="Consulter l’utilisateur"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
@@ -713,107 +751,151 @@ function UsersManagement() {
       {/* =========================================================================
           DIALOG DE CRÉATION / MODIFICATION D'UTILISATEUR
           ========================================================================= */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => {
-        if (isSubmitting) return;
-        setDialogOpen(open);
-        if (!open) setFormData((previous) => ({ ...previous, password: "" }));
-      }}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (isSubmitting) return;
+          setDialogOpen(open);
+          if (!open) setFormData((previous) => ({ ...previous, password: "" }));
+        }}
+      >
         <DialogContent className="max-w-md bg-white border border-[#D8E6DB] text-[#17251C] shadow-2xl p-6">
           <DialogHeader className="space-y-1">
             <DialogTitle className="text-lg font-bold text-[#17251C]">
-              {editingUser ? "Modifier l'utilisateur" : "Créer un nouvel utilisateur"}
+              {editingUser
+                ? "Consulter l’utilisateur"
+                : "Créer un nouvel utilisateur"}
             </DialogTitle>
             <DialogDescription className="text-xs text-[#556B5C]">
               {editingUser
-                ? "Mettez à jour les informations du compte. Les synchronisations d'accès sont automatiques."
+                ? "Consultez les informations du compte. Utilisez Modifier pour les mettre à jour."
                 : "Renseignez les coordonnées et choisissez comment définir le mot de passe initial."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-2">
-            <div>
-              <label className="text-xs font-semibold text-[#17251C] block mb-1.5">Nom de famille *</label>
-              <Input
-                value={formData.nom}
-                onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                placeholder="Ex : Diallo"
-                className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-sm h-10"
-              />
-            </div>
+          <RecordForm
+            key={`${dialogOpen}-${editingUser?.id || "new"}`}
+            existing={!!editingUser}
+            onSave={handleSaveUser}
+            onClose={() => setDialogOpen(false)}
+            onRestore={() => openDialog(editingUser!)}
+            createLabel="Créer le compte utilisateur"
+            busy={isSubmitting}
+            hasDraft={hasDraft}
+            draftTime={savedAtFormatted}
+            hasConflict={hasConflict}
+            onRestoreDraft={restoreDraft}
+            onDiscardDraft={discardDraft}
+            draftSaveStatus={saveStatus}
+          >
+            <div className="grid gap-4 py-2">
+              <div>
+                <label className="text-xs font-semibold text-[#17251C] block mb-1.5">
+                  Nom de famille *
+                </label>
+                <Input
+                  value={formData.nom}
+                  onChange={(e) =>
+                    setFormData({ ...formData, nom: e.target.value })
+                  }
+                  placeholder="Ex : Diallo"
+                  className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-sm h-10"
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-semibold text-[#17251C] block mb-1.5">Prénom</label>
-              <Input
-                value={formData.prenom}
-                onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
-                placeholder="Ex : Amadou"
-                className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-sm h-10"
-              />
-            </div>
+              <div>
+                <label className="text-xs font-semibold text-[#17251C] block mb-1.5">
+                  Prénom
+                </label>
+                <Input
+                  value={formData.prenom}
+                  onChange={(e) =>
+                    setFormData({ ...formData, prenom: e.target.value })
+                  }
+                  placeholder="Ex : Amadou"
+                  className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-sm h-10"
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-semibold text-[#17251C] block mb-1.5">Adresse email *</label>
-              <Input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="amadou.diallo@parisportif.com"
-                className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-sm h-10 font-mono"
-              />
-            </div>
+              <div>
+                <label className="text-xs font-semibold text-[#17251C] block mb-1.5">
+                  Adresse email *
+                </label>
+                <Input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
+                  placeholder="amadou.diallo@parisportif.com"
+                  className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-sm h-10 font-mono"
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-semibold text-[#17251C] block mb-1.5">Rôle opérationnel *</label>
-              <select
-                className="w-full bg-[#F5F8F5] border border-[#D8E6DB] rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-1 focus:ring-[#006B2D] h-10"
-                value={formData.role}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    role: e.target.value as "ADMIN" | "CONTROLEUR" | "AGENT",
-                  })
-                }
-              >
-                <option value="AGENT">Agent de saisie</option>
-                <option value="CONTROLEUR">Contrôleur de conformité</option>
-                <option value="ADMIN">Administrateur système</option>
-              </select>
-            </div>
+              <div>
+                <label className="text-xs font-semibold text-[#17251C] block mb-1.5">
+                  Rôle opérationnel *
+                </label>
+                <select
+                  className="w-full bg-[#F5F8F5] border border-[#D8E6DB] rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-1 focus:ring-[#006B2D] h-10"
+                  disabled={!!editingUser && isLastActiveAdmin(editingUser)}
+                  value={formData.role}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      role: e.target.value as "ADMIN" | "CONTROLEUR" | "AGENT",
+                    })
+                  }
+                >
+                  <option value="AGENT">Agent de saisie</option>
+                  <option value="CONTROLEUR">Contrôleur de conformité</option>
+                  <option value="ADMIN">Administrateur système</option>
+                </select>
+              </div>
 
-            {/* Option mot de passe en mode création */}
-            {!editingUser && (
-              <AdminPasswordChoice mode={createPasswordMode} password={formData.password} onModeChange={setCreatePasswordMode} onPasswordChange={(password) => setFormData((previous) => ({ ...previous, password }))} disabled={isSubmitting} />
-            )}
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-[#D8E6DB]">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isSubmitting}
-                onClick={() => { setDialogOpen(false); setFormData((previous) => ({ ...previous, password: "" })); }}
-                className="min-h-[44px] bg-[#F5F8F5] hover:bg-[#E2EBE4] text-[#17251C] border-[#D8E6DB] text-xs font-medium"
-              >
-                Annuler
-              </Button>
-              <Button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleSaveUser}
-                className="min-h-[44px] bg-[#006B2D] hover:bg-[#004D20] text-white text-xs font-semibold shadow-xs"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Enregistrement...
-                  </>
-                ) : editingUser ? (
-                  "Enregistrer les modifications"
-                ) : (
-                  "Créer le compte utilisateur"
-                )}
-              </Button>
+              {editingUser && (
+                <div>
+                  <label
+                    htmlFor="account-status"
+                    className="text-xs font-semibold block mb-1.5"
+                  >
+                    Statut du compte
+                  </label>
+                  <select
+                    id="account-status"
+                    className="w-full min-h-11 rounded-lg border bg-background px-3"
+                    disabled={isLastActiveAdmin(editingUser)}
+                    value={formData.statut}
+                    onChange={(event) =>
+                      setFormData({
+                        ...formData,
+                        statut: event.target.value as User["statut"],
+                      })
+                    }
+                  >
+                    <option value="actif">Actif</option>
+                    <option value="suspendu">Suspendu</option>
+                    <option value="invitation_envoyee">
+                      Invitation en attente
+                    </option>
+                    <option value="desactive">Désactivé</option>
+                  </select>
+                </div>
+              )}
+              {/* Option mot de passe en mode création */}
+              {!editingUser && (
+                <AdminPasswordChoice
+                  mode={createPasswordMode}
+                  password={formData.password}
+                  onModeChange={setCreatePasswordMode}
+                  onPasswordChange={(password) =>
+                    setFormData((previous) => ({ ...previous, password }))
+                  }
+                  disabled={isSubmitting}
+                />
+              )}
             </div>
-          </div>
+          </RecordForm>
         </DialogContent>
       </Dialog>
 
@@ -834,7 +916,8 @@ function UsersManagement() {
               Réinitialiser le mot de passe
             </DialogTitle>
             <DialogDescription className="text-xs text-[#556B5C]">
-              Définir un nouveau mot de passe temporaire ou envoyer un lien sécurisé par email.
+              Définir un nouveau mot de passe temporaire ou envoyer un lien
+              sécurisé par email.
             </DialogDescription>
           </DialogHeader>
 
@@ -844,13 +927,23 @@ function UsersManagement() {
                 <p className="font-semibold text-[#17251C]">
                   {userForPasswordReset.nom} {userForPasswordReset.prenom}
                 </p>
-                <p className="font-mono text-[#556B5C]">{userForPasswordReset.email}</p>
-                <p className="text-[11px] text-[#006B2D] font-medium">Rôle : {userForPasswordReset.role}</p>
+                <p className="font-mono text-[#556B5C]">
+                  {userForPasswordReset.email}
+                </p>
+                <p className="text-[11px] text-[#006B2D] font-medium">
+                  Rôle : {userForPasswordReset.role}
+                </p>
               </div>
 
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <AdminPasswordChoice mode={resetPasswordMode} password={manualResetPassword} onModeChange={setResetPasswordMode} onPasswordChange={setManualResetPassword} disabled={isResettingPassword || isSendingLink} />
+                  <AdminPasswordChoice
+                    mode={resetPasswordMode}
+                    password={manualResetPassword}
+                    onModeChange={setResetPasswordMode}
+                    onPasswordChange={setManualResetPassword}
+                    disabled={isResettingPassword || isSendingLink}
+                  />
                   <Button
                     type="button"
                     disabled={isResettingPassword || isSendingLink}
@@ -865,7 +958,9 @@ function UsersManagement() {
                     ) : (
                       <>
                         <Key className="h-4 w-4 mr-2" />
-                        {resetPasswordMode === "manual" ? "Appliquer le mot de passe saisi" : "Générer et appliquer un mot de passe"}
+                        {resetPasswordMode === "manual"
+                          ? "Appliquer le mot de passe saisi"
+                          : "Générer et appliquer un mot de passe"}
                       </>
                     )}
                   </Button>
@@ -876,7 +971,9 @@ function UsersManagement() {
                     <span className="w-full border-t border-[#D8E6DB]" />
                   </div>
                   <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-2 text-[#556B5C] font-semibold">Ou</span>
+                    <span className="bg-white px-2 text-[#556B5C] font-semibold">
+                      Ou
+                    </span>
                   </div>
                 </div>
 
@@ -911,7 +1008,10 @@ function UsersManagement() {
                   type="button"
                   variant="outline"
                   disabled={isResettingPassword || isSendingLink}
-                  onClick={() => { setPasswordDialogOpen(false); setManualResetPassword(""); }}
+                  onClick={() => {
+                    setPasswordDialogOpen(false);
+                    setManualResetPassword("");
+                  }}
                   className="min-h-[44px] bg-[#F5F8F5] hover:bg-[#E2EBE4] text-[#17251C] border-[#D8E6DB] text-xs font-medium"
                 >
                   Fermer
@@ -927,7 +1027,13 @@ function UsersManagement() {
           ========================================================================= */}
       <CredentialsModal
         isOpen={credentialsModal.isOpen}
-        onClose={() => setCredentialsModal((prev) => ({ ...prev, isOpen: false, credentials: null }))}
+        onClose={() =>
+          setCredentialsModal((prev) => ({
+            ...prev,
+            isOpen: false,
+            credentials: null,
+          }))
+        }
         title={credentialsModal.title}
         description={credentialsModal.description}
         credentials={credentialsModal.credentials}

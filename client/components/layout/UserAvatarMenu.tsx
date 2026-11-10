@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -103,7 +103,10 @@ export function UserAvatarMenu({
         >
           <div className="flex items-center gap-3 min-w-0">
             <div className="relative shrink-0">
-              <Avatar className="h-9 w-9 rounded-xl border border-white/20 bg-[#003816] text-white shadow-xs">
+              <Avatar className="h-9 w-9 rounded-xl border border-white/20 bg-[#003816] text-white shadow-xs overflow-hidden">
+                {user?.avatar_url && (
+                  <AvatarImage src={user.avatar_url} alt={fullName} className="object-cover h-full w-full" />
+                )}
                 <AvatarFallback className="font-bold text-xs tracking-wider bg-[#003816] text-[#FFD000]">
                   {initials}
                 </AvatarFallback>
@@ -144,7 +147,10 @@ export function UserAvatarMenu({
         {/* En-tête profil */}
         <DropdownMenuLabel className="font-normal p-2">
           <div className="flex items-center gap-3">
-            <Avatar className="h-10 w-10 rounded-xl border border-[#D8E6DB] bg-[#004D20] text-white">
+            <Avatar className="h-10 w-10 rounded-xl border border-[#D8E6DB] bg-[#004D20] text-white overflow-hidden">
+              {user?.avatar_url && (
+                <AvatarImage src={user.avatar_url} alt={fullName} className="object-cover h-full w-full" />
+              )}
               <AvatarFallback className="font-bold text-sm bg-[#004D20] text-[#FFD000]">
                 {initials}
               </AvatarFallback>

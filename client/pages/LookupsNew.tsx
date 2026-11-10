@@ -1,3 +1,4 @@
+import { RecordForm } from "@/components/common/RecordForm";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RequireAuth, RequireRole } from "@/context/AuthContext";
-import { Plus, Pencil, Trash, RefreshCw } from "lucide-react";
+import { Plus, Eye, Trash, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLookups } from "@/hooks/use-data-queries";
@@ -119,7 +120,8 @@ export default function LookupsPage() {
 
       setDlg(null);
       setInputValue("");
-      await refetch(); invalidateRelatedQueries('lookups');
+      await refetch();
+      invalidateRelatedQueries("lookups");
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de l'enregistrement");
@@ -151,18 +153,15 @@ export default function LookupsPage() {
       if (error) throw error;
 
       toast.success("Supprimé avec succès");
-      await refetch(); invalidateRelatedQueries('lookups');
+      await refetch();
+      invalidateRelatedQueries("lookups");
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de la suppression");
     }
   }
 
-  function openDialog(
-    key: LookupKey,
-    mode: "add" | "edit",
-    initial?: string
-  ) {
+  function openDialog(key: LookupKey, mode: "add" | "edit", initial?: string) {
     setDlg({ key, mode, initial });
     setInputValue(initial || "");
   }
@@ -176,7 +175,7 @@ export default function LookupsPage() {
       { key: "bet_types", title: "Types de pari" },
       { key: "statuses", title: "Statuts de pari" },
     ],
-    []
+    [],
   );
 
   return (
@@ -203,7 +202,7 @@ export default function LookupsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {keys.map(({ key, title }) => {
                 const filteredItems = lookups[key].filter((v) =>
-                  v.toLowerCase().includes(filter.toLowerCase())
+                  v.toLowerCase().includes(filter.toLowerCase()),
                 );
                 const displayItems = filteredItems.slice(0, MAX_ITEMS_PREVIEW);
                 const hasMore = filteredItems.length > MAX_ITEMS_PREVIEW;
@@ -233,9 +232,10 @@ export default function LookupsPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                aria-label={`Consulter ${v}`}
                                 onClick={() => openDialog(key, "edit", v)}
                               >
-                                <Pencil className="h-4 w-4" />
+                                <Eye className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -274,30 +274,28 @@ export default function LookupsPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>
-                  {dlg?.mode === "add" ? "Ajouter" : "Modifier"} une valeur
+                  {dlg?.mode === "add" ? "Ajouter" : "Consulter"} une valeur
                 </DialogTitle>
               </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Valeur</label>
-                  <Input
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    placeholder="Entrez une valeur..."
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSave();
-                    }}
-                  />
+              <RecordForm
+                key={`${!!dlg}-${dlg?.key}-${dlg?.initial}`}
+                existing={dlg?.mode === "edit"}
+                onSave={handleSave}
+                onClose={() => setDlg(null)}
+                onRestore={() => setInputValue(dlg?.initial || "")}
+                createLabel="Ajouter"
+              >
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium">Valeur</label>
+                    <Input
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      placeholder="Entrez une valeur..."
+                    />
+                  </div>
                 </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setDlg(null)}>
-                    Annuler
-                  </Button>
-                  <Button onClick={handleSave}>
-                    {dlg?.mode === "add" ? "Ajouter" : "Modifier"}
-                  </Button>
-                </div>
-              </div>
+              </RecordForm>
             </DialogContent>
           </Dialog>
 
@@ -328,7 +326,7 @@ export default function LookupsPage() {
                   {viewAllDialog &&
                     lookups[viewAllDialog.key]
                       .filter((v) =>
-                        v.toLowerCase().includes(filter.toLowerCase())
+                        v.toLowerCase().includes(filter.toLowerCase()),
                       )
                       .map((v, index) => (
                         <li
@@ -350,7 +348,7 @@ export default function LookupsPage() {
                                 setViewAllDialog(null);
                               }}
                             >
-                              <Pencil className="h-4 w-4" />
+                              <Eye className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -371,7 +369,7 @@ export default function LookupsPage() {
                   Total :{" "}
                   {viewAllDialog &&
                     lookups[viewAllDialog.key].filter((v) =>
-                      v.toLowerCase().includes(filter.toLowerCase())
+                      v.toLowerCase().includes(filter.toLowerCase()),
                     ).length}{" "}
                   élément(s)
                 </p>

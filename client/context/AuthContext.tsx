@@ -20,6 +20,7 @@ export interface User {
   email: string;
   role: Role;
   statut: string;
+  avatar_url?: string;
   must_change_password?: boolean;
   derniere_connexion?: string;
   cree_le?: string;
@@ -50,10 +51,23 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
   const [loading, setLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  // Référence synchrone immédiate sur l'utilisateur courant pour les callbacks
+  const userRef = useRef<User | null>(null);
+
   // Identifiant de génération pour invalider immédiatement les chargements précédents
   const generationRef = useRef<number>(0);
   const activeUserIdRef = useRef<string | null>(null);
   const isLoggingOutRef = useRef<boolean>(false);
+
+  // Déduplication des requêtes de profil en vol pour un même utilisateur et génération
+  const inFlightProfilePromiseRef = useRef<{
+    userId: string;
+    generation: number;
+    promise: Promise<void>;
+  } | null>(null);
+
+  // Horodatage du dernier update de derniere_connexion (pour éviter de spammer la base)
+  const lastConnectionUpdatedRef = useRef<number>(0);
 
   /**
    * Chargement du profil utilisateur associé à un identifiant de génération précis.
@@ -61,76 +75,135 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
    * la réponse est totalement ignorée (protection contre les réponses tardives).
    */
   const loadProfileForGeneration = useCallback(
-    async (userId: string, generation: number) => {
-      try {
-        if (generationRef.current !== generation || activeUserIdRef.current !== userId) {
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", userId)
-          .maybeSingle();
-
-        // Vérification post-requête : le contexte a-t-il changé pendant le vol ?
-        if (generationRef.current !== generation || activeUserIdRef.current !== userId) {
-          return;
-        }
-
-        if (error) {
-          console.warn("Erreur chargement profil utilisateur:", error.message || error);
-          if (generationRef.current === generation) {
-            setLoading(false);
-          }
-          return;
-        }
-
-        if (!data) {
-          console.warn("Utilisateur introuvable dans la table users.");
-          if (generationRef.current === generation) {
-            setLoading(false);
-          }
-          return;
-        }
-
-        // Vérification de compte suspendu ou inactif
-        if (data.statut !== "actif") {
-          console.warn("Compte inactif ou suspendu. Déconnexion automatique.");
-          if (generationRef.current === generation) {
-            setUser(null);
-            setLoading(false);
-            void triggerLogout();
-          }
-          return;
-        }
-
-        if (generationRef.current === generation) {
-          setUser(data);
-          setLoading(false);
-
-          // Horodatage de la dernière connexion en arrière-plan sans bloquer
-          void (async () => {
-            try {
-              if (generationRef.current === generation) {
-                await supabase
-                  .from("users")
-                  .update({ derniere_connexion: new Date().toISOString() })
-                  .eq("id", userId);
-              }
-            } catch {
-              // Silencieux
-            }
-          })();
-        }
-      } catch (err: any) {
-        if (generationRef.current === generation) {
-          console.warn("Exception loadProfileForGeneration:", err?.message || err);
-          setLoading(false);
-        }
+    async (
+      userId: string,
+      generation: number,
+      options: { background?: boolean } = {}
+    ): Promise<void> => {
+      // Déduplication : si une requête identique est déjà en vol, la réutiliser
+      if (
+        inFlightProfilePromiseRef.current &&
+        inFlightProfilePromiseRef.current.userId === userId &&
+        inFlightProfilePromiseRef.current.generation === generation
+      ) {
+        return inFlightProfilePromiseRef.current.promise;
       }
+
+      const fetchPromise = (async () => {
+        try {
+          if (
+            generationRef.current !== generation ||
+            activeUserIdRef.current !== userId
+          ) {
+            return;
+          }
+
+          const { data, error } = await supabase
+            .from("users")
+            .select("*")
+            .eq("id", userId)
+            .maybeSingle();
+
+          // Vérification post-requête : le contexte a-t-il changé pendant le vol ?
+          if (
+            generationRef.current !== generation ||
+            activeUserIdRef.current !== userId
+          ) {
+            return;
+          }
+
+          if (error) {
+            console.warn(
+              "Erreur chargement profil utilisateur:",
+              error.message || error
+            );
+            // Si c'est une vérification en arrière-plan et qu'on a déjà un utilisateur en mémoire,
+            // une erreur réseau temporaire NE DOIT PAS déconnecter l'utilisateur ni vider son écran !
+            if (generationRef.current === generation) {
+              if (!options.background || !userRef.current) {
+                setLoading(false);
+              }
+            }
+            return;
+          }
+
+          if (!data) {
+            console.warn("Utilisateur introuvable dans la table users.");
+            if (generationRef.current === generation) {
+              setUser(null);
+              userRef.current = null;
+              setLoading(false);
+              void triggerLogout();
+            }
+            return;
+          }
+
+          // Vérification de compte suspendu ou inactif
+          if (data.statut !== "actif") {
+            console.warn(
+              `Compte inactif ou suspendu (${data.statut}). Déconnexion automatique.`
+            );
+            if (generationRef.current === generation) {
+              setUser(null);
+              userRef.current = null;
+              setLoading(false);
+              void triggerLogout();
+            }
+            return;
+          }
+
+          if (generationRef.current === generation) {
+            setUser(data);
+            userRef.current = data;
+            setLoading(false);
+
+            // Horodatage de la dernière connexion throttlé (au plus une fois toutes les 15 minutes)
+            const now = Date.now();
+            if (now - lastConnectionUpdatedRef.current > 15 * 60 * 1000) {
+              lastConnectionUpdatedRef.current = now;
+              void (async () => {
+                try {
+                  if (generationRef.current === generation) {
+                    await supabase
+                      .from("users")
+                      .update({ derniere_connexion: new Date().toISOString() })
+                      .eq("id", userId);
+                  }
+                } catch {
+                  // Silencieux
+                }
+              })();
+            }
+          }
+        } catch (err: any) {
+          if (generationRef.current === generation) {
+            console.warn(
+              "Exception loadProfileForGeneration:",
+              err?.message || err
+            );
+            if (!options.background || !userRef.current) {
+              setLoading(false);
+            }
+          }
+        } finally {
+          if (
+            inFlightProfilePromiseRef.current?.generation === generation &&
+            inFlightProfilePromiseRef.current?.userId === userId
+          ) {
+            inFlightProfilePromiseRef.current = null;
+          }
+        }
+      })();
+
+      inFlightProfilePromiseRef.current = {
+        userId,
+        generation,
+        promise: fetchPromise,
+      };
+
+      return fetchPromise;
     },
-    [],
+    []
   );
 
   /**
@@ -146,6 +219,7 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
     // 1. Invalider immédiatement toute requête de profil en cours
     generationRef.current += 1;
     activeUserIdRef.current = null;
+    userRef.current = null;
 
     // 2. Mettre l'utilisateur à null pour protéger l'interface immédiatement
     setUser(null);
@@ -166,7 +240,10 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
         }
       }
     } catch (err: any) {
-      console.warn("Exception signOut Supabase (ex: hors ligne):", err?.message || err);
+      console.warn(
+        "Exception signOut Supabase (ex: hors ligne):",
+        err?.message || err
+      );
       try {
         await supabase.auth.signOut({ scope: "local" });
       } catch {
@@ -191,28 +268,57 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
     } = supabase.auth.onAuthStateChange((event, session) => {
       const newUserId = session?.user?.id ?? null;
 
+      // Déconnexion ou session absente
       if (event === "SIGNED_OUT" || !newUserId) {
         generationRef.current += 1;
         activeUserIdRef.current = null;
+        userRef.current = null;
         setUser(null);
         setLoading(false);
         purgeAllAppCaches();
         return;
       }
 
-      // Si le jeton est rafraîchi mais que l'utilisateur est déjà chargé, ne pas relancer
-      if (event === "TOKEN_REFRESHED" && activeUserIdRef.current === newUserId) {
+      // MÊME UTILISATEUR DÉJÀ CONNECTÉ
+      // Événements : "SIGNED_IN" (ex: reconnexion onglet), "TOKEN_REFRESHED", "USER_UPDATED"
+      if (activeUserIdRef.current === newUserId && userRef.current !== null) {
+        // RÈGLE CRITIQUE : NE JAMAIS remettre loading à true pour le même utilisateur !
+        // Cela évite que RequireAuth démonte les composants de page et efface les saisies en cours.
+        if (event === "TOKEN_REFRESHED") {
+          return; // Renouvellement silencieux
+        }
+
+        // Si c'est SIGNED_IN ou USER_UPDATED pour le même utilisateur, rafraîchir en tâche de fond
+        const currentGen = generationRef.current;
+        setTimeout(() => {
+          if (isMounted) {
+            void loadProfileForGeneration(newUserId, currentGen, {
+              background: true,
+            });
+          }
+        }, 0);
         return;
       }
 
-      // Déclencher la lecture du profil en dehors du callback et de son verrou
+      // NOUVEL UTILISATEUR OU CHANGEMENT DE COMPTE
+      const isAccountSwitch =
+        activeUserIdRef.current !== null &&
+        activeUserIdRef.current !== newUserId;
+
+      if (isAccountSwitch) {
+        // Purger immédiatement les caches de l'ancien compte pour étanchéité stricte
+        purgeAllAppCaches();
+        setUser(null);
+        userRef.current = null;
+      }
+
       activeUserIdRef.current = newUserId;
       const gen = ++generationRef.current;
       setLoading(true);
 
       setTimeout(() => {
         if (isMounted) {
-          void loadProfileForGeneration(newUserId, gen);
+          void loadProfileForGeneration(newUserId, gen, { background: false });
         }
       }, 0);
     });
@@ -233,16 +339,20 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
           return;
         }
 
-        if (activeUserIdRef.current !== session.user.id) {
+        if (activeUserIdRef.current !== session.user.id || !userRef.current) {
           activeUserIdRef.current = session.user.id;
           const gen = ++generationRef.current;
           setLoading(true);
 
           setTimeout(() => {
             if (isMounted) {
-              void loadProfileForGeneration(session.user.id, gen);
+              void loadProfileForGeneration(session.user.id, gen, {
+                background: false,
+              });
             }
           }, 0);
+        } else {
+          setLoading(false);
         }
       })
       .catch((err) => {
@@ -275,12 +385,18 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
           activeUserIdRef.current = data.user.id;
           const gen = ++generationRef.current;
           setLoading(true);
-          await loadProfileForGeneration(data.user.id, gen);
+          await loadProfileForGeneration(data.user.id, gen, {
+            background: false,
+          });
         }
       },
       logout: triggerLogout,
       updateUser(updatedFields: Partial<User>) {
-        setUser((prev) => (prev ? { ...prev, ...updatedFields } : null));
+        setUser((prev) => {
+          const next = prev ? { ...prev, ...updatedFields } : null;
+          userRef.current = next;
+          return next;
+        });
       },
       async refreshUser() {
         const {
@@ -289,17 +405,23 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
         if (session?.user) {
           activeUserIdRef.current = session.user.id;
           const gen = ++generationRef.current;
-          await loadProfileForGeneration(session.user.id, gen);
+          await loadProfileForGeneration(session.user.id, gen, {
+            background: true,
+          });
         }
       },
       async getAccessToken() {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        return session?.access_token || null;
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          return session?.access_token || null;
+        } catch {
+          return null;
+        }
       },
     }),
-    [user, loading, isLoggingOut, loadProfileForGeneration, triggerLogout],
+    [user, loading, isLoggingOut, loadProfileForGeneration, triggerLogout]
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
@@ -316,7 +438,11 @@ function AuthProviderWithoutRouter({ children }: { children: React.ReactNode }) 
       window.location.href = to;
     }
   }, []);
-  return <AuthProviderContent navigate={fallbackNavigate}>{children}</AuthProviderContent>;
+  return (
+    <AuthProviderContent navigate={fallbackNavigate}>
+      {children}
+    </AuthProviderContent>
+  );
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -341,15 +467,23 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading, isLoggingOut } = useAuth();
   const inRouter = useInRouterContext();
   const location = inRouter ? useLocation() : null;
-  const currentPath = location?.pathname || (typeof window !== "undefined" ? window.location.pathname : "");
+  const currentPath =
+    location?.pathname ||
+    (typeof window !== "undefined" ? window.location.pathname : "");
 
-  if (loading || isLoggingOut) {
+  // Écran bloquant réservé STRICTEMENT :
+  // 1. Au processus de déconnexion volontaire (isLoggingOut)
+  // 2. À l'initialisation quand l'utilisateur n'est pas encore connu (!user && loading)
+  // Une vérification en arrière-plan d'un utilisateur déjà connu ne DOIT JAMAIS démonter le contenu.
+  if (isLoggingOut || (!user && loading)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
           <p className="text-xs text-muted-foreground">
-            {isLoggingOut ? "Déconnexion en cours..." : "Vérification de la session..."}
+            {isLoggingOut
+              ? "Déconnexion en cours..."
+              : "Vérification de la session..."}
           </p>
         </div>
       </div>
@@ -363,7 +497,9 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
   // Si le renouvellement obligatoire du mot de passe est actif,
   // forcer la navigation vers /profil pour changer le mot de passe
   if (user.must_change_password && currentPath !== "/profil") {
-    return <Navigate to="/profil" state={{ mustChangePassword: true }} replace />;
+    return (
+      <Navigate to="/profil" state={{ mustChangePassword: true }} replace />
+    );
   }
 
   return <>{children}</>;

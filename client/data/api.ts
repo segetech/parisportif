@@ -19,6 +19,7 @@ export interface User {
   email: string;
   role: Role;
   statut: UserStatus;
+  avatar_url?: string;
   derniere_connexion?: string;
   cree_le: string;
   mis_a_jour_le: string;

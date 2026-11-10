@@ -25,6 +25,12 @@ import {
   handleListAuditLogs,
   handleCreateAuditLog,
 } from "./routes/audit";
+import {
+  handleUploadWithMulter,
+  handleUploadFile,
+  handleGetFile,
+  handleDeleteFile,
+} from "./routes/storage";
 import { requireAuth, requireRole } from "./middleware/auth";
 
 export function createServer() {
@@ -113,6 +119,11 @@ export function createServer() {
     handleListAuditLogs
   );
   app.post("/api/audit", requireAuth, handleCreateAuditLog);
+
+  // Cloudflare R2 Object Storage routes
+  app.post("/api/upload", handleUploadWithMulter, handleUploadFile);
+  app.get("/api/storage/file/{*key}", handleGetFile);
+  app.delete("/api/storage/file/{*key}", requireAuth, handleDeleteFile);
 
   return app;
 }

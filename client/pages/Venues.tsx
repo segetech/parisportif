@@ -1,3 +1,5 @@
+import { RecordForm } from "@/components/common/RecordForm";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,9 +23,23 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { CreatableSelect } from "@/components/ui/creatable-select";
-import { Plus, Pencil, Trash2, RefreshCw, Building, MapPin, Phone } from "lucide-react";
+import {
+  Plus,
+  Eye,
+  Trash2,
+  RefreshCw,
+  Building,
+  MapPin,
+  Phone,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useVenues, useLookups, useCreateVenue, useUpdateVenue, useDeleteVenue } from "@/hooks/use-data-queries";
+import {
+  useVenues,
+  useLookups,
+  useCreateVenue,
+  useUpdateVenue,
+  useDeleteVenue,
+} from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
 
 interface Venue {
@@ -40,6 +56,8 @@ interface Venue {
   gps_lng?: number;
   notes?: string;
   validation_status?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export default function VenuesPage() {
@@ -53,7 +71,7 @@ export default function VenuesPage() {
 function Venues() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
-  
+
   // États
   // Centralisation TanStack React Query pour navigation instantanée
   const { data: venues = [], isLoading, isFetching, refetch } = useVenues();
@@ -64,17 +82,17 @@ function Venues() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Venue | null>(null);
-  
+
   // Listes déroulantes synchronisées depuis le cache
   const operators = lookupsData?.operatorNames || [];
   const supports = lookupsData?.supportNames || [];
   const betTypes = lookupsData?.betTypeNames || [];
-  
+
   // Filtres
   const [search, setSearch] = useState("");
   const [operatorFilter, setOperatorFilter] = useState("");
   const [betTypeFilter, setBetTypeFilter] = useState("");
-  
+
   // Formulaire
   const [formData, setFormData] = useState({
     quartier_no: "",
@@ -88,14 +106,28 @@ function Venues() {
     gps_lng: undefined as number | undefined,
     notes: "",
   });
+
+  const {
+    hasDraft,
+    savedAtFormatted,
+    hasConflict,
+    saveStatus,
+    restoreDraft,
+    discardDraft,
+    clearDraftOnSuccess,
+    notifyChange,
+  } = useFormDraft(formData, setFormData, {
+    entityType: "venues",
+    recordId: editing?.id || "new",
+    serverUpdatedAt: editing?.updated_at || editing?.created_at,
+  });
+
   const [selectedGames, setSelectedGames] = useState<string[]>([]);
 
   // Fonctions pour créer de nouveaux éléments
   async function createOperator(name: string) {
-    const { error } = await supabase
-      .from("operators")
-      .insert([{ name }]);
-    
+    const { error } = await supabase.from("operators").insert([{ name }]);
+
     if (error) {
       if (error.code === "23505") {
         toast.error("Cet opérateur existe déjà");
@@ -104,16 +136,14 @@ function Venues() {
       }
       throw error;
     }
-    
+
     invalidateRelatedQueries("lookups");
     toast.success(`Opérateur "${name}" créé avec succès`);
   }
 
   async function createSupport(name: string) {
-    const { error } = await supabase
-      .from("supports")
-      .insert([{ name }]);
-    
+    const { error } = await supabase.from("supports").insert([{ name }]);
+
     if (error) {
       if (error.code === "23505") {
         toast.error("Ce support existe déjà");
@@ -122,16 +152,14 @@ function Venues() {
       }
       throw error;
     }
-    
+
     invalidateRelatedQueries("lookups");
     toast.success(`Support "${name}" créé avec succès`);
   }
 
   async function createBetType(name: string) {
-    const { error } = await supabase
-      .from("bet_types")
-      .insert([{ name }]);
-    
+    const { error } = await supabase.from("bet_types").insert([{ name }]);
+
     if (error) {
       if (error.code === "23505") {
         toast.error("Ce type de pari existe déjà");
@@ -140,13 +168,13 @@ function Venues() {
       }
       throw error;
     }
-    
+
     invalidateRelatedQueries("lookups");
     toast.success(`Type de pari "${name}" créé avec succès`);
   }
 
   const filteredVenues = useMemo(() => {
-    return venues.filter(v => {
+    return venues.filter((v) => {
       if (operatorFilter && v.operator !== operatorFilter) return false;
       if (betTypeFilter && v.bet_type !== betTypeFilter) return false;
       if (search) {
@@ -165,7 +193,12 @@ function Venues() {
   function openDialog(venue?: Venue) {
     if (venue) {
       setEditing(venue);
-      const existingGames = venue.games && venue.games.length > 0 ? venue.games : venue.bet_type ? [venue.bet_type] : [];
+      const existingGames =
+        venue.games && venue.games.length > 0
+          ? venue.games
+          : venue.bet_type
+            ? [venue.bet_type]
+            : [];
       setSelectedGames(existingGames);
       setFormData({
         quartier_no: venue.quartier_no || "",
@@ -200,14 +233,23 @@ function Venues() {
 
   function toggleGame(gameName: string) {
     setSelectedGames((prev) =>
-      prev.includes(gameName) ? prev.filter((g) => g !== gameName) : [...prev, gameName]
+      prev.includes(gameName)
+        ? prev.filter((g) => g !== gameName)
+        : [...prev, gameName],
     );
   }
 
   async function handleSubmit() {
     const primaryGame = selectedGames[0] || formData.bet_type;
-    if (!formData.quartier || !formData.operator || !primaryGame || !formData.address) {
-      toast.error("Veuillez remplir le quartier, l'opérateur, l'adresse et au moins un type de jeu.");
+    if (
+      !formData.quartier ||
+      !formData.operator ||
+      !primaryGame ||
+      !formData.address
+    ) {
+      toast.error(
+        "Veuillez remplir le quartier, l'opérateur, l'adresse et au moins un type de jeu.",
+      );
       return;
     }
 
@@ -230,8 +272,10 @@ function Venues() {
         const { error } = await supabase
           .from("venues")
           .update(venueData)
-          .eq("id", editing.id);
-        
+          .eq("id", editing.id)
+          .select("id")
+          .single();
+
         if (error) throw error;
         toast.success("Salle mise à jour avec succès");
       } else {
@@ -240,7 +284,7 @@ function Venues() {
           .insert([venueData])
           .select("id")
           .single();
-        
+
         if (error) throw error;
 
         // Insertion dans venue_games
@@ -256,10 +300,11 @@ function Venues() {
         toast.success(
           isAgent
             ? "Salle créée avec succès. En attente de validation par le contrôleur."
-            : "Salle créée avec succès"
+            : "Salle créée avec succès",
         );
       }
 
+      clearDraftOnSuccess();
       setDialogOpen(false);
       await refetch();
     } catch (error: any) {
@@ -274,11 +319,8 @@ function Venues() {
     }
 
     try {
-      const { error } = await supabase
-        .from("venues")
-        .delete()
-        .eq("id", id);
-      
+      const { error } = await supabase.from("venues").delete().eq("id", id);
+
       if (error) throw error;
       toast.success("Salle supprimée avec succès");
       await refetch();
@@ -332,8 +374,10 @@ function Venues() {
               onChange={(e) => setOperatorFilter(e.target.value)}
             >
               <option value="">Tous</option>
-              {operators.map(op => (
-                <option key={op} value={op}>{op}</option>
+              {operators.map((op) => (
+                <option key={op} value={op}>
+                  {op}
+                </option>
               ))}
             </select>
           </div>
@@ -345,8 +389,10 @@ function Venues() {
               onChange={(e) => setBetTypeFilter(e.target.value)}
             >
               <option value="">Tous</option>
-              {betTypes.map(bt => (
-                <option key={bt} value={bt}>{bt}</option>
+              {betTypes.map((bt) => (
+                <option key={bt} value={bt}>
+                  {bt}
+                </option>
               ))}
             </select>
           </div>
@@ -369,36 +415,72 @@ function Venues() {
           <Table>
             <TableHeader className="bg-[#F5F8F5]">
               <TableRow>
-                <TableHead className="text-xs font-bold text-[#556B5C]">N° Quartier</TableHead>
-                <TableHead className="text-xs font-bold text-[#556B5C]">Quartier</TableHead>
-                <TableHead className="text-xs font-bold text-[#556B5C]">Opérateur</TableHead>
-                <TableHead className="text-xs font-bold text-[#556B5C]">Jeux proposés</TableHead>
-                <TableHead className="text-xs font-bold text-[#556B5C]">Adresse</TableHead>
-                <TableHead className="text-xs font-bold text-[#556B5C]">Téléphone</TableHead>
-                <TableHead className="text-xs font-bold text-[#556B5C]">GPS</TableHead>
-                <TableHead className="text-right text-xs font-bold text-[#556B5C]">Actions</TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">
+                  N° Quartier
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">
+                  Quartier
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">
+                  Opérateur
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">
+                  Jeux proposés
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">
+                  Adresse
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">
+                  Téléphone
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#556B5C]">
+                  GPS
+                </TableHead>
+                <TableHead className="text-right text-xs font-bold text-[#556B5C]">
+                  Actions
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredVenues.length > 0 ? (
                 filteredVenues.map((venue) => {
-                  const venueGames = venue.games && venue.games.length > 0 ? venue.games : [venue.bet_type];
+                  const venueGames =
+                    venue.games && venue.games.length > 0
+                      ? venue.games
+                      : [venue.bet_type];
                   return (
-                    <TableRow key={venue.id} className="hover:bg-[#F5F8F5]/60 transition-colors">
-                      <TableCell className="text-xs text-[#556B5C] font-mono">{venue.quartier_no || "—"}</TableCell>
-                      <TableCell className="font-bold text-xs text-[#17251C]">{venue.quartier}</TableCell>
-                      <TableCell className="text-xs font-semibold text-[#17251C]">{venue.operator}</TableCell>
+                    <TableRow
+                      key={venue.id}
+                      className="hover:bg-[#F5F8F5]/60 transition-colors"
+                    >
+                      <TableCell className="text-xs text-[#556B5C] font-mono">
+                        {venue.quartier_no || "—"}
+                      </TableCell>
+                      <TableCell className="font-bold text-xs text-[#17251C]">
+                        {venue.quartier}
+                      </TableCell>
+                      <TableCell className="text-xs font-semibold text-[#17251C]">
+                        {venue.operator}
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1 max-w-xs">
                           {venueGames.map((g, gi) => (
-                            <Badge key={gi} variant="outline" className="text-[10px] bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]">
+                            <Badge
+                              key={gi}
+                              variant="outline"
+                              className="text-[10px] bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]"
+                            >
                               {g}
                             </Badge>
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs text-[#556B5C] max-w-xs truncate">{venue.address}</TableCell>
-                      <TableCell className="text-xs text-[#556B5C]">{venue.contact_phone || "—"}</TableCell>
+                      <TableCell className="text-xs text-[#556B5C] max-w-xs truncate">
+                        {venue.address}
+                      </TableCell>
+                      <TableCell className="text-xs text-[#556B5C]">
+                        {venue.contact_phone || "—"}
+                      </TableCell>
                       <TableCell className="text-xs text-[#556B5C]">
                         {venue.gps_lat && venue.gps_lng
                           ? `${venue.gps_lat.toFixed(4)}, ${venue.gps_lng.toFixed(4)}`
@@ -409,10 +491,11 @@ function Venues() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            aria-label="Consulter la salle"
                             onClick={() => openDialog(venue)}
                             className="h-8 w-8 p-0 text-[#556B5C] hover:text-[#006B2D] hover:bg-[#F5F8F5]"
                           >
-                            <Pencil className="h-3.5 w-3.5" />
+                            <Eye className="h-3.5 w-3.5" />
                           </Button>
                           {isAdmin && (
                             <Button
@@ -447,7 +530,10 @@ function Venues() {
         <div className="block md:hidden space-y-3">
           {filteredVenues.length > 0 ? (
             filteredVenues.map((venue) => {
-              const venueGames = venue.games && venue.games.length > 0 ? venue.games : [venue.bet_type];
+              const venueGames =
+                venue.games && venue.games.length > 0
+                  ? venue.games
+                  : [venue.bet_type];
               return (
                 <div
                   key={venue.id}
@@ -456,11 +542,17 @@ function Venues() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-black px-2 py-0.5 rounded bg-[#006B2D]/10 text-[#006B2D] border border-[#006B2D]/20">
-                        {venue.quartier_no ? `N° ${venue.quartier_no}` : "Salle"}
+                        {venue.quartier_no
+                          ? `N° ${venue.quartier_no}`
+                          : "Salle"}
                       </span>
-                      <span className="font-extrabold text-sm text-[#17251C]">{venue.quartier}</span>
+                      <span className="font-extrabold text-sm text-[#17251C]">
+                        {venue.quartier}
+                      </span>
                     </div>
-                    <Badge className="bg-[#17251C] text-white font-bold text-xs">{venue.operator}</Badge>
+                    <Badge className="bg-[#17251C] text-white font-bold text-xs">
+                      {venue.operator}
+                    </Badge>
                   </div>
 
                   <div className="text-xs text-[#556B5C] flex items-start gap-1.5">
@@ -481,7 +573,11 @@ function Venues() {
                     </span>
                     <div className="flex flex-wrap gap-1">
                       {venueGames.map((g, gi) => (
-                        <Badge key={gi} variant="outline" className="text-[11px] bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]">
+                        <Badge
+                          key={gi}
+                          variant="outline"
+                          className="text-[11px] bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]"
+                        >
                           {g}
                         </Badge>
                       ))}
@@ -495,7 +591,7 @@ function Venues() {
                       onClick={() => openDialog(venue)}
                       className="min-h-[44px] px-4 text-xs font-semibold border-[#D8E6DB] text-[#17251C]"
                     >
-                      <Pencil className="h-3.5 w-3.5 mr-1.5" /> Modifier
+                      <Eye className="h-3.5 w-3.5 mr-1.5" /> Consulter
                     </Button>
                     {isAdmin && (
                       <Button
@@ -528,163 +624,205 @@ function Venues() {
         <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg font-bold text-[#17251C]">
-              {editing ? "Modifier la salle" : "Nouvelle salle de jeux"}
+              {editing ? "Consulter la salle" : "Nouvelle salle de jeux"}
             </DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 pt-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">N° Quartier</label>
-                <Input
-                  value={formData.quartier_no}
-                  onChange={(e) => setFormData({ ...formData, quartier_no: e.target.value })}
-                  placeholder="Ex: 1, 2..."
-                  className="bg-white border-[#D8E6DB]"
-                />
+          <RecordForm
+            key={`${dialogOpen}-${editing?.id || "new"}`}
+            existing={!!editing}
+            onSave={handleSubmit}
+            onClose={() => setDialogOpen(false)}
+            onRestore={() => openDialog(editing!)}
+            createLabel="Créer la salle"
+            hasDraft={hasDraft}
+            draftTime={savedAtFormatted}
+            hasConflict={hasConflict}
+            onRestoreDraft={restoreDraft}
+            onDiscardDraft={discardDraft}
+            draftSaveStatus={saveStatus}
+          >
+            <div className="grid gap-4 pt-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                    N° Quartier
+                  </label>
+                  <Input
+                    value={formData.quartier_no}
+                    onChange={(e) =>
+                      setFormData({ ...formData, quartier_no: e.target.value })
+                    }
+                    placeholder="Ex: 1, 2..."
+                    className="bg-white border-[#D8E6DB]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                    Quartier *
+                  </label>
+                  <Input
+                    value={formData.quartier}
+                    onChange={(e) =>
+                      setFormData({ ...formData, quartier: e.target.value })
+                    }
+                    placeholder="Ex: Niamana, Faladié..."
+                    className="bg-white border-[#D8E6DB]"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Quartier *</label>
-                <Input
-                  value={formData.quartier}
-                  onChange={(e) => setFormData({ ...formData, quartier: e.target.value })}
-                  placeholder="Ex: Niamana, Faladié..."
-                  className="bg-white border-[#D8E6DB]"
-                />
+
+              <CreatableSelect
+                label="Opérateur de jeux"
+                required
+                value={formData.operator}
+                onChange={(value) =>
+                  setFormData({ ...formData, operator: value })
+                }
+                options={operators}
+                placeholder="Ex: Bet223, PremierBet, 1xBet, MALIBET..."
+                onCreateNew={createOperator}
+              />
+
+              <CreatableSelect
+                label="Support"
+                required
+                value={formData.support}
+                onChange={(value) =>
+                  setFormData({ ...formData, support: value })
+                }
+                options={supports}
+                placeholder="Salle de jeux, Guichet..."
+                onCreateNew={createSupport}
+              />
+
+              {/* SÉLECTEUR MULTI-JEUX POUR UN SEUL ÉTABLISSEMENT */}
+              <div className="space-y-2 p-3 bg-[#F5F8F5] rounded-xl border border-[#D8E6DB]">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#17251C] block">
+                    Jeux disponibles dans cet établissement *
+                  </label>
+                  <span className="text-[10px] text-[#006B2D] font-bold">
+                    {selectedGames.length} jeu(x) sélectionné(s)
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#556B5C]">
+                  Cochez tous les jeux proposés par cette salle (un seul
+                  établissement, plusieurs jeux).
+                </p>
+                <div className="grid grid-cols-2 gap-2 pt-1 max-h-48 overflow-y-auto no-scrollbar">
+                  {betTypes.map((bt) => {
+                    const isChecked = selectedGames.includes(bt);
+                    return (
+                      <label
+                        key={bt}
+                        onClick={() => toggleGame(bt)}
+                        className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                          isChecked
+                            ? "bg-[#006B2D]/10 border-[#006B2D] text-[#006B2D] font-bold"
+                            : "bg-white border-[#D8E6DB] text-[#17251C] hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // handled by label onClick
+                          className="h-3.5 w-3.5 text-[#006B2D] rounded border-[#D8E6DB]"
+                        />
+                        <span className="truncate">{bt}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
 
-            <CreatableSelect
-              label="Opérateur de jeux"
-              required
-              value={formData.operator}
-              onChange={(value) => setFormData({ ...formData, operator: value })}
-              options={operators}
-              placeholder="Ex: Bet223, PremierBet, 1xBet, MALIBET..."
-              onCreateNew={createOperator}
-            />
-
-            <CreatableSelect
-              label="Support"
-              required
-              value={formData.support}
-              onChange={(value) => setFormData({ ...formData, support: value })}
-              options={supports}
-              placeholder="Salle de jeux, Guichet..."
-              onCreateNew={createSupport}
-            />
-
-            {/* SÉLECTEUR MULTI-JEUX POUR UN SEUL ÉTABLISSEMENT */}
-            <div className="space-y-2 p-3 bg-[#F5F8F5] rounded-xl border border-[#D8E6DB]">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-[#17251C] block">
-                  Jeux disponibles dans cet établissement *
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                  Adresse / Localisation *
                 </label>
-                <span className="text-[10px] text-[#006B2D] font-bold">
-                  {selectedGames.length} jeu(x) sélectionné(s)
-                </span>
-              </div>
-              <p className="text-[11px] text-[#556B5C]">
-                Cochez tous les jeux proposés par cette salle (un seul établissement, plusieurs jeux).
-              </p>
-              <div className="grid grid-cols-2 gap-2 pt-1 max-h-48 overflow-y-auto no-scrollbar">
-                {betTypes.map((bt) => {
-                  const isChecked = selectedGames.includes(bt);
-                  return (
-                    <label
-                      key={bt}
-                      onClick={() => toggleGame(bt)}
-                      className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
-                        isChecked
-                          ? "bg-[#006B2D]/10 border-[#006B2D] text-[#006B2D] font-bold"
-                          : "bg-white border-[#D8E6DB] text-[#17251C] hover:bg-slate-50"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {}} // handled by label onClick
-                        className="h-3.5 w-3.5 text-[#006B2D] rounded border-[#D8E6DB]"
-                      />
-                      <span className="truncate">{bt}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Adresse / Localisation *</label>
-              <Input
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Ex: Ancienne poste du 11e arrondissement..."
-                className="bg-white border-[#D8E6DB]"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Téléphone de contact</label>
-              <Input
-                type="tel"
-                value={formData.contact_phone}
-                onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
-                placeholder="Ex: 0701020304"
-                className="bg-white border-[#D8E6DB]"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Latitude GPS</label>
                 <Input
-                  type="number"
-                  step="any"
-                  value={formData.gps_lat || ""}
-                  onChange={(e) => setFormData({ ...formData, gps_lat: e.target.value ? parseFloat(e.target.value) : undefined })}
-                  placeholder="Ex: 12.6392"
+                  value={formData.address}
+                  onChange={(e) =>
+                    setFormData({ ...formData, address: e.target.value })
+                  }
+                  placeholder="Ex: Ancienne poste du 11e arrondissement..."
                   className="bg-white border-[#D8E6DB]"
                 />
               </div>
+
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Longitude GPS</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                  Téléphone de contact
+                </label>
                 <Input
-                  type="number"
-                  step="any"
-                  value={formData.gps_lng || ""}
-                  onChange={(e) => setFormData({ ...formData, gps_lng: e.target.value ? parseFloat(e.target.value) : undefined })}
-                  placeholder="Ex: -8.0029"
+                  type="tel"
+                  value={formData.contact_phone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, contact_phone: e.target.value })
+                  }
+                  placeholder="Ex: 0701020304"
+                  className="bg-white border-[#D8E6DB]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                    Latitude GPS
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={formData.gps_lat || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        gps_lat: e.target.value
+                          ? parseFloat(e.target.value)
+                          : undefined,
+                      })
+                    }
+                    placeholder="Ex: 12.6392"
+                    className="bg-white border-[#D8E6DB]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                    Longitude GPS
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={formData.gps_lng || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        gps_lng: e.target.value
+                          ? parseFloat(e.target.value)
+                          : undefined,
+                      })
+                    }
+                    placeholder="Ex: -8.0029"
+                    className="bg-white border-[#D8E6DB]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                  Notes & Observations
+                </label>
+                <Textarea
+                  value={formData.notes}
+                  onChange={(e) =>
+                    setFormData({ ...formData, notes: e.target.value })
+                  }
+                  placeholder="Informations additionnelles..."
+                  rows={2}
                   className="bg-white border-[#D8E6DB]"
                 />
               </div>
             </div>
-
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] block mb-1">Notes & Observations</label>
-              <Textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Informations additionnelles..."
-                rows={2}
-                className="bg-white border-[#D8E6DB]"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-[#D8E6DB]">
-              <Button
-                variant="outline"
-                onClick={() => setDialogOpen(false)}
-                className="min-h-[44px] px-4 border-[#D8E6DB] text-[#556B5C]"
-              >
-                Annuler
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                className="min-h-[44px] px-6 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold rounded-xl shadow-xs"
-              >
-                Enregistrer la salle
-              </Button>
-            </div>
-          </div>
+          </RecordForm>
         </DialogContent>
       </Dialog>
     </AppLayout>

@@ -89,8 +89,8 @@ export function CreatableSelect({
           ref={inputRef}
           type="text"
           className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-          placeholder={value || placeholder}
-          value={search}
+          placeholder={placeholder}
+          value={isOpen ? search : value}
           onChange={(e) => {
             setSearch(e.target.value);
             setIsOpen(true);
@@ -103,11 +103,6 @@ export function CreatableSelect({
             }
           }}
         />
-        {value && !search && (
-          <div className="absolute inset-0 flex items-center px-3 pointer-events-none">
-            <span className="text-sm">{value}</span>
-          </div>
-        )}
       </div>
 
       {isOpen && (

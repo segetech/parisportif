@@ -17,6 +17,7 @@ const migrationFiles = [
   "07_atomic_admin_and_password_policy.sql",
   "08_secure_dashboard_and_password_policy.sql",
   "09_restore_lookup_tables_rls.sql",
+  "10_storage_proofs_and_avatars.sql",
 ];
 
 async function main() {

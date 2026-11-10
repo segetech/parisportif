@@ -21,7 +21,9 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { AlertTriangle, Plus } from "lucide-react";
+import { AlertTriangle, Plus, CheckCircle2, ExternalLink } from "lucide-react";
+import { DateTimeRow } from "@/components/ui/date-picker-custom";
+import { ProofUploader } from "@/components/ui/proof-uploader";
 
 export default function IllegalActivitiesPage() {
   return (
@@ -48,6 +50,7 @@ interface IllegalBet {
   phone?: string; // Numéro de téléphone
   reference: string; // Référence
   proof: boolean; // preuve
+  proof_attachment_url?: string;
   notes?: string; // nouveau
   created_at: string;
   created_by: string;
@@ -66,6 +69,7 @@ interface IllegalTransaction {
   phone?: string; // Numéro de téléphone
   reference: string; // Référence
   proof: boolean; // preuve
+  proof_attachment_url?: string;
   notes?: string; // nouveau
   created_at: string;
   created_by: string;
@@ -100,6 +104,7 @@ function IllegalActivitiesContent() {
     phone: "",
     reference: "",
     proof: false,
+    proof_attachment_url: "",
     notes: "",
   });
 
@@ -116,6 +121,7 @@ function IllegalActivitiesContent() {
     phone: "",
     reference: "",
     proof: false,
+    proof_attachment_url: "",
     notes: "",
   });
 
@@ -227,6 +233,7 @@ function IllegalActivitiesContent() {
         phone: "",
         reference: "",
         proof: false,
+        proof_attachment_url: "",
         notes: "",
       });
     } catch (error: any) {
@@ -266,6 +273,7 @@ function IllegalActivitiesContent() {
         phone: "",
         reference: "",
         proof: false,
+        proof_attachment_url: "",
         notes: "",
       });
     } catch (error: any) {
@@ -369,8 +377,19 @@ function IllegalActivitiesContent() {
                       <td className="p-2">{bet.phone || "—"}</td>
                       <td className="p-2 font-mono text-xs">{bet.reference}</td>
                       <td className="p-2">
-                        {bet.proof ? (
-                          <span className="text-emerald-600">✓</span>
+                        {bet.proof_attachment_url ? (
+                          <a
+                            href={bet.proof_attachment_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-[#EBF7EE] text-[#006B2D] border border-[#86EFAC] hover:bg-[#D1FAE5] transition-colors"
+                            title="Consulter la preuve R2"
+                          >
+                            <span>Preuve</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : bet.proof ? (
+                          <span className="text-[#006B2D] font-bold">✓ Oui</span>
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
@@ -443,8 +462,19 @@ function IllegalActivitiesContent() {
                       <td className="p-2">{trans.phone || "—"}</td>
                       <td className="p-2 font-mono text-xs">{trans.reference}</td>
                       <td className="p-2">
-                        {trans.proof ? (
-                          <span className="text-emerald-600">✓</span>
+                        {trans.proof_attachment_url ? (
+                          <a
+                            href={trans.proof_attachment_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-[#EBF7EE] text-[#006B2D] border border-[#86EFAC] hover:bg-[#D1FAE5] transition-colors"
+                            title="Consulter la preuve R2"
+                          >
+                            <span>Preuve</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : trans.proof ? (
+                          <span className="text-[#006B2D] font-bold">✓ Oui</span>
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
@@ -477,24 +507,12 @@ function IllegalActivitiesContent() {
             <DialogTitle>Enregistrer un pari illégal</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium">Date *</label>
-                <Input
-                  type="date"
-                  value={newBet.date}
-                  onChange={(e) => setNewBet({ ...newBet, date: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium">Heure *</label>
-                <Input
-                  type="time"
-                  value={newBet.time}
-                  onChange={(e) => setNewBet({ ...newBet, time: e.target.value })}
-                />
-              </div>
-            </div>
+            <DateTimeRow
+              date={newBet.date}
+              time={newBet.time}
+              onDateChange={(date) => setNewBet({ ...newBet, date })}
+              onTimeChange={(time) => setNewBet({ ...newBet, time })}
+            />
             <CreatableSelect
               label="Opérateur"
               required
@@ -559,16 +577,40 @@ function IllegalActivitiesContent() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium">Preuve</label>
               <div className="flex items-center gap-2 py-2">
                 <input
                   type="checkbox"
-                  checked={newBet.proof}
-                  onChange={(e) => setNewBet({ ...newBet, proof: e.target.checked })}
-                  className="h-4 w-4"
+                  id="bet-proof-toggle"
+                  checked={newBet.proof || Boolean(newBet.proof_attachment_url)}
+                  onChange={(e) =>
+                    setNewBet({
+                      ...newBet,
+                      proof: e.target.checked,
+                      proof_attachment_url: e.target.checked ? newBet.proof_attachment_url : "",
+                    })
+                  }
+                  className="h-4 w-4 rounded border-[#D8E6DB] text-[#006B2D] focus:ring-[#006B2D]"
                 />
-                <span className="text-sm">J'ai une preuve de cette transaction</span>
+                <label htmlFor="bet-proof-toggle" className="text-sm font-semibold text-[#17251C] cursor-pointer">
+                  Pièce justificative / Preuve disponible
+                </label>
               </div>
+
+              {(newBet.proof || newBet.proof_attachment_url) && (
+                <div className="pt-2">
+                  <ProofUploader
+                    value={newBet.proof_attachment_url}
+                    onChange={(url) =>
+                      setNewBet({
+                        ...newBet,
+                        proof_attachment_url: url || "",
+                        proof: Boolean(url),
+                      })
+                    }
+                    folder="preuves"
+                  />
+                </div>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium">Notes</label>
@@ -598,28 +640,12 @@ function IllegalActivitiesContent() {
             <DialogTitle>Enregistrer une transaction illégale</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium">Date *</label>
-                <Input
-                  type="date"
-                  value={newTransaction.date}
-                  onChange={(e) =>
-                    setNewTransaction({ ...newTransaction, date: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium">Heure *</label>
-                <Input
-                  type="time"
-                  value={newTransaction.time}
-                  onChange={(e) =>
-                    setNewTransaction({ ...newTransaction, time: e.target.value })
-                  }
-                />
-              </div>
-            </div>
+            <DateTimeRow
+              date={newTransaction.date}
+              time={newTransaction.time}
+              onDateChange={(date) => setNewTransaction({ ...newTransaction, date })}
+              onTimeChange={(time) => setNewTransaction({ ...newTransaction, time })}
+            />
             <div>
               <label className="text-xs font-medium">Type *</label>
               <select
@@ -696,6 +722,42 @@ function IllegalActivitiesContent() {
                 }
                 placeholder="Numéro de référence"
               />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 py-2">
+                <input
+                  type="checkbox"
+                  id="tx-proof-toggle"
+                  checked={newTransaction.proof || Boolean(newTransaction.proof_attachment_url)}
+                  onChange={(e) =>
+                    setNewTransaction({
+                      ...newTransaction,
+                      proof: e.target.checked,
+                      proof_attachment_url: e.target.checked ? newTransaction.proof_attachment_url : "",
+                    })
+                  }
+                  className="h-4 w-4 rounded border-[#D8E6DB] text-[#006B2D] focus:ring-[#006B2D]"
+                />
+                <label htmlFor="tx-proof-toggle" className="text-sm font-semibold text-[#17251C] cursor-pointer">
+                  Pièce justificative / Preuve de la transaction
+                </label>
+              </div>
+
+              {(newTransaction.proof || newTransaction.proof_attachment_url) && (
+                <div className="pt-2">
+                  <ProofUploader
+                    value={newTransaction.proof_attachment_url}
+                    onChange={(url) =>
+                      setNewTransaction({
+                        ...newTransaction,
+                        proof_attachment_url: url || "",
+                        proof: Boolean(url),
+                      })
+                    }
+                    folder="preuves"
+                  />
+                </div>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium">Notes</label>

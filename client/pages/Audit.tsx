@@ -9,6 +9,7 @@ import { exportStyledExcel } from "@/lib/excel-export";
 import { exportStyledPDF } from "@/lib/pdf-export";
 import { FileText, Download, RefreshCw } from "lucide-react";
 import { useAuditLogs } from "@/hooks/use-data-queries";
+import { DatePickerCustom } from "@/components/ui/date-picker-custom";
 
 export default function AuditLogPage() {
   return (
@@ -164,14 +165,22 @@ function AuditTable() {
   return (
     <div className="space-y-4">
       <div className="text-xl font-semibold">Journal d’audit</div>
-      <div className="flex flex-wrap gap-2 items-end">
-        <div className="flex flex-col">
-          <label className="text-xs font-medium">Début</label>
-          <input type="date" className="border rounded px-2 py-1 text-sm" value={filters.start} onChange={(e) => setFilters({ ...filters, start: e.target.value })} />
+      <div className="flex flex-wrap gap-3 items-end">
+        <div className="w-44">
+          <DatePickerCustom
+            label="Début"
+            value={filters.start}
+            onChange={(val) => setFilters({ ...filters, start: val })}
+            showPresets={false}
+          />
         </div>
-        <div className="flex flex-col">
-          <label className="text-xs font-medium">Fin</label>
-          <input type="date" className="border rounded px-2 py-1 text-sm" value={filters.end} onChange={(e) => setFilters({ ...filters, end: e.target.value })} />
+        <div className="w-44">
+          <DatePickerCustom
+            label="Fin"
+            value={filters.end}
+            onChange={(val) => setFilters({ ...filters, end: val })}
+            showPresets={false}
+          />
         </div>
         <div className="flex flex-col">
           <label className="text-xs font-medium">Utilisateur</label>
