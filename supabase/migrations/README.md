@@ -11,6 +11,27 @@ Ce dossier contient les scripts de migration officiels, idempotents et sécuris�
 
 ## Ordre d'exécution recommandé
 
+La version actuelle de l'application exige aussi les migrations **06, 07 et 08**.
+La liste historique ci-dessous décrit les cinq premières étapes ; elle ne suffit
+pas à mettre à niveau une base pour les imports Excel et le tableau de bord actuels.
+
+Pour afficher le plan complet sans connexion ni modification :
+
+```bash
+node scripts/apply-migrations.mjs --plan
+```
+
+Les étapes supplémentaires sont, dans l'ordre :
+
+- `06_unified_business_model.sql` : colonnes d'import, `import_batches`, jeux des salles et alias.
+- `07_atomic_admin_and_password_policy.sql` : sécurité des administrateurs et état de renouvellement.
+- `08_secure_dashboard_and_password_policy.sql` : sécurisation de la RPC d'agrégation et politiques associées.
+
+Avant application distante, vérifier les migrations déjà présentes, la compatibilité
+du schéma existant et les droits Data API. Le script applique le plan dans une
+transaction puis demande le rechargement du cache PostgREST. Une commande réussie
+localement ne signifie pas que la base distante a été mise à niveau.
+
 1. **`01_schema_and_tables.sql`**
    - Crée les tables nécessaires (`users`, `transactions`, `bets`, `venues`, `illegal_bets`, `illegal_transactions`, `audit_logs`, `password_resets`) avec leurs colonnes de validation, traçabilité, contraintes et index.
 

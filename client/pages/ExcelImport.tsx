@@ -37,6 +37,7 @@ import {
 } from "@/lib/excel-import-engine";
 import { escapeCell } from "@/lib/csv";
 import { queryClient } from "@/lib/queryClient";
+import { createImportBatch, importDatabaseError, verifyImportSchema } from "@/lib/import-database";
 
 type ImportStep = "upload" | "config" | "preview" | "importing" | "report";
 type TargetEntityType = "depotretrait" | "pari" | "salles";
@@ -333,11 +334,13 @@ export default function ExcelImportPage() {
     let imported = 0;
     let rejected = 0;
     let ignored = 0;
+    let batchCreated = false;
 
-    // Création initiale du lot d'import en statut "en_cours" pour traçabilité immédiate
     try {
-      await supabase.from("import_batches").insert([
-        {
+      if (!user) throw new Error("Session requise pour importer des données.");
+      const targetTable = detectedType === "depotretrait" ? "transactions" : detectedType === "pari" ? "bets" : "venues";
+      await verifyImportSchema(supabase, targetTable);
+      await createImportBatch(supabase, {
           id: batchId,
           file_name: fileName,
           sheet_name: selectedSheet,
@@ -349,13 +352,8 @@ export default function ExcelImportPage() {
           status: "en_cours",
           anomalies: [],
           imported_by: user?.id,
-        },
-      ]);
-    } catch (batchInitErr) {
-      console.warn("Initialisation import_batch en_cours:", batchInitErr);
-    }
-
-    try {
+      });
+      batchCreated = true;
       if (detectedType === "depotretrait") {
         const rowsToInsert = parsedTransactions.filter((tx) => tx.isValid);
         rejected = parsedTransactions.length - rowsToInsert.length;
@@ -444,6 +442,8 @@ export default function ExcelImportPage() {
             .single();
 
           if (vErr) throw vErr;
+          // The venue already exists even if its games fail to save afterwards.
+          imported++;
 
           // Insertion des jeux rattachés à l'établissement dans venue_games
           if (insertedVenue && v.games.length > 0) {
@@ -452,9 +452,9 @@ export default function ExcelImportPage() {
               game_name: g,
               active: true,
             }));
-            await supabase.from("venue_games").insert(gameRecords);
+            const { error: gameError } = await supabase.from("venue_games").insert(gameRecords);
+            if (gameError) throw importDatabaseError(gameError, "Jeux de la salle");
           }
-          imported++;
         }
       }
 
@@ -462,18 +462,15 @@ export default function ExcelImportPage() {
 
       // Traçabilité finale du lot d'import (statut "termine")
       const finalStatus = "termine";
-      try {
-        await supabase.from("import_batches").update({
+      const { error: batchError } = await supabase.from("import_batches").update({
           total_rows: stats.total,
           imported_rows: imported,
           rejected_rows: rejected,
           ignored_rows: ignored,
           status: finalStatus,
           anomalies: stats.allAnomalies.slice(0, 100),
-        }).eq("id", batchId);
-      } catch (batchErr) {
-        console.warn("Mise à jour finale import_batch:", batchErr);
-      }
+        }).eq("id", batchId).select("id").single();
+      if (batchError) throw importDatabaseError(batchError, "Finalisation du lot d'import");
 
       // Invalidation ciblée des caches React Query
       if (detectedType === "depotretrait") {
@@ -500,8 +497,8 @@ export default function ExcelImportPage() {
       console.error("Erreur enregistrement import:", importErr);
       // En cas d'échec partiel ou complet, marquer le lot "partiel" ou "echoue"
       const failureStatus = imported > 0 ? "partiel" : "echoue";
-      try {
-        await supabase.from("import_batches").update({
+      if (batchCreated) try {
+        const { error: failureError } = await supabase.from("import_batches").update({
           imported_rows: imported,
           rejected_rows: rejected,
           ignored_rows: ignored,
@@ -511,6 +508,7 @@ export default function ExcelImportPage() {
             { row: 0, field: "import", message: importErr.message || "Erreur base de données", severity: "error" },
           ],
         }).eq("id", batchId);
+        if (failureError) console.warn("État d'échec du lot non enregistré:", failureError);
       } catch (batchErr) {
         console.warn("Mise à jour import_batch en erreur:", batchErr);
       }
