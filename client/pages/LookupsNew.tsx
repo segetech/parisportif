@@ -9,9 +9,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RequireAuth, RequireRole } from "@/context/AuthContext";
-import { Plus, Pencil, Trash } from "lucide-react";
+import { Plus, Pencil, Trash, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useLookups } from "@/hooks/use-data-queries";
+import { invalidateRelatedQueries } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabase";
 
 interface LookupData {
@@ -35,14 +37,18 @@ const TABLE_MAPPING: Record<LookupKey, string> = {
 };
 
 export default function LookupsPage() {
-  const [lookups, setLookups] = useState<LookupData>({
-    operators: [],
-    payment_operators: [],
-    platforms: [],
-    supports: [],
-    bet_types: [],
-    statuses: [],
-  });
+  // Cache TanStack React Query pour fluidité instantanée
+  const { data: lookupsData, isLoading, isFetching, refetch } = useLookups();
+
+  const lookups: LookupData = {
+    operators: lookupsData?.operatorNames || [],
+    payment_operators: lookupsData?.paymentOperatorNames || [],
+    platforms: lookupsData?.platformNames || [],
+    supports: lookupsData?.supportNames || [],
+    bet_types: lookupsData?.betTypeNames || [],
+    statuses: lookupsData?.statusNames || [],
+  };
+
   const [filter, setFilter] = useState("");
   const [dlg, setDlg] = useState<{
     key: LookupKey;
@@ -55,38 +61,7 @@ export default function LookupsPage() {
     title: string;
   } | null>(null);
   const [inputValue, setInputValue] = useState("");
-  
   const MAX_ITEMS_PREVIEW = 5;
-
-  useEffect(() => {
-    loadAllLookups();
-  }, []);
-
-  async function loadAllLookups() {
-    try {
-      const [operators, paymentOps, platforms, supports, betTypes, statuses] =
-        await Promise.all([
-          supabase.from("operators").select("id, name").order("name"),
-          supabase.from("payment_operators").select("id, name").order("name"),
-          supabase.from("platforms").select("id, name").order("name"),
-          supabase.from("supports").select("id, name").order("name"),
-          supabase.from("bet_types").select("id, name").order("name"),
-          supabase.from("bet_statuses").select("id, name").order("name"),
-        ]);
-
-      setLookups({
-        operators: operators.data?.map((o) => o.name) || [],
-        payment_operators: paymentOps.data?.map((o) => o.name) || [],
-        platforms: platforms.data?.map((p) => p.name) || [],
-        supports: supports.data?.map((s) => s.name) || [],
-        bet_types: betTypes.data?.map((b) => b.name) || [],
-        statuses: statuses.data?.map((s) => s.name) || [],
-      });
-    } catch (error) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors du chargement");
-    }
-  }
 
   async function handleSave() {
     if (!dlg || !inputValue.trim()) {
@@ -144,7 +119,7 @@ export default function LookupsPage() {
 
       setDlg(null);
       setInputValue("");
-      await loadAllLookups();
+      await refetch(); invalidateRelatedQueries('lookups');
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de l'enregistrement");
@@ -176,7 +151,7 @@ export default function LookupsPage() {
       if (error) throw error;
 
       toast.success("Supprimé avec succès");
-      await loadAllLookups();
+      await refetch(); invalidateRelatedQueries('lookups');
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de la suppression");

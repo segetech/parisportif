@@ -151,11 +151,19 @@ export function purgeAllAppCaches(): void {
   }
 
   // 3. Vider le cache de localStorage lié aux sessions et requêtes
-  if (typeof window !== "undefined" && window.localStorage) {
+  const storage =
+    typeof window !== "undefined" && window.localStorage
+      ? window.localStorage
+      : typeof globalThis !== "undefined" && (globalThis as any).localStorage
+        ? (globalThis as any).localStorage
+        : null;
+
+  if (storage) {
     try {
       const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
+      const len = storage.length || 0;
+      for (let i = 0; i < len; i++) {
+        const k = storage.key(i);
         if (
           k &&
           (k.startsWith("cache:") ||
@@ -166,7 +174,7 @@ export function purgeAllAppCaches(): void {
           keysToRemove.push(k);
         }
       }
-      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      keysToRemove.forEach((k) => storage.removeItem(k));
     } catch (e) {
       console.warn("Erreur purge localStorage cache:", e);
     }

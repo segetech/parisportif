@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useValidationOperations, useValidateOperation } from "@/hooks/use-data-queries";
 import { supabase } from "@/lib/supabase";
 import dayjs from "dayjs";
 
@@ -71,8 +72,6 @@ interface Comment {
 export default function ValidationPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("bets");
-  const [operations, setOperations] = useState<Operation[]>([]);
-  const [loading, setLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState("en_attente");
   
   const [validationDialog, setValidationDialog] = useState<{
@@ -92,31 +91,12 @@ export default function ValidationPage() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
 
-  useEffect(() => {
-    loadOperations();
-  }, [activeTab, filterStatus]);
-
-  async function loadOperations() {
-    setLoading(true);
-    try {
-      const tableName = activeTab;
-      let query = supabase.from(tableName).select("*").order("created_at", { ascending: false });
-
-      if (filterStatus !== "all") {
-        query = query.eq("validation_status", filterStatus);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setOperations(data || []);
-    } catch (error) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors du chargement");
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Centralisation TanStack React Query pour navigation instantanée
+  const { data: operations = [], isLoading, isFetching, refetch } = useValidationOperations(
+    activeTab as "bets" | "transactions",
+    filterStatus
+  );
+  const validateMutation = useValidateOperation();
 
   async function loadHistory(operationId: string, type: string) {
     try {
@@ -211,7 +191,7 @@ export default function ValidationPage() {
       );
 
       setValidationDialog(null);
-      loadOperations();
+      refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de la validation");
@@ -358,7 +338,7 @@ export default function ValidationPage() {
               <TabsContent value={activeTab} className="mt-4">
                 <Card>
                   <CardContent className="p-0">
-                    {loading ? (
+                    {(isLoading && operations.length === 0) ? (
                       <div className="p-8 text-center">Chargement...</div>
                     ) : operations.length === 0 ? (
                       <div className="p-8 text-center text-muted-foreground">

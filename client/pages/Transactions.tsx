@@ -24,6 +24,8 @@ import { Search, TrendingUp, TrendingDown, Plus, FileText, Download, RefreshCw, 
 import { CreatableSelect } from "@/components/ui/creatable-select";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { exportStyledPDF } from "@/lib/pdf-export";
+import { useTransactions, useLookups, useVenues } from "@/hooks/use-data-queries";
+import { invalidateRelatedQueries } from "@/lib/queryClient";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
 
 interface Transaction {
@@ -32,7 +34,7 @@ interface Transaction {
   time?: string;
   type: string;
   operator: string;
-  support: string;
+  support?: string;
   amount_fcfa: number;
   venue_id?: string;
   notes?: string;
@@ -50,18 +52,21 @@ export default function TransactionsPage() {
 
 function Transactions() {
   const { user } = useAuth();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Centralisation TanStack React Query pour fluidité instantanée
+  const { data: transactions = [], isLoading, isFetching, refetch } = useTransactions();
+  const { data: lookupsData } = useLookups();
+  const { data: venuesData = [] } = useVenues();
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   
-  // Listes déroulantes dynamiques
-  const [operators, setOperators] = useState<string[]>([]);
-  const [supports, setSupports] = useState<string[]>([]);
-  const [paymentOperators, setPaymentOperators] = useState<string[]>([]);
-  const [venues, setVenues] = useState<any[]>([]);
+  // Listes déroulantes synchronisées depuis le cache
+  const operators = lookupsData?.operatorNames || [];
+  const supports = lookupsData?.supportNames || [];
+  const paymentOperators = lookupsData?.paymentOperatorNames || [];
+  const venues = venuesData;
 
   // Assistance intelligente
   const [ticketRef, setTicketRef] = useState<string>("");
@@ -78,34 +83,6 @@ function Transactions() {
     amount_fcfa: 0,
     notes: "",
   });
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
-    await Promise.all([loadTransactions(), loadOperators(), loadSupports(), loadPaymentOperators(), loadVenues()]);
-  }
-
-  async function loadVenues() {
-    try {
-      const { data, error } = await supabase.from("venues").select("*").order("quartier");
-      if (error) throw error;
-      if (data) setVenues(data);
-    } catch (e) {
-      console.warn("Chargement salles:", e);
-    }
-  }
-
-  async function loadPaymentOperators() {
-    try {
-      const { data, error } = await supabase.from("payment_operators").select("name").eq("active", true).order("name");
-      if (error) throw error;
-      if (data) setPaymentOperators(data.map(p => p.name));
-    } catch (e) {
-      console.warn("Chargement opérateurs paiement:", e);
-    }
-  }
 
   function handleTicketRefChange(val: string) {
     setTicketRef(val);
@@ -135,48 +112,6 @@ function Transactions() {
     }
   }
 
-  async function loadTransactions() {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("*")
-        .order("date", { ascending: false })
-        .order("time", { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-      if (data) setTransactions(data);
-    } catch (error: any) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors du chargement des transactions");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadOperators() {
-    const { data, error } = await supabase
-      .from("operators")
-      .select("name")
-      .eq("active", true)
-      .order("name");
-    
-    if (error) throw error;
-    if (data) setOperators(data.map(o => o.name));
-  }
-
-  async function loadSupports() {
-    const { data, error } = await supabase
-      .from("supports")
-      .select("name")
-      .eq("active", true)
-      .order("name");
-    
-    if (error) throw error;
-    if (data) setSupports(data.map(s => s.name));
-  }
-
   async function createOperator(name: string) {
     const { error } = await supabase
       .from("operators")
@@ -191,7 +126,7 @@ function Transactions() {
       throw error;
     }
     
-    await loadOperators();
+    invalidateRelatedQueries("lookups");
     toast.success(`Opérateur "${name}" créé avec succès`);
   }
 
@@ -209,7 +144,7 @@ function Transactions() {
       throw error;
     }
     
-    await loadSupports();
+    invalidateRelatedQueries("lookups");
     toast.success(`Support "${name}" créé avec succès`);
   }
 
@@ -299,7 +234,7 @@ function Transactions() {
       
       setDialogOpen(false);
       setEditingTransaction(null);
-      await loadTransactions();
+      await refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de l'enregistrement");
@@ -431,7 +366,7 @@ function Transactions() {
     }
   };
 
-  if (loading) {
+  if (isLoading && transactions.length === 0) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -484,10 +419,11 @@ function Transactions() {
           </select>
           <Button
             variant="outline"
-            onClick={loadTransactions}
-            className="h-10 text-xs font-bold text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5] rounded-xl w-full sm:w-auto"
+            onClick={() => refetch()}
+            className="h-10 text-xs font-bold text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5] rounded-xl w-full sm:w-auto gap-1.5"
           >
-            Actualiser
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin text-[#006B2D]" : ""}`} />
+            <span>Actualiser</span>
           </Button>
 
           <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">

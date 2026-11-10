@@ -7,7 +7,8 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { exportStyledPDF } from "@/lib/pdf-export";
-import { FileText, Download } from "lucide-react";
+import { FileText, Download, RefreshCw } from "lucide-react";
+import { useAuditLogs } from "@/hooks/use-data-queries";
 
 export default function AuditLogPage() {
   return (
@@ -24,7 +25,6 @@ export default function AuditLogPage() {
 function AuditTable() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const [rows, setRows] = useState<AuditEntry[]>([]);
   const [filters, setFilters] = useState({
     start: "",
     end: "",
@@ -32,36 +32,11 @@ function AuditTable() {
     role: "",
     action: "",
     entity: "",
-    userId: "",
+    userId: searchParams.get("user") || "",
   });
 
-  async function load() {
-    try {
-      const base = await auditService.list({
-        start: filters.start || undefined,
-        end: filters.end || undefined,
-        userEmail: filters.userEmail || undefined,
-        role: (filters.role as any) || undefined,
-        action: (filters.action as any) || undefined,
-        entity: (filters.entity as any) || undefined,
-      });
-      const uid = filters.userId.trim();
-      const filtered = uid
-        ? base.filter((e) => e.entityId === uid || (e.details && (e.details.userId === uid || e.details.user?.id === uid)))
-        : base;
-      setRows(filtered);
-    } catch (e) {
-      console.error("Erreur chargement audit:", e);
-    }
-  }
-
-  useEffect(() => {
-    // Pre-filter by userId if present in URL
-    const uid = searchParams.get("user") || "";
-    setFilters((f) => ({ ...f, userId: uid }));
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Cache TanStack React Query pour fluidité instantanée
+  const { data: rows = [], isLoading, isFetching, refetch } = useAuditLogs(filters);
 
   const canExport = true;
   const csv = useMemo(() => {
@@ -238,7 +213,10 @@ function AuditTable() {
           <input className="border rounded px-2 py-1 text-sm" value={filters.userId} onChange={(e) => setFilters({ ...filters, userId: e.target.value })} placeholder="Filtrer par userId" />
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button onClick={load}>Rechercher</Button>
+          <Button onClick={() => refetch()} className="gap-1.5">
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin text-white" : ""}`} />
+            <span>Rechercher</span>
+          </Button>
           <Button
             variant="outline"
             onClick={downloadPdf}

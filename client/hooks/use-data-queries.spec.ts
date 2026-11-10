@@ -1,10 +1,17 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   buildCacheKey,
   saveToCache,
   getFromCache,
   isAuthError,
 } from "./use-data-queries";
+import {
+  queryClient,
+  queryKeys,
+  purgeAllAppCaches,
+  invalidateRelatedQueries,
+  CACHE_TIERS,
+} from "@/lib/queryClient";
 
 class LocalStorageMock {
   private store: Record<string, string> = {};
@@ -33,12 +40,13 @@ if (typeof globalThis.localStorage === "undefined") {
   globalThis.localStorage = new LocalStorageMock() as any;
 }
 
-describe("Cache Isolation and Data Security", () => {
+describe("Cache Architecture and Navigation Performance", () => {
   beforeEach(() => {
     localStorage.clear();
+    queryClient.clear();
   });
 
-  describe("buildCacheKey", () => {
+  describe("buildCacheKey and Key Normalization", () => {
     it("should generate distinct cache keys for different users", () => {
       const key1 = buildCacheKey("transactions", "user-A");
       const key2 = buildCacheKey("transactions", "user-B");
@@ -54,7 +62,6 @@ describe("Cache Isolation and Data Security", () => {
     });
 
     it("should prevent collisions between overlapping date filters (regression test)", () => {
-      // These two filters share the same 32+ prefix characters and caused collisions in v1
       const filter1 = { start: "2026-11-01", end: "2026-11-09" };
       const filter2 = { start: "2026-11-01", end: "2026-11-30" };
 
@@ -74,6 +81,110 @@ describe("Cache Isolation and Data Security", () => {
       const keyB = buildCacheKey("transactions", "user-123", filterB);
 
       expect(keyA).toBe(keyB);
+    });
+  });
+
+  describe("Query Keys Determinism and Isolation", () => {
+    it("should generate distinct hierarchical keys per user and filter", () => {
+      const k1 = queryKeys.bets("user-1", { operator: "1xBet" });
+      const k2 = queryKeys.bets("user-2", { operator: "1xBet" });
+      const k3 = queryKeys.bets("user-1", { operator: "Betway" });
+
+      expect(k1).not.toEqual(k2);
+      expect(k1).not.toEqual(k3);
+      expect(k1[0]).toBe("bets");
+      expect(k1[1]).toBe("user-1");
+    });
+
+    it("should generate lookups query key independently of user for global sharing", () => {
+      const lookupsKey = queryKeys.lookups();
+      expect(lookupsKey).toEqual(["lookups"]);
+    });
+  });
+
+  describe("Fresh Data Navigation without Extra Network Requests", () => {
+    it("should reuse cached data within staleTime without invoking queryFn again", async () => {
+      const fetchFn = vi.fn().mockResolvedValue([{ id: "bet-1", amount: 50000 }]);
+      const key = queryKeys.bets("user-1", { type: "Simple" });
+
+      // First query (initial fetch)
+      const data1 = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: fetchFn,
+        staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+      });
+
+      expect(data1).toHaveLength(1);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+
+      // Return to page while fresh (within 60s)
+      const data2 = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: fetchFn,
+        staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+      });
+
+      expect(data2).toEqual(data1);
+      // Crucial: fetchFn should NOT be called again
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("Immediate Stale Display During Background Refresh", () => {
+    it("should provide immediate cached data from memory even if stale", async () => {
+      const key = queryKeys.transactions("user-1");
+      const initialData = [{ id: "tx-old", amount_fcfa: 100000 }];
+
+      // Seed query cache
+      queryClient.setQueryData(key, initialData);
+
+      // Verify immediate synchronous access to avoid blank loading screens
+      const cached = queryClient.getQueryData(key);
+      expect(cached).toEqual(initialData);
+
+      // Simulate stale invalidation
+      await queryClient.invalidateQueries({ queryKey: key });
+
+      // Cached data must still be synchronously accessible for instant rendering
+      const stillAccessible = queryClient.getQueryData(key);
+      expect(stillAccessible).toEqual(initialData);
+    });
+  });
+
+  describe("Targeted Invalidation After Mutations", () => {
+    it("should invalidate bets, dashboard, and validation when a bet mutation occurs", async () => {
+      const betsKey = queryKeys.bets("user-1");
+      const dashboardKey = queryKeys.dashboard("user-1");
+      const venuesKey = queryKeys.venues("user-1");
+
+      queryClient.setQueryData(betsKey, [{ id: "b1" }]);
+      queryClient.setQueryData(dashboardKey, { totalBets: 1 });
+      queryClient.setQueryData(venuesKey, [{ id: "v1" }]);
+
+      // Trigger mutation invalidation for bets
+      invalidateRelatedQueries("bets");
+
+      const betsState = queryClient.getQueryState(betsKey);
+      const dashState = queryClient.getQueryState(dashboardKey);
+      const venuesState = queryClient.getQueryState(venuesKey);
+
+      expect(betsState?.isInvalidated).toBe(true);
+      expect(dashState?.isInvalidated).toBe(true);
+      // Venues should NOT be invalidated by a bet mutation
+      expect(venuesState?.isInvalidated).toBe(false);
+    });
+
+    it("should invalidate transactions, dashboard, and validation on transaction mutation", () => {
+      const txKey = queryKeys.transactions("user-1");
+      const dashboardKey = queryKeys.dashboard("user-1");
+
+      queryClient.setQueryData(txKey, [{ id: "t1" }]);
+      queryClient.setQueryData(dashboardKey, { totalBets: 1 });
+
+      invalidateRelatedQueries("transactions");
+
+      expect(queryClient.getQueryState(txKey)?.isInvalidated).toBe(true);
+      expect(queryClient.getQueryState(dashboardKey)?.isInvalidated).toBe(true);
     });
   });
 
@@ -102,6 +213,26 @@ describe("Cache Isolation and Data Security", () => {
       // Expired TTL (0ms)
       const expired = getFromCache("bets", -1, "user-A");
       expect(expired).toBeNull();
+    });
+  });
+
+  describe("Logout and Session Termination Security", () => {
+    it("should cancel all active queries and wipe memory cache on logout", () => {
+      const key = queryKeys.transactions("user-1");
+      queryClient.setQueryData(key, [{ id: "tx-sensitive", amount: 9999999 }]);
+
+      saveToCache("transactions", [{ secret: "123" }], "user-1");
+
+      // User logs out
+      purgeAllAppCaches();
+
+      // Memory cache must be empty
+      expect(queryClient.getQueryData(key)).toBeUndefined();
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+
+      // Local storage cache must be cleared
+      const localStorageItem = getFromCache("transactions", 60000, "user-1");
+      expect(localStorageItem).toBeNull();
     });
   });
 

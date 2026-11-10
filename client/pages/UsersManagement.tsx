@@ -18,6 +18,7 @@ import {
 import { RequireAuth, RequireRole, useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useUsers } from "@/hooks/use-data-queries";
 import { supabase } from "@/lib/supabase";
 import { Plus, Copy, RefreshCw, Pencil, Key, Mail } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -47,8 +48,9 @@ export default function UsersManagementPage() {
 
 function UsersManagement() {
   const { getAccessToken } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Cache TanStack React Query pour fluidité instantanée
+  const { data: users = [], isLoading, isFetching, refetch } = useUsers();
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -64,28 +66,6 @@ function UsersManagement() {
     role: "AGENT" as "ADMIN" | "CONTROLEUR" | "AGENT",
     password: "",
   });
-
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  async function loadUsers() {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .order("cree_le", { ascending: false });
-
-      if (error) throw error;
-      if (data) setUsers(data);
-    } catch (error: any) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors du chargement des utilisateurs");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   function generatePassword() {
     const length = 12;
@@ -169,7 +149,7 @@ function UsersManagement() {
 
       toast.success("Utilisateur mis à jour avec succès");
       setDialogOpen(false);
-      await loadUsers();
+      await refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error(error.message || "Erreur lors de la mise à jour");
@@ -227,7 +207,7 @@ L'utilisateur peut se connecter immédiatement avec ces identifiants.
       toast.success("Identifiants copiés dans le presse-papiers !");
 
       setDialogOpen(false);
-      await loadUsers();
+      await refetch();
     } catch (error: any) {
       console.error("Erreur création utilisateur:", error);
       toast.error(error.message || "Erreur lors de la création");
@@ -248,7 +228,7 @@ L'utilisateur peut se connecter immédiatement avec ces identifiants.
       toast.success(
         newStatus === "actif" ? "Utilisateur réactivé" : "Utilisateur suspendu"
       );
-      await loadUsers();
+      await refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de la modification");
@@ -265,7 +245,7 @@ L'utilisateur peut se connecter immédiatement avec ces identifiants.
       if (error) throw error;
 
       toast.success("Rôle mis à jour avec succès");
-      await loadUsers();
+      await refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de la modification");
@@ -398,7 +378,7 @@ L'utilisateur peut se connecter immédiatement avec ces identifiants.
     }
   };
 
-  if (loading) {
+  if (isLoading && users.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-muted-foreground">Chargement...</div>
@@ -594,7 +574,7 @@ L'utilisateur peut se connecter immédiatement avec ces identifiants.
                       onClick={generatePassword}
                       title="Générer un mot de passe"
                     >
-                      <RefreshCw className="h-4 w-4" />
+                      <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin text-[#006B2D]" : ""}`} />
                     </Button>
                   </div>
                   {generatedPassword && (

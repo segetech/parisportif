@@ -45,6 +45,8 @@ import {
 } from "lucide-react";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { exportStyledPDF } from "@/lib/pdf-export";
+import { useBets, useCreateBet, useUpdateBet, useLookups, useVenues } from "@/hooks/use-data-queries";
+import { invalidateRelatedQueries } from "@/lib/queryClient";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
 import { Sparkles, Building, Zap } from "lucide-react";
 import { CreatableSelect } from "@/components/ui/creatable-select";
@@ -82,8 +84,13 @@ export default function BetsPage() {
 
 function Bets() {
   const { user } = useAuth();
-  const [bets, setBets] = useState<Bet[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Centralisation TanStack React Query pour navigation instantanée
+  const { data: bets = [], isLoading, isFetching, refetch } = useBets();
+  const { data: lookupsData } = useLookups();
+  const { data: venuesData = [] } = useVenues();
+  const createBetMutation = useCreateBet();
+  const updateBetMutation = useUpdateBet();
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
@@ -99,11 +106,11 @@ function Bets() {
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
 
-  // Listes déroulantes dynamiques
-  const [operators, setOperators] = useState<string[]>([]);
-  const [supports, setSupports] = useState<string[]>([]);
-  const [betTypes, setBetTypes] = useState<string[]>([]);
-  const [venues, setVenues] = useState<any[]>([]);
+  // Listes déroulantes synchronisées depuis le cache React Query
+  const operators = lookupsData?.operatorNames || [];
+  const supports = lookupsData?.supportNames || [];
+  const betTypes = lookupsData?.betTypeNames || [];
+  const venues = venuesData;
 
   // Assistance intelligente & Rapprochement
   const [ticketRef, setTicketRef] = useState<string>("");
@@ -124,80 +131,6 @@ function Bets() {
     notes: "",
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
-    await Promise.all([loadBets(), loadOperators(), loadSupports(), loadBetTypes(), loadVenues()]);
-  }
-
-  async function loadVenues() {
-    try {
-      const { data, error } = await supabase
-        .from("venues")
-        .select("*")
-        .order("quartier");
-      if (error) throw error;
-      if (data) setVenues(data);
-    } catch (e) {
-      console.warn("Chargement salles de jeux:", e);
-    }
-  }
-
-  async function loadBets() {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("bets")
-        .select("*")
-        .order("date", { ascending: false })
-        .order("time", { ascending: false })
-        .limit(300);
-
-      if (error) throw error;
-      if (data) setBets(data);
-    } catch (error: any) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors du chargement des paris");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadOperators() {
-    const { data, error } = await supabase
-      .from("operators")
-      .select("name")
-      .eq("active", true)
-      .order("name");
-
-    if (error) throw error;
-    if (data) setOperators(data.map((o) => o.name));
-  }
-
-  async function loadSupports() {
-    const { data, error } = await supabase
-      .from("supports")
-      .select("name")
-      .eq("active", true)
-      .order("name");
-
-    if (error) throw error;
-    if (data) setSupports(data.map((s) => s.name));
-  }
-
-  async function loadBetTypes() {
-    const { data, error } = await supabase
-      .from("bet_types")
-      .select("name")
-      .eq("active", true)
-      .order("name");
-
-    if (error) throw error;
-    if (data) setBetTypes(data.map((b) => b.name));
-  }
-
   async function createOperator(name: string) {
     const { error } = await supabase.from("operators").insert([{ name }]);
     if (error) {
@@ -208,7 +141,7 @@ function Bets() {
       }
       throw error;
     }
-    await loadOperators();
+    invalidateRelatedQueries("lookups");
     toast.success(`Opérateur "${name}" créé avec succès`);
   }
 
@@ -222,7 +155,7 @@ function Bets() {
       }
       throw error;
     }
-    await loadSupports();
+    invalidateRelatedQueries("lookups");
     toast.success(`Support "${name}" créé avec succès`);
   }
 
@@ -236,7 +169,7 @@ function Bets() {
       }
       throw error;
     }
-    await loadBetTypes();
+    invalidateRelatedQueries("lookups");
     toast.success(`Type de pari "${name}" créé avec succès`);
   }
 
@@ -387,7 +320,7 @@ function Bets() {
 
       setDialogOpen(false);
       setEditingBet(null);
-      await loadBets();
+      await refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de l'enregistrement");
@@ -741,7 +674,7 @@ function Bets() {
     );
   };
 
-  if (loading) {
+  if (isLoading && bets.length === 0) {
     return (
       <AppLayout>
         <div className="space-y-6">
@@ -777,10 +710,10 @@ function Bets() {
             <Button
               variant="outline"
               size="sm"
-              onClick={loadBets}
+              onClick={() => refetch()}
               className="h-9 gap-1.5 border-[#D8E6DB] bg-white hover:bg-[#F5F8F5] text-[#17251C] font-semibold"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin text-[#006B2D]" : ""}`} />
               <span>Actualiser</span>
             </Button>
 

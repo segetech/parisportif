@@ -21,7 +21,9 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { CreatableSelect } from "@/components/ui/creatable-select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, RefreshCw } from "lucide-react";
+import { useVenues, useLookups, useCreateVenue, useUpdateVenue, useDeleteVenue } from "@/hooks/use-data-queries";
+import { invalidateRelatedQueries } from "@/lib/queryClient";
 
 interface Venue {
   id: string;
@@ -50,15 +52,20 @@ function Venues() {
   const isAdmin = user?.role === "ADMIN";
   
   // États
-  const [venues, setVenues] = useState<Venue[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Centralisation TanStack React Query pour navigation instantanée
+  const { data: venues = [], isLoading, isFetching, refetch } = useVenues();
+  const { data: lookupsData } = useLookups();
+  const createVenueMutation = useCreateVenue();
+  const updateVenueMutation = useUpdateVenue();
+  const deleteVenueMutation = useDeleteVenue();
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Venue | null>(null);
   
-  // Listes déroulantes
-  const [operators, setOperators] = useState<string[]>([]);
-  const [supports, setSupports] = useState<string[]>([]);
-  const [betTypes, setBetTypes] = useState<string[]>([]);
+  // Listes déroulantes synchronisées depuis le cache
+  const operators = lookupsData?.operatorNames || [];
+  const supports = lookupsData?.supportNames || [];
+  const betTypes = lookupsData?.betTypeNames || [];
   
   // Filtres
   const [search, setSearch] = useState("");
@@ -79,70 +86,6 @@ function Venues() {
     notes: "",
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
-    setLoading(true);
-    try {
-      await Promise.all([
-        loadVenues(),
-        loadOperators(),
-        loadSupports(),
-        loadBetTypes(),
-      ]);
-    } catch (error) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors du chargement");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadVenues() {
-    const { data, error } = await supabase
-      .from("venues")
-      .select("*")
-      .order("quartier");
-    
-    if (error) throw error;
-    if (data) setVenues(data);
-  }
-
-  async function loadOperators() {
-    const { data, error } = await supabase
-      .from("operators")
-      .select("name")
-      .eq("active", true)
-      .order("name");
-    
-    if (error) throw error;
-    if (data) setOperators(data.map(o => o.name));
-  }
-
-  async function loadSupports() {
-    const { data, error } = await supabase
-      .from("supports")
-      .select("name")
-      .eq("active", true)
-      .order("name");
-    
-    if (error) throw error;
-    if (data) setSupports(data.map(s => s.name));
-  }
-
-  async function loadBetTypes() {
-    const { data, error } = await supabase
-      .from("bet_types")
-      .select("name")
-      .eq("active", true)
-      .order("name");
-    
-    if (error) throw error;
-    if (data) setBetTypes(data.map(b => b.name));
-  }
-
   // Fonctions pour créer de nouveaux éléments
   async function createOperator(name: string) {
     const { error } = await supabase
@@ -158,7 +101,7 @@ function Venues() {
       throw error;
     }
     
-    await loadOperators();
+    invalidateRelatedQueries("lookups");
     toast.success(`Opérateur "${name}" créé avec succès`);
   }
 
@@ -176,7 +119,7 @@ function Venues() {
       throw error;
     }
     
-    await loadSupports();
+    invalidateRelatedQueries("lookups");
     toast.success(`Support "${name}" créé avec succès`);
   }
 
@@ -194,7 +137,7 @@ function Venues() {
       throw error;
     }
     
-    await loadBetTypes();
+    invalidateRelatedQueries("lookups");
     toast.success(`Type de pari "${name}" créé avec succès`);
   }
 
@@ -289,7 +232,7 @@ function Venues() {
       }
 
       setDialogOpen(false);
-      await loadVenues();
+      await refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de l'enregistrement");
@@ -309,14 +252,14 @@ function Venues() {
       
       if (error) throw error;
       toast.success("Salle supprimée avec succès");
-      await loadVenues();
+      await refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
       toast.error("Erreur lors de la suppression");
     }
   }
 
-  if (loading) {
+  if (isLoading && venues.length === 0) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">

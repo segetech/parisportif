@@ -35,6 +35,8 @@ export interface Transaction {
   operator: string;
   platform: string;
   payment_operator: string;
+  support?: string;
+  venue_id?: string;
   type: "Dépôt" | "Retrait";
   amount_fcfa: number;
   phone?: string;

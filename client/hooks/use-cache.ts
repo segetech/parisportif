@@ -11,6 +11,7 @@ const CACHE_KEYS = {
   VALIDATION: "validation",
   AUDIT: "audit",
   ILLEGAL: "illegal",
+  MATCHING: "matching",
 };
 
 /**
@@ -99,7 +100,85 @@ export function useCache() {
         }
 
         keysToDelete.forEach((key) => localStorage.removeItem(key));
+        return keysToDelete.length;
+      } catch {
+        return 0;
+      }
+    },
+
+    // Statut des différents segments de cache
+    getCacheStatus: () => {
+      const status: Record<string, { cached: boolean; age?: number }> = {};
+
+      try {
+        Object.entries(CACHE_KEYS).forEach(([name, key]) => {
+          // Chercher dans localStorage les clés correspondantes
+          let found = false;
+          let latestAge = Infinity;
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.includes(`:${key}:`)) {
+              found = true;
+              try {
+                const item = localStorage.getItem(k);
+                if (item) {
+                  const { timestamp } = JSON.parse(item);
+                  if (timestamp) {
+                    const age = Date.now() - timestamp;
+                    if (age < latestAge) latestAge = age;
+                  }
+                }
+              } catch {}
+            }
+          }
+          if (found && latestAge !== Infinity) {
+            status[name] = { cached: true, age: latestAge };
+          } else {
+            status[name] = { cached: false };
+          }
+        });
       } catch {}
+
+      return status;
+    },
+
+    keys: CACHE_KEYS,
+  };
+}
+
+/**
+ * Hook for handling cache invalidation on API mutations
+ */
+export function useCacheInvalidation() {
+  const cache = useCache();
+
+  return {
+    onTransactionCreated: () => {
+      cache.invalidateDomain("transactions");
+    },
+    onTransactionUpdated: () => {
+      cache.invalidateDomain("transactions");
+    },
+    onTransactionDeleted: () => {
+      cache.invalidateDomain("transactions");
+    },
+    onBetCreated: () => {
+      cache.invalidateDomain("bets");
+    },
+    onBetUpdated: () => {
+      cache.invalidateDomain("bets");
+    },
+    onBetDeleted: () => {
+      cache.invalidateDomain("bets");
+    },
+    onVenueChanged: () => {
+      cache.invalidateDomain("venues");
+    },
+    onUserChanged: () => {
+      cache.invalidateDomain("users");
+    },
+    onDataRefresh: () => {
+      cache.invalidateAllData();
     },
   };
 }

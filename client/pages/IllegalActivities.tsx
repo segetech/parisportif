@@ -6,6 +6,8 @@ import { CreatableSelect } from "@/components/ui/creatable-select";
 import { RequireAuth, RequireRole, useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { useIllegalActivities, useLookups, useCreateIllegalBet, useCreateIllegalTransaction } from "@/hooks/use-data-queries";
+import { invalidateRelatedQueries } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabase";
 import {
   Dialog,
@@ -73,15 +75,19 @@ function IllegalActivitiesContent() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"bets" | "transactions">("bets");
   
-  // Listes déroulantes
-  const [operators, setOperators] = useState<string[]>([]);
-  const [platforms, setPlatforms] = useState<string[]>([]);
-  const [paymentOperators, setPaymentOperators] = useState<string[]>([]);
-  const [betTypes, setBetTypes] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Cache TanStack React Query pour fluidité instantanée
+  const { illegalBets = [], illegalTransactions = [], isLoading, isFetching, refetch } = useIllegalActivities();
+  const { data: lookupsData } = useLookups();
+  const createBetMutation = useCreateIllegalBet();
+  const createTransactionMutation = useCreateIllegalTransaction();
+
+  // Listes déroulantes synchronisées depuis le cache
+  const operators = lookupsData?.operatorNames || [];
+  const platforms = lookupsData?.platformNames || [];
+  const paymentOperators = lookupsData?.paymentOperatorNames || [];
+  const betTypes = lookupsData?.betTypeNames || [];
   
   // Paris illégaux
-  const [illegalBets, setIllegalBets] = useState<IllegalBet[]>([]);
   const [betDialogOpen, setBetDialogOpen] = useState(false);
   const [newBet, setNewBet] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -98,7 +104,6 @@ function IllegalActivitiesContent() {
   });
 
   // Transactions illégales
-  const [illegalTransactions, setIllegalTransactions] = useState<IllegalTransaction[]>([]);
   const [transactionDialogOpen, setTransactionDialogOpen] = useState(false);
   const [newTransaction, setNewTransaction] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -117,64 +122,6 @@ function IllegalActivitiesContent() {
   // Filtres
   const [typeFilter, setTypeFilter] = useState<"tous" | "Dépôt" | "Retrait">("tous");
 
-  // Charger les données de référence
-  useEffect(() => {
-    loadReferenceData();
-    loadIllegalBets();
-    loadIllegalTransactions();
-  }, []);
-
-  async function loadReferenceData() {
-    try {
-      const [opsRes, platsRes, payOpsRes, typesRes] = await Promise.all([
-        supabase.from('operators').select('name').eq('active', true).order('name'),
-        supabase.from('platforms').select('name').eq('active', true).order('name'),
-        supabase.from('payment_operators').select('name').eq('active', true).order('name'),
-        supabase.from('bet_types').select('name').eq('active', true).order('name'),
-      ]);
-
-      if (opsRes.data) setOperators(opsRes.data.map(o => o.name));
-      if (platsRes.data) setPlatforms(platsRes.data.map(p => p.name));
-      if (payOpsRes.data) setPaymentOperators(payOpsRes.data.map(p => p.name));
-      if (typesRes.data) setBetTypes(typesRes.data.map(t => t.name));
-    } catch (error) {
-      console.error('Erreur lors du chargement des données de référence:', error);
-      toast.error('Erreur lors du chargement des données');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadIllegalBets() {
-    try {
-      const { data, error } = await supabase
-        .from('illegal_bets')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      if (data) setIllegalBets(data as any);
-    } catch (error: any) {
-      console.error('Erreur:', error);
-      toast.error('Erreur lors du chargement des paris');
-    }
-  }
-
-  async function loadIllegalTransactions() {
-    try {
-      const { data, error } = await supabase
-        .from('illegal_transactions')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      if (data) setIllegalTransactions(data as any);
-    } catch (error: any) {
-      console.error('Erreur:', error);
-      toast.error('Erreur lors du chargement des transactions');
-    }
-  }
-
   // Fonctions pour créer de nouveaux éléments
   async function createOperator(name: string) {
     const { error } = await supabase
@@ -190,7 +137,7 @@ function IllegalActivitiesContent() {
       throw error;
     }
     
-    await loadReferenceData();
+    invalidateRelatedQueries("lookups");
     toast.success(`Opérateur "${name}" créé avec succès`);
   }
 
@@ -208,7 +155,7 @@ function IllegalActivitiesContent() {
       throw error;
     }
     
-    await loadReferenceData();
+    invalidateRelatedQueries("lookups");
     toast.success(`Plateforme "${name}" créée avec succès`);
   }
 
@@ -226,7 +173,7 @@ function IllegalActivitiesContent() {
       throw error;
     }
     
-    await loadReferenceData();
+    invalidateRelatedQueries("lookups");
     toast.success(`Opérateur de paiement "${name}" créé avec succès`);
   }
 
@@ -244,7 +191,7 @@ function IllegalActivitiesContent() {
       throw error;
     }
     
-    await loadReferenceData();
+    invalidateRelatedQueries("lookups");
     toast.success(`Type de pari "${name}" créé avec succès`);
   }
 
@@ -267,7 +214,7 @@ function IllegalActivitiesContent() {
       if (error) throw error;
 
       toast.success("Pari illégal enregistré avec succès");
-      await loadIllegalBets();
+      await refetch();
       setBetDialogOpen(false);
       setNewBet({
         date: new Date().toISOString().split("T")[0],
@@ -306,7 +253,7 @@ function IllegalActivitiesContent() {
       if (error) throw error;
 
       toast.success("Transaction illégale enregistrée avec succès");
-      await loadIllegalTransactions();
+      await refetch();
       setTransactionDialogOpen(false);
       setNewTransaction({
         date: new Date().toISOString().split("T")[0],
