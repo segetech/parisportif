@@ -1,3 +1,4 @@
+import { OpenReportButton } from "@/components/reports/OpenReportExport";
 import { HISTORICAL_RESULT_NOTICE } from "@/lib/test-vocabulary";
 import { testStatusLabel, testCatalogLabel } from "@/lib/test-vocabulary";
 import {
@@ -899,6 +900,7 @@ function Tests() {
               <span>Exporter</span>
             </Button>
 
+            <OpenReportButton initialOperator={activeOperator === "all" ? "" : activeOperator} />
             <Button
               onClick={openDialog}
               size="sm"

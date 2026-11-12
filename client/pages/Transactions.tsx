@@ -1,3 +1,4 @@
+import { OpenReportButton } from "@/components/reports/OpenReportExport";
 import {
   readRecordReference,
   writeRecordReference,
@@ -614,7 +615,8 @@ function Transactions() {
             <span>Actualiser</span>
           </Button>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
+            <OpenReportButton />
             <Button
               variant="outline"
               onClick={handleExportPDF}

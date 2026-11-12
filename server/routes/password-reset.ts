@@ -65,7 +65,7 @@ export const handleForgotPassword: RequestHandler = async (req, res) => {
         html: `
           <h2>Réinitialisation de mot de passe</h2>
           <p>Bonjour ${user.nom} ${user.prenom || ""},</p>
-          <p>Vous avez demandé la réinitialisation de votre mot de passe pour la plateforme Test.</p>
+          <p>Vous avez demandé la réinitialisation de votre mot de passe pour la plateforme OPEN.</p>
           <p><a href="${resetLink}" style="display: inline-block; padding: 10px 20px; background-color: #1f9e64; color: white; text-decoration: none; border-radius: 5px;">Réinitialiser mon mot de passe</a></p>
           <p>Ou copiez ce lien dans votre navigateur :</p>
           <p><code>${resetLink}</code></p>

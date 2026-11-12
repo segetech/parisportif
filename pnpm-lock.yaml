@@ -49,6 +49,9 @@ importers:
       jspdf-autotable:
         specifier: ^5.0.9
         version: 5.0.9(jspdf@4.2.1)
+      jszip:
+        specifier: 3.10.1
+        version: 3.10.1
       multer:
         specifier: ^1.4.5-lts.1
         version: 1.4.5-lts.2

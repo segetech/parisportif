@@ -143,7 +143,7 @@ export async function exportToExcel(
 
   await exportStyledExcel({
     sheetName,
-    title: `Rapport Test — ${sheetName.toUpperCase()}`,
+    title: `Rapport OPEN — ${sheetName.toUpperCase()}`,
     subtitle: `Export des données`,
     columns,
     data: rows,
@@ -181,7 +181,7 @@ export async function exportToPDF(
   });
 
   await exportStyledPDF({
-    title: `Rapport Test — ${documentTitle.toUpperCase()}`,
+    title: `Rapport OPEN — ${documentTitle.toUpperCase()}`,
     operator,
     periodText,
     columns,

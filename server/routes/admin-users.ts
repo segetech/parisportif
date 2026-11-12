@@ -193,7 +193,7 @@ export const handleCreateUserWithPassword: RequestHandler = async (req, res) => 
         subject: "Bienvenue - Vos identifiants d'accès",
         html: `
           <h2>Bienvenue ${nom}!</h2>
-          <p>Un compte a été créé pour vous sur la plateforme Test.</p>
+          <p>Un compte a été créé pour vous sur la plateforme OPEN.</p>
           <p><strong>Email :</strong> ${emailLower}</p>
           <p><strong>Mot de passe :</strong> <code>${finalPassword}</code></p>
           <p><strong>Rôle :</strong> ${role}</p>

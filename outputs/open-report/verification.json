@@ -1,0 +1,21 @@
+{
+  "engaged": 300.4,
+  "returned": 500.55,
+  "deposits": 1350.45,
+  "withdrawals": 200.2,
+  "balance": 1150.25,
+  "operators": [
+    [
+      "",
+      "Non renseigné"
+    ],
+    [
+      "Alpha",
+      "Alpha"
+    ],
+    [
+      "Bêta / Équipe très longue pour la feuille",
+      "Bêta   Équipe très longue pour "
+    ]
+  ]
+}

@@ -33,6 +33,7 @@ import ValidationPage from "./pages/ValidationNew";
 import CacheSettingsPage from "./pages/CacheSettings";
 import IllegalActivitiesPage from "./pages/IllegalActivities";
 import ExcelImportPage from "./pages/ExcelImport";
+import ReportPage from "./pages/Report";
 import { SyncStatus } from "@/components/sync/SyncStatus";
 import { initializeApp } from "@/lib/init";
 
@@ -69,6 +70,8 @@ const App = () => (
                 <Route path="/journal" element={<AuditLogPage />} />
                 <Route path="/illegal" element={<IllegalActivitiesPage />} />
                 <Route path="/import-excel" element={<ExcelImportPage />} />
+                <Route path="/rapport" element={<ReportPage />} />
+                <Route path="/rapports" element={<ReportPage />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>

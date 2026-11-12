@@ -146,12 +146,12 @@ export default function ResetPassword() {
           <div className="h-16 w-16 rounded-2xl bg-[#004D20] p-2 flex items-center justify-center border border-[#003816] shadow-sm mb-3">
             <img
               src="/logo.png"
-              alt="Logo Test"
+              alt="Logo OPEN"
               className="h-full w-full object-contain"
             />
           </div>
           <span className="text-xs font-bold text-[#006B2D] uppercase tracking-wider">
-            Test • Sécurité
+            OPEN • Sécurité
           </span>
         </div>
 

@@ -61,12 +61,12 @@ export async function exportStyledPDF({
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.setTextColor(0, 107, 45);
-  doc.text("TEST", margin, currentY);
+  doc.text("OPEN", margin, currentY);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139); // Slate 500
-  doc.text("Test • Rapport de données", margin + 18, currentY - 0.5);
+  doc.text("OPEN • Rapport de données", margin + 18, currentY - 0.5);
 
   currentY += 8;
 

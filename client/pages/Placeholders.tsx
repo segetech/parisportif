@@ -740,6 +740,8 @@ export function ExportsPage() {
     <RequireAuth>
       <RequireRole allow={["ADMIN", "AGENT"]}>
         <AppLayout>
+          <h2 className="mb-3 text-lg font-semibold">Exports simples — sélection libre</h2>
+
           <div className="flex flex-wrap items-end gap-3 mb-3">
             <div className="flex flex-col">
               <label className="text-xs font-medium">Module</label>

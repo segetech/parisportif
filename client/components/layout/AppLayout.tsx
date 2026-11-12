@@ -118,6 +118,11 @@ export default function AppLayout({
             label: "Import Excel",
             icon: <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-300" />,
           },
+          {
+            to: "/rapport",
+            label: "Rapport",
+            icon: <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-300" />,
+          },
         ],
       },
       {
@@ -205,7 +210,7 @@ export default function AppLayout({
       }
     }
     if (location.pathname === "/profil") return "Mon Profil";
-    return "Test";
+    return "OPEN";
   }, [location.pathname, navigationSections]);
 
   function handleSearch(e: React.FormEvent) {
@@ -254,20 +259,20 @@ export default function AppLayout({
           <Link
             to="/"
             className="flex items-center gap-3 min-w-0 group outline-none"
-            title="Test - Accueil"
+            title="OPEN - Accueil"
           >
             {/* Boîte Logo officiel */}
             <div className="h-10 w-10 rounded-xl bg-white border border-white/20 p-1 flex items-center justify-center shrink-0 shadow-xs">
               <img
-                src="/logo-test.svg"
-                alt="Logo Test"
+                src="/logo.png"
+                alt="Logo OPEN"
                 className="h-full w-full object-contain"
               />
             </div>
             {(!sidebarCollapsed || mobileDrawerOpen) && (
               <div className="flex flex-col min-w-0">
                 <span className="font-extrabold text-sm tracking-tight text-white leading-tight truncate">
-                  Test
+                  OPEN
                 </span>
                 <span className="text-[10px] font-bold text-[#FFD000] tracking-wider uppercase truncate">
                   Application de test
