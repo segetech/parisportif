@@ -100,7 +100,7 @@ export default function AppLayout({
           },
           {
             to: "/transactions",
-            label: "Transactions",
+            label: "Dépôts & Retraits",
             icon: <CreditCard className="h-4 w-4 shrink-0" />,
           },
           {

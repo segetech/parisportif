@@ -31,6 +31,7 @@ import {
   handleGetFile,
   handleDeleteFile,
 } from "./routes/storage";
+import { handleAiAnalyze, handleAiChat } from "./routes/ai";
 import { requireAuth, requireRole } from "./middleware/auth";
 
 export function createServer() {
@@ -110,6 +111,10 @@ export function createServer() {
 
   // Dashboard routes (protected, role-isolated)
   app.get("/api/dashboard/data", requireAuth, handleDashboardData);
+
+  // AI Analysis & Assistant routes (protected, role-isolated)
+  app.post("/api/ai/analyze", requireAuth, handleAiAnalyze);
+  app.post("/api/ai/chat", requireAuth, handleAiChat);
 
   // Audit log routes (centralized, persistent in DB)
   app.get(

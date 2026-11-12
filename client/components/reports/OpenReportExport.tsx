@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Loader2, Filter, Check, RotateCcw } from "lucide-react";
+import { Download, Loader2, Filter, ShieldCheck, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -9,6 +9,7 @@ import { useSettings } from "@/lib/settings";
 import { supabase } from "@/lib/supabase";
 import { currentReportPeriod, REPORT_MONTHS, REPORT_TRANCHES, reportPeriod } from "@/lib/report-periods";
 import { fetchOpenReport, type ReportFilters } from "@/lib/open-report-data";
+import { isLegalOperator } from "@/lib/operator-classification";
 import { cn } from "@/lib/utils";
 
 export function OpenReportExport({ initialOperator = "", onBusyChange }: { initialOperator?: string; onBusyChange?: (busy: boolean) => void }) {
@@ -18,6 +19,8 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
   const [tranche, setTranche] = useState<number>(initial.tranche);
   const [operator, setOperator] = useState(initialOperator);
   const [selectedOperators, setSelectedOperators] = useState<string[]>(() => initialOperator ? [initialOperator] : []);
+  const [operatorCategory, setOperatorCategory] = useState<"all" | "legal" | "illegal">("all");
+  const [operatorDisplayFilter, setOperatorDisplayFilter] = useState<"all" | "legal" | "illegal">("all");
   const [validation, setValidation] = useState("");
   const [selectedValidations, setSelectedValidations] = useState<string[]>([]);
   const [scope, setScope] = useState<ReportFilters["scope"]>("all");
@@ -37,6 +40,15 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
     return list.sort((a, b) => a.localeCompare(b, "fr"));
   }, [lookups?.operatorNames, initialOperator]);
 
+  const legalOperators = useMemo(() => availableOperators.filter(op => isLegalOperator(op)), [availableOperators]);
+  const illegalOperators = useMemo(() => availableOperators.filter(op => !isLegalOperator(op)), [availableOperators]);
+
+  const displayedOperators = useMemo(() => {
+    if (operatorDisplayFilter === "legal") return legalOperators;
+    if (operatorDisplayFilter === "illegal") return illegalOperators;
+    return availableOperators;
+  }, [operatorDisplayFilter, legalOperators, illegalOperators, availableOperators]);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -55,7 +67,22 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
   const allowed = !!user && ["ADMIN", "CONTROLEUR", "AGENT"].includes(user.role) && (user.role !== "AGENT" || settings.agentCanExport);
 
   function handleQuickOperatorChange(value: string) {
+    if (value === "__legal__") {
+      setOperatorCategory("legal");
+      setSelectedOperators([...legalOperators]);
+      setOperator("");
+      setOperatorDisplayFilter("legal");
+      return;
+    }
+    if (value === "__illegal__") {
+      setOperatorCategory("illegal");
+      setSelectedOperators([...illegalOperators]);
+      setOperator("");
+      setOperatorDisplayFilter("illegal");
+      return;
+    }
     setOperator(value);
+    setOperatorCategory("all");
     if (!value) {
       setSelectedOperators([]);
     } else {
@@ -79,11 +106,25 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
   function selectAllOperators() {
     setSelectedOperators([...availableOperators]);
     setOperator("");
+    setOperatorCategory("all");
+  }
+
+  function selectLegalOnly() {
+    setSelectedOperators([...legalOperators]);
+    setOperator("");
+    setOperatorCategory("legal");
+  }
+
+  function selectIllegalOnly() {
+    setSelectedOperators([...illegalOperators]);
+    setOperator("");
+    setOperatorCategory("illegal");
   }
 
   function clearOperators() {
     setSelectedOperators([]);
     setOperator("");
+    setOperatorCategory("all");
   }
 
   function toggleValidation(val: string) {
@@ -116,6 +157,7 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
       period,
       operator: effectiveOperators && effectiveOperators.length === 1 ? effectiveOperators[0] : (operator || undefined),
       operators: effectiveOperators,
+      operatorCategory,
       validation: effectiveValidations && effectiveValidations.length === 1 ? effectiveValidations[0] : (validation || undefined),
       validations: effectiveValidations,
       scope,
@@ -227,9 +269,22 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
               onChange={e => handleQuickOperatorChange(e.target.value)}
             >
               <option value="">Tous les opérateurs</option>
-              {availableOperators.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
+              <option value="__legal__">✓ Opérateurs légaux uniquement (1xBet, Bet223, MALIBET, PremierBet)</option>
+              <option value="__illegal__">⚠️ Opérateurs illégaux / non autorisés uniquement</option>
+              {legalOperators.length > 0 && (
+                <optgroup label="Opérateurs légaux (agréés)">
+                  {legalOperators.map(name => (
+                    <option key={name} value={name}>{name} (Légal)</option>
+                  ))}
+                </optgroup>
+              )}
+              {illegalOperators.length > 0 && (
+                <optgroup label="Opérateurs illégaux / non agréés">
+                  {illegalOperators.map(name => (
+                    <option key={name} value={name}>{name} (Illégal)</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
 
@@ -266,65 +321,145 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
           </label>
         </div>
 
-        {/* Ligne 3 : Sélection des opérateurs un par un (case à cocher) */}
+        {/* Ligne 3 : Sélection des opérateurs un par un (avec option légaux vs illégaux) */}
         {availableOperators.length > 0 && (
-          <div className="space-y-2.5 rounded-lg border border-[#D8E6DB] bg-[#F5F8F5] p-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-[#17251C] flex items-center gap-1.5">
-                <Filter className="h-3.5 w-3.5 text-[#006B2D]" />
-                Sélection des opérateurs un par un :
-                <span className="ml-1 text-[11px] font-semibold text-[#006B2D]">
-                  {selectedOperators.length === 0
-                    ? `Tous (${availableOperators.length}/${availableOperators.length})`
-                    : `${selectedOperators.length} sélectionné(s)`}
-                </span>
-              </span>
+          <div className="space-y-3 rounded-lg border border-[#D8E6DB] bg-[#F5F8F5] p-3.5">
+            {/* Barre de contrôle du filtre d'affichage des opérateurs */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-[#D8E6DB] pb-2.5">
               <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-[#17251C] flex items-center gap-1.5">
+                  <Filter className="h-3.5 w-3.5 text-[#006B2D]" />
+                  Sélection des opérateurs un par un :
+                  <span className="ml-1 text-[11px] font-semibold text-[#006B2D]">
+                    {selectedOperators.length === 0
+                      ? `Tous (${availableOperators.length}/${availableOperators.length})`
+                      : `${selectedOperators.length} sélectionné(s)`}
+                  </span>
+                </span>
+              </div>
+
+              {/* Sélecteur d'affichage : Tous, Légaux, Illégaux */}
+              <div className="flex items-center gap-1 rounded-lg border border-[#D8E6DB] bg-white p-0.5 shadow-2xs">
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setOperatorDisplayFilter("all")}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setOperatorDisplayFilter("all"); }}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors select-none",
+                    operatorDisplayFilter === "all" ? "bg-[#006B2D] text-white" : "text-[#556B5C] hover:bg-[#F5F8F5]"
+                  )}
+                >
+                  Tous ({availableOperators.length})
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setOperatorDisplayFilter("legal")}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setOperatorDisplayFilter("legal"); }}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1 select-none",
+                    operatorDisplayFilter === "legal" ? "bg-[#006B2D] text-white" : "text-emerald-700 hover:bg-emerald-50"
+                  )}
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                  Légaux ({legalOperators.length})
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setOperatorDisplayFilter("illegal")}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setOperatorDisplayFilter("illegal"); }}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1 select-none",
+                    operatorDisplayFilter === "illegal" ? "bg-amber-600 text-white" : "text-amber-700 hover:bg-amber-50"
+                  )}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  Illégaux ({illegalOperators.length})
+                </span>
+              </div>
+
+              {/* Raccourcis de sélection */}
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={selectLegalOnly}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") selectLegalOnly(); }}
+                  className="text-emerald-800 hover:underline cursor-pointer bg-emerald-100/70 hover:bg-emerald-100 px-2 py-0.5 rounded-md"
+                  title="Cocher 1xBet, Bet223, MALIBET, PremierBet"
+                >
+                  Cocher les légaux ({legalOperators.length})
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={selectIllegalOnly}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") selectIllegalOnly(); }}
+                  className="text-amber-800 hover:underline cursor-pointer bg-amber-100/70 hover:bg-amber-100 px-2 py-0.5 rounded-md"
+                  title="Cocher tous les opérateurs non agréés"
+                >
+                  Cocher les illégaux ({illegalOperators.length})
+                </span>
+                <span className="text-[#556B5C]">•</span>
                 <span
                   role="button"
                   tabIndex={0}
                   onClick={selectAllOperators}
                   onKeyDown={e => { if (e.key === "Enter" || e.key === " ") selectAllOperators(); }}
-                  className="text-xs font-semibold text-[#006B2D] hover:underline cursor-pointer"
+                  className="text-[#006B2D] hover:underline cursor-pointer"
                 >
-                  Tous
+                  Tout cocher
                 </span>
-                <span className="text-xs text-[#556B5C]">•</span>
+                <span className="text-[#556B5C]">•</span>
                 <span
                   role="button"
                   tabIndex={0}
                   onClick={clearOperators}
                   onKeyDown={e => { if (e.key === "Enter" || e.key === " ") clearOperators(); }}
-                  className="text-xs font-semibold text-[#556B5C] hover:underline cursor-pointer"
+                  className="text-[#556B5C] hover:underline cursor-pointer"
                 >
-                  Réinitialiser (Tous)
+                  Réinitialiser
                 </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-              {availableOperators.map(op => {
-                const checked = selectedOperators.length === 0 || selectedOperators.includes(op);
-                const isExplicitlySelected = selectedOperators.includes(op);
+            {/* Grille d'opérateurs avec badges légal/illégal */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 max-h-[360px] overflow-y-auto pr-1">
+              {displayedOperators.map(op => {
+                const isLegal = isLegalOperator(op);
+                const isChecked = selectedOperators.includes(op);
                 return (
                   <label
                     key={op}
                     className={cn(
-                      "flex items-center gap-2 rounded-lg border p-2 text-xs font-medium cursor-pointer transition-colors min-h-[38px]",
-                      isExplicitlySelected
+                      "flex items-center justify-between gap-2 rounded-lg border p-2 text-xs font-medium cursor-pointer transition-colors min-h-[40px]",
+                      isChecked
                         ? "border-[#006B2D] bg-white text-[#006B2D] font-bold shadow-2xs"
-                        : checked
-                          ? "border-[#D8E6DB] bg-white text-[#17251C]"
-                          : "border-[#E2ECE4] bg-white/60 text-[#556B5C] opacity-70 hover:opacity-100"
+                        : "border-[#D8E6DB] bg-white text-[#17251C] hover:border-gray-400"
                     )}
                   >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300 accent-[#006B2D] cursor-pointer"
-                      checked={selectedOperators.includes(op)}
-                      onChange={() => toggleOperator(op)}
-                    />
-                    <span className="truncate">{op}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 accent-[#006B2D] cursor-pointer shrink-0"
+                        checked={isChecked}
+                        onChange={() => toggleOperator(op)}
+                      />
+                      <span className="truncate">{op}</span>
+                    </div>
+
+                    <span
+                      className={cn(
+                        "text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0",
+                        isLegal
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-amber-100 text-amber-800"
+                      )}
+                    >
+                      {isLegal ? "Légal" : "Illégal"}
+                    </span>
                   </label>
                 );
               })}

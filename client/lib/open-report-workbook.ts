@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { addNativeCharts, type NativeChart } from "./report-charts";
 import { aggregateReport, numericMoney, moneyCents, operatorKey, type ReportRow, type ReportSnapshot } from "./open-report-data";
+import { isLegalOperator, operatorLegalityLabel } from "./operator-classification";
 import { testCatalogLabel, testStatusLabel, HISTORICAL_RESULT_NOTICE } from "./test-vocabulary";
 
 const GREEN = "006B2D", GOLD = "FFD000", RED = "C43636", INK = "173B28", PALE = "EFF6F0";
@@ -79,7 +80,7 @@ export async function buildOpenReport(snapshot: ReportSnapshot): Promise<{ bytes
   const activeOperatorFilter = snapshot.filters.operators && snapshot.filters.operators.length > 0
     ? snapshot.filters.operators
     : (snapshot.filters.operator || undefined);
-  const summary = aggregateReport(snapshot, snapshot.filters.period, activeOperatorFilter);
+  const summary = aggregateReport(snapshot, snapshot.filters.period, activeOperatorFilter, snapshot.filters.operatorCategory);
   const operators = [...new Set([...summary.tests, ...summary.transactions, ...summary.anomalies].map(operatorKey))].sort((a, b) => a.localeCompare(b, "fr") || (a < b ? -1 : 1));
   if (operators.length > 200) throw new Error("Plus de 200 opérateurs : filtrez le rapport pour préserver sa lisibilité.");
   const names = reportSheetNames(operators), charts: NativeChart[] = [];
@@ -144,7 +145,8 @@ export async function buildOpenReport(snapshot: ReportSnapshot): Promise<{ bytes
   charts.push({ sheetId: synthesis.id, title: operators.length > 12 ? "Tests — 12 opérateurs + autres" : "Tests par opérateur", kind: "bar", row: chartStart + 19, unit: "Nombre de tests", categories: { formula: ref(synthesis.name, `$A$${supportRow + 1}:$A$${supportRow + comparisons.length}`), values: comparisons.map(c => c.name) }, series: [{ name: "Tests", color: GREEN, formula: ref(synthesis.name, `$B$${supportRow + 1}:$B$${supportRow + comparisons.length}`), values: comparisons.map(c => c.count) }] });
   charts.push({ sheetId: synthesis.id, title: "Validation actuelle — tests et transactions", kind: "bar", row: chartStart + 19, column: 6, unit: "Nombre d’opérations", categories: { formula: ref(synthesis.name, `$D$${supportRow + 1}:$D$${supportRow + 4}`), values: validationLabels }, series: [{ name: "Opérations", color: GREEN, formula: ref(synthesis.name, `$E$${supportRow + 1}:$E$${supportRow + 4}`), values: validationCounts }] });
   for (const { operator, stats } of operatorStats) {
-    const sheet = setupSheet(workbook, names.get(operator)!, operator || "Non renseigné", snapshot, 13); metrics(sheet, stats);
+    const legLabel = operator ? ` [${operatorLegalityLabel(operator)}]` : "";
+    const sheet = setupSheet(workbook, names.get(operator)!, `${operator || "Non renseigné"}${legLabel}`, snapshot, 13); metrics(sheet, stats);
     const range = dailyTable(sheet, stats); const start = range.last + 2; dailyChart(sheet, stats, range, start, 0); charts[charts.length - 1].width = 12;
     let row = start + 21;
     sheet.getCell(row, 1).value = "TESTS"; row = table(sheet, stats.tests, testColumns, row + 1).total + 3;

@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { reportPeriod, type ReportPeriod } from "./report-periods";
+import { isLegalOperator } from "./operator-classification";
 
 export type ReportRow = { id: string; date: string; operator?: string | null; amount_fcfa?: string | number | null; amount_won_fcfa?: string | number | null; [key: string]: any };
 export interface ReportDataset { tests: ReportRow[]; transactions: ReportRow[]; anomalies: ReportRow[]; sites: ReportRow[]; people: { id: string; nom?: string; prenom?: string }[] }
-export interface ReportFilters { period: ReportPeriod; operator?: string; operators?: string[]; validation?: string; validations?: string[]; scope?: "all" | "bets" | "transactions"; transactionType?: "Dépôt" | "Retrait" }
+export interface ReportFilters { period: ReportPeriod; operator?: string; operators?: string[]; operatorCategory?: "all" | "legal" | "illegal"; validation?: string; validations?: string[]; scope?: "all" | "bets" | "transactions"; transactionType?: "Dépôt" | "Retrait" }
 export interface ReportSnapshot extends ReportDataset { filters: ReportFilters; generatedAt: string; userId: string; role: string }
 export const REPORT_MAX_ROWS = 200_000;
 
@@ -88,14 +89,17 @@ export const operatorKey = (row: ReportRow): string => row.operator?.trim() ? ro
 export function isDeposit(row: ReportRow) { return ["dépôt", "depot"].includes(String(row.type).toLowerCase()); }
 export function isWithdrawal(row: ReportRow) { return String(row.type).toLowerCase() === "retrait"; }
 
-export function aggregateReport(data: ReportDataset, period: ReportPeriod, operatorFilter?: string | string[]) {
+export function aggregateReport(data: ReportDataset, period: ReportPeriod, operatorFilter?: string | string[], operatorCategory?: "all" | "legal" | "illegal") {
   const allowedOps = Array.isArray(operatorFilter)
     ? (operatorFilter.length ? new Set(operatorFilter) : null)
     : (operatorFilter !== undefined ? new Set([operatorFilter]) : null);
   const inside = (r: ReportRow) => {
     const d = r.date?.slice(0, 10);
     if (!d || d < period.start || d > period.end) return false;
-    if (allowedOps !== null && !allowedOps.has(operatorKey(r))) return false;
+    const op = operatorKey(r);
+    if (allowedOps !== null && !allowedOps.has(op)) return false;
+    if (operatorCategory === "legal" && !isLegalOperator(op)) return false;
+    if (operatorCategory === "illegal" && isLegalOperator(op)) return false;
     return true;
   };
   const unique = (rows: ReportRow[]) => { const ids = new Set<string>(); return rows.filter(inside).map(r => { if (ids.has(r.id)) throw new Error("Doublon dans le rapport."); ids.add(r.id); return r; }); };

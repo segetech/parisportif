@@ -3,7 +3,7 @@ import http from "http";
 import { createServer } from "../index";
 import { uploadToR2, getFromR2, deleteFromR2, checkFileExistsInR2 } from "../lib/storage";
 
-describe("Cloudflare R2 Object Storage Integration", () => {
+describe("Cloudflare R2 Object Storage Integration", { timeout: 20000 }, () => {
   let server: http.Server;
   let baseUrl: string;
   const testKey = `test/test_file_${Date.now()}.txt`;

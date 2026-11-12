@@ -4,6 +4,7 @@ import JSZip from "jszip";
 import { reportPeriod, currentReportPeriod } from "./report-periods";
 import { aggregateReport, fetchOpenReport, moneyCents, numericMoney, reportPages, type ReportSnapshot } from "./open-report-data";
 import { buildOpenReport, reportSheetNames } from "./open-report-workbook";
+import { isLegalOperator, operatorLegalityLabel } from "./operator-classification";
 
 import { reportFixture } from "./open-report-fixture";
 
@@ -37,6 +38,26 @@ describe("production aggregation and pagination", () => {
     expect(aggregateReport(data, data.filters.period, ["Alpha", "Bêta / Équipe très longue pour la feuille"]).tests).toHaveLength(3);
     expect(aggregateReport(data, data.filters.period, ["Bêta / Équipe très longue pour la feuille"]).tests).toHaveLength(1);
     expect(aggregateReport(data, data.filters.period, "").deposits).toHaveLength(1);
+
+    // Classification et filtrage légaux / illégaux
+    expect(isLegalOperator("1xBet")).toBe(true);
+    expect(isLegalOperator("Bet223")).toBe(true);
+    expect(isLegalOperator("PremierBet")).toBe(true);
+    expect(isLegalOperator("MALIBET")).toBe(true);
+    expect(isLegalOperator("PMU Mali")).toBe(true);
+    expect(isLegalOperator("1WIN")).toBe(false);
+    expect(isLegalOperator("Stake")).toBe(false);
+    expect(isLegalOperator("Alpha")).toBe(false);
+
+    expect(operatorLegalityLabel("1xBet")).toBe("Légal");
+    expect(operatorLegalityLabel("1WIN")).toBe("Illégal");
+
+    // Filtrage category dans aggregateReport
+    const legalAgg = aggregateReport(data, data.filters.period, undefined, "legal");
+    expect(legalAgg.tests.every(t => isLegalOperator(t.operator || ""))).toBe(true);
+
+    const illegalAgg = aggregateReport(data, data.filters.period, undefined, "illegal");
+    expect(illegalAgg.tests.every(t => !isLegalOperator(t.operator || ""))).toBe(true);
   });
   it("preserves unknown and zero money and rejects precision loss", () => {
     expect(moneyCents(null)).toBeNull(); expect(moneyCents(0)).toBe(0n);

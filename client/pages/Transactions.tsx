@@ -1,4 +1,5 @@
 import { OpenReportButton } from "@/components/reports/OpenReportExport";
+import { WeeklyReportSection } from "@/components/reports/WeeklyReportSection";
 import {
   readRecordReference,
   writeRecordReference,
@@ -33,6 +34,7 @@ import {
   TrendingDown,
   Plus,
   FileText,
+  BarChart3,
   Download,
   RefreshCw,
   Sparkles,
@@ -60,6 +62,7 @@ interface Transaction {
   time?: string;
   type: string;
   operator: string;
+  platform?: string;
   support?: string;
   amount_fcfa: number;
   payment_operator?: string;
@@ -96,6 +99,7 @@ function Transactions() {
   const { data: venuesData = [] } = useVenues();
 
   const [search, setSearch] = useState("");
+  const [activeView, setActiveView] = useState<"list" | "report">("list");
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
@@ -103,6 +107,7 @@ function Transactions() {
 
   // Listes déroulantes synchronisées depuis le cache
   const operators = lookupsData?.operatorNames || [];
+  const platforms = lookupsData?.platformNames || [];
   const supports = lookupsData?.supportNames || [];
   const paymentOperators = lookupsData?.paymentOperatorNames || [];
   const venues = venuesData;
@@ -118,6 +123,7 @@ function Transactions() {
     time: new Date().toTimeString().slice(0, 5),
     type: "Dépôt",
     operator: "",
+    platform: "",
     support: "",
     amount_fcfa: 0,
     phone: "",
@@ -191,6 +197,22 @@ function Transactions() {
     toast.success(`Opérateur "${name}" créé avec succès`);
   }
 
+  async function createPlatform(name: string) {
+    const { error } = await supabase.from("platforms").insert([{ name }]);
+
+    if (error) {
+      if (error.code === "23505") {
+        toast.error("Cette plateforme existe déjà");
+      } else {
+        toast.error("Erreur lors de la création");
+      }
+      throw error;
+    }
+
+    invalidateRelatedQueries("lookups");
+    toast.success(`Plateforme "${name}" créée avec succès`);
+  }
+
   async function createSupport(name: string) {
     const { error } = await supabase.from("supports").insert([{ name }]);
 
@@ -235,6 +257,7 @@ function Transactions() {
       time: new Date().toTimeString().slice(0, 5),
       type: "Dépôt",
       operator: operators[0] || "",
+      platform: platforms[0] || "",
       support: supports[0] || "",
       amount_fcfa: 0,
       phone: "",
@@ -257,7 +280,8 @@ function Transactions() {
       time: transaction.time || "",
       type: transaction.type,
       operator: transaction.operator,
-      support: transaction.support,
+      platform: transaction.platform || "",
+      support: transaction.support || "",
       amount_fcfa: transaction.amount_fcfa,
       phone: transaction.phone || "",
       payment_operator: transaction.payment_operator || "",
@@ -285,6 +309,7 @@ function Transactions() {
         time: formData.time || null,
         type: formData.type,
         operator: formData.operator,
+        platform: formData.platform || null,
         support: formData.support || null,
         amount_fcfa: formData.amount_fcfa,
         phone: formData.phone.trim() || null,
@@ -345,6 +370,8 @@ function Transactions() {
     return (
       tx.operator.toLowerCase().includes(searchLower) ||
       tx.type.toLowerCase().includes(searchLower) ||
+      (tx.platform && tx.platform.toLowerCase().includes(searchLower)) ||
+      (tx.reference && tx.reference.toLowerCase().includes(searchLower)) ||
       (tx.notes && tx.notes.toLowerCase().includes(searchLower)) ||
       (tx.phone && tx.phone.toLowerCase().includes(searchLower)) ||
       (tx.payment_operator &&
@@ -377,84 +404,91 @@ function Transactions() {
     const columns = [
       { header: "N°", key: "index", width: 7, align: "center" as const },
       { header: "DATE", key: "date", width: 14, align: "center" as const },
-      { header: "HEURE", key: "time", width: 10, align: "center" as const },
       {
-        header: "TYPE",
+        header: "Opérateur de jeux",
+        key: "operator",
+        width: 20,
+        align: "left" as const,
+      },
+      {
+        header: "Plateforme",
+        key: "platform",
+        width: 16,
+        align: "center" as const,
+      },
+      {
+        header: "Opérateur de paiement",
+        key: "payment_operator",
+        width: 18,
+        align: "center" as const,
+      },
+      {
+        header: "Type",
         key: "type",
         width: 14,
         align: "center" as const,
         isStatus: true,
       },
       {
-        header: "OPÉRATEUR",
-        key: "operator",
-        width: 20,
-        align: "left" as const,
-      },
-      {
-        header: "SUPPORT",
-        key: "support",
-        width: 14,
-        align: "center" as const,
-      },
-      {
-        header: "PAIEMENT",
-        key: "payment_operator",
-        width: 16,
-        align: "center" as const,
-      },
-      {
-        header: "TÉLÉPHONE",
-        key: "phone",
-        width: 14,
-        align: "center" as const,
-      },
-      {
-        header: "PREUVE",
-        key: "proof_status",
-        width: 14,
-        align: "center" as const,
-      },
-      {
-        header: "MONTANT",
+        header: "Montant F CFA",
         key: "amount_fcfa",
         width: 18,
         align: "right" as const,
         isCurrency: true,
       },
+      { header: "Heure", key: "time", width: 10, align: "center" as const },
       {
-        header: "STATUT",
+        header: "Numéro de téléphone",
+        key: "phone",
+        width: 18,
+        align: "center" as const,
+      },
+      {
+        header: "Référence",
+        key: "reference",
+        width: 26,
+        align: "left" as const,
+      },
+      {
+        header: "preuve",
+        key: "proof_status",
+        width: 14,
+        align: "center" as const,
+      },
+      {
+        header: "Statut",
         key: "validation_status",
         width: 14,
         align: "center" as const,
         isStatus: true,
       },
-      { header: "NOTES", key: "notes", width: 28, align: "left" as const },
     ];
 
     const data = filteredTransactions.map((tx, idx) => ({
       index: idx + 1,
       date: new Date(tx.date).toLocaleDateString("fr-FR"),
-      time: tx.time || "—",
-      type: tx.type,
       operator: tx.operator,
-      support: tx.support || "—",
+      platform: tx.platform || tx.support || "—",
       payment_operator: tx.payment_operator || "—",
-      phone: tx.phone || "—",
-      proof_status:
-        tx.proof_status === "disponible"
-          ? "Disponible"
-          : tx.proof_status === "non_disponible"
-            ? "Non dispo"
-            : "Non renseig.",
+      type: tx.type,
       amount_fcfa: Number(tx.amount_fcfa) || 0,
+      time: tx.time || "—",
+      phone: tx.phone || "—",
+      reference: readRecordReference(tx).reference || tx.notes || "—",
+      proof_status:
+        tx.proof_attachment_url
+          ? "Oui"
+          : tx.proof_status === "disponible"
+            ? "Disponible"
+            : tx.proof_status === "non_disponible"
+              ? "Non dispo"
+              : "Non renseig.",
       validation_status:
         tx.validation_status === "valide"
           ? "Validé"
           : tx.validation_status === "refuse"
             ? "Refusé"
             : "En attente",
-      notes: tx.notes || "—",
     }));
 
     const dateStr = new Date().toISOString().split("T")[0];
@@ -569,20 +603,52 @@ function Transactions() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#D8E6DB]">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#17251C]">
-              Transactions
+              Dépôts &amp; Retraits
             </h1>
             <p className="text-xs sm:text-sm text-[#556B5C] mt-1">
               Historique et pilotage des flux financiers de dépôts et retraits
             </p>
           </div>
-          <Button
-            onClick={openDialog}
-            className="h-10 gap-2 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold text-xs rounded-xl shadow-xs transition-colors self-start sm:self-auto"
-          >
-            <Plus className="h-4 w-4 text-[#FFD000]" />
-            <span>Nouvelle transaction</span>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <div className="inline-flex rounded-xl border border-[#D8E6DB] bg-[#F5F8F5] p-1">
+              <button
+                type="button"
+                onClick={() => setActiveView("list")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  activeView === "list"
+                    ? "bg-[#006B2D] text-white"
+                    : "text-[#556B5C] hover:text-[#17251C]"
+                }`}
+              >
+                Opérations
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView("report")}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  activeView === "report"
+                    ? "bg-[#006B2D] text-white"
+                    : "text-[#556B5C] hover:text-[#17251C]"
+                }`}
+              >
+                <BarChart3 className="h-3.5 w-3.5" />
+                <span>Rapport Hebdo &amp; Graphe</span>
+              </button>
+            </div>
+            <Button
+              onClick={openDialog}
+              className="h-10 gap-2 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold text-xs rounded-xl shadow-xs transition-colors"
+            >
+              <Plus className="h-4 w-4 text-[#FFD000]" />
+              <span>Nouveau Dépôt / Retrait</span>
+            </Button>
+          </div>
         </div>
+
+        {activeView === "report" ? (
+          <WeeklyReportSection />
+        ) : (
+          <>
 
         {/* Barre de recherche et filtres */}
         <div className="p-4 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs flex flex-col sm:flex-row items-center gap-3">
@@ -832,27 +898,39 @@ function Transactions() {
         </div>
 
         {/* Tableau (Desktop) */}
-        <div className="hidden md:block rounded-2xl border border-[#D8E6DB] bg-white shadow-xs overflow-hidden">
+        <div className="hidden md:block rounded-2xl border border-[#D8E6DB] bg-white shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-[#F5F8F5] border-b border-[#D8E6DB]">
               <TableRow>
+                <TableHead className="text-xs font-bold text-[#17251C] w-12 text-center">
+                  N°
+                </TableHead>
                 <TableHead className="text-xs font-bold text-[#17251C]">
-                  Date & Heure
+                  DATE
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">
+                  Opérateur de jeux
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">
+                  Plateforme
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">
+                  Opérateur de paiement
                 </TableHead>
                 <TableHead className="text-xs font-bold text-[#17251C]">
                   Type
                 </TableHead>
-                <TableHead className="text-xs font-bold text-[#17251C]">
-                  Opérateur
-                </TableHead>
-                <TableHead className="text-xs font-bold text-[#17251C]">
-                  Support
-                </TableHead>
-                <TableHead className="text-xs font-bold text-[#17251C]">
-                  Paiement / Tél
-                </TableHead>
                 <TableHead className="text-right text-xs font-bold text-[#17251C]">
-                  Montant
+                  Montant F CFA
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">
+                  Heure
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">
+                  Numéro de téléphone
+                </TableHead>
+                <TableHead className="text-xs font-bold text-[#17251C]">
+                  Référence
                 </TableHead>
                 <TableHead className="text-xs font-bold text-[#17251C]">
                   Preuve
@@ -860,24 +938,30 @@ function Transactions() {
                 <TableHead className="text-xs font-bold text-[#17251C]">
                   Statut
                 </TableHead>
-                <TableHead className="text-xs font-bold text-[#17251C]">
-                  Notes
-                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredTransactions.length > 0 ? (
-                filteredTransactions.map((tx) => (
+                filteredTransactions.map((tx, idx) => (
                   <TableRow
                     key={tx.id}
                     className="cursor-pointer hover:bg-[#F5F8F5] transition-colors border-b border-[#E2ECE4]"
                     onClick={() => openEditDialog(tx)}
                   >
-                    <TableCell className="text-xs font-semibold text-[#17251C]">
-                      <div>{new Date(tx.date).toLocaleDateString("fr-FR")}</div>
-                      <div className="text-[11px] text-[#556B5C] font-mono">
-                        {tx.time || "—"}
-                      </div>
+                    <TableCell className="text-xs font-mono text-center text-[#556B5C]">
+                      {idx + 1}
+                    </TableCell>
+                    <TableCell className="text-xs font-semibold text-[#17251C] whitespace-nowrap">
+                      {new Date(tx.date).toLocaleDateString("fr-FR")}
+                    </TableCell>
+                    <TableCell className="text-xs font-bold text-[#17251C]">
+                      {tx.operator}
+                    </TableCell>
+                    <TableCell className="text-xs text-[#17251C]">
+                      {tx.platform || tx.support || "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-[#17251C]">
+                      {tx.payment_operator || "—"}
                     </TableCell>
                     <TableCell>
                       <div
@@ -898,21 +982,7 @@ function Transactions() {
                         <span>{tx.type}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs font-bold text-[#17251C]">
-                      {tx.operator}
-                    </TableCell>
-                    <TableCell className="text-xs text-[#556B5C]">
-                      {tx.support || "—"}
-                    </TableCell>
-                    <TableCell className="text-xs text-[#17251C]">
-                      <div>{tx.payment_operator || "—"}</div>
-                      {tx.phone && (
-                        <span className="font-mono text-[11px] text-[#556B5C]">
-                          {tx.phone}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-xs font-bold">
+                    <TableCell className="text-right font-mono text-xs font-bold whitespace-nowrap">
                       <span
                         className={
                           tx.type === "Dépôt"
@@ -923,6 +993,15 @@ function Transactions() {
                         {tx.type === "Dépôt" ? "+" : "-"}
                         {formatAmount(tx.amount_fcfa)}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-xs font-mono text-[#556B5C] whitespace-nowrap">
+                      {tx.time || "—"}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono text-[#17251C] whitespace-nowrap">
+                      {tx.phone || "—"}
+                    </TableCell>
+                    <TableCell className="max-w-[160px] truncate text-xs font-mono text-[#556B5C]">
+                      {readRecordReference(tx).reference || tx.notes || "—"}
                     </TableCell>
                     <TableCell>
                       {tx.proof_attachment_url ? (
@@ -968,18 +1047,15 @@ function Transactions() {
                             : "En attente"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-xs truncate text-xs text-[#556B5C]">
-                      {tx.notes || "—"}
-                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={9}
+                    colSpan={12}
                     className="text-center text-sm text-[#556B5C] py-12"
                   >
-                    Aucune transaction trouvée
+                    Aucun dépôt ou retrait trouvé
                   </TableCell>
                 </TableRow>
               )}
@@ -988,9 +1064,11 @@ function Transactions() {
         </div>
 
         <div className="text-sm text-muted-foreground">
-          Affichage de {filteredTransactions.length} transactions sur{" "}
+          Affichage de {filteredTransactions.length} opérations sur{" "}
           {transactions.length} au total
         </div>
+          </>
+        )}
       </div>
 
       {/* Dialog de création */}
@@ -999,8 +1077,8 @@ function Transactions() {
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-[#17251C]">
               {editingTransaction
-                ? "Consulter la transaction"
-                : "Nouvelle transaction financière"}
+                ? "Consulter le dépôt / retrait"
+                : "Nouveau dépôt ou retrait"}
             </DialogTitle>
           </DialogHeader>
 
@@ -1010,7 +1088,7 @@ function Transactions() {
             onSave={handleSubmit}
             onClose={() => setDialogOpen(false)}
             onRestore={() => openEditDialog(editingTransaction!)}
-            createLabel="Créer la transaction"
+            createLabel="Enregistrer l'opération"
             hasDraft={hasDraft}
             draftTime={savedAtFormatted}
             hasConflict={hasConflict}
@@ -1088,28 +1166,40 @@ function Transactions() {
               </div>
 
               <CreatableSelect
-                label="Opérateur"
+                label="Opérateur de jeux"
                 required
                 value={formData.operator}
                 onChange={(value) =>
                   setFormData({ ...formData, operator: value })
                 }
                 options={operators}
-                placeholder="Ex: PremierBet, Bet223, 1xBet, MALIBET..."
+                placeholder="Ex: 1XBET, BET223, PREMIERBET, MALIBET, MEGAPARI, 888STARZ..."
                 onCreateNew={createOperator}
               />
 
-              <CreatableSelect
-                label="Support"
-                required
-                value={formData.support}
-                onChange={(value) =>
-                  setFormData({ ...formData, support: value })
-                }
-                options={supports}
-                placeholder="En ligne, Site de test, Guichet..."
-                onCreateNew={createSupport}
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <CreatableSelect
+                  label="Plateforme"
+                  value={formData.platform}
+                  onChange={(value) =>
+                    setFormData({ ...formData, platform: value })
+                  }
+                  options={platforms}
+                  placeholder="Web, App mobile, USSD..."
+                  onCreateNew={createPlatform}
+                />
+
+                <CreatableSelect
+                  label="Support"
+                  value={formData.support}
+                  onChange={(value) =>
+                    setFormData({ ...formData, support: value })
+                  }
+                  options={supports}
+                  placeholder="En ligne, Site de test, Guichet..."
+                  onCreateNew={createSupport}
+                />
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

@@ -1,5 +1,7 @@
 import AppLayout from "@/components/layout/AppLayout";
 import { OpenReportExport } from "@/components/reports/OpenReportExport";
+import { WeeklyReportSection } from "@/components/reports/WeeklyReportSection";
+import { AiAssistantPanel } from "@/components/ai/AiAssistantPanel";
 import { RequireAuth, RequireRole } from "@/context/AuthContext";
 import { FileSpreadsheet } from "lucide-react";
 
@@ -16,16 +18,20 @@ export default function ReportPage() {
                 </div>
                 <div>
                   <h1 className="text-xl font-bold tracking-tight text-[#17251C] sm:text-2xl">
-                    Rapport d’activité mensuel
+                    Rapports d’activité officiels
                   </h1>
                   <p className="text-xs text-[#556B5C] sm:text-sm">
-                    Génération du classeur officiel OPEN avec synthèse, graphiques intégrés, tests, flux financiers et onglets par opérateur.
+                    Génération du rapport hebdomadaire officiel (PARI, DEPOT-RETRAIT, ILLEGAL) avec graphe intégré et du classeur mensuel.
                   </p>
                 </div>
               </div>
             </div>
 
+            <WeeklyReportSection />
+
             <OpenReportExport />
+
+            <AiAssistantPanel />
           </div>
         </AppLayout>
       </RequireRole>
