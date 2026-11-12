@@ -1,3 +1,4 @@
+import { testExportValue } from "./test-vocabulary";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -65,7 +66,7 @@ export async function exportStyledPDF({
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139); // Slate 500
-  doc.text("Supervision & Contrôle des Paris • Document Officiel", margin + 18, currentY - 0.5);
+  doc.text("Test • Rapport de données", margin + 18, currentY - 0.5);
 
   currentY += 8;
 
@@ -139,7 +140,7 @@ export async function exportStyledPDF({
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5);
     doc.setTextColor(6, 95, 70); // Emerald 800
-    doc.text("VOLUME TOTAL MISÉ", margin + 3, currentY + 4.5);
+    doc.text("VOLUME TOTAL ENGAGÉ", margin + 3, currentY + 4.5);
     doc.setFontSize(9.5);
     doc.text(
       `${new Intl.NumberFormat("fr-FR").format(Math.round(totalMise))} FCFA`,
@@ -156,7 +157,7 @@ export async function exportStyledPDF({
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5);
     doc.setTextColor(30, 41, 59); // Slate 800
-    doc.text("GAINS REMPORTÉS", x2 + 3, currentY + 4.5);
+    doc.text("MONTANTS RETOURNÉS", x2 + 3, currentY + 4.5);
     doc.setFontSize(9.5);
     doc.text(
       `${new Intl.NumberFormat("fr-FR").format(Math.round(totalGains))} FCFA`,
@@ -191,7 +192,7 @@ export async function exportStyledPDF({
 
   const tableBody = data.map((row, idx) => {
     return columns.map((col) => {
-      let val = row[col.key];
+      let val = testExportValue(col.key, row[col.key]);
       if (col.key === "index") return String(idx + 1);
 
       if (col.isCurrency) {
@@ -301,7 +302,7 @@ export async function exportStyledPDF({
 
       // Mention de confidentialité et pagination
       doc.text(
-        "Document généré par le Système de Gestion & Contrôle des Paris Sportifs • Strictement Confidentiel",
+        "Document généré par le Système de Gestion & Contrôle des Tests • Strictement Confidentiel",
         margin,
         pageHeight - 4.5
       );

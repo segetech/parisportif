@@ -1,3 +1,4 @@
+import { testCatalogLabel, testStatusLabel, testExportValue } from "./test-vocabulary";
 import api, { Bet, Transaction, Venue } from "@/data/api";
 import { exportStyledExcel, ExcelColumnDef } from "@/lib/excel-export";
 import { exportStyledPDF, PDFColumnDef } from "@/lib/pdf-export";
@@ -45,14 +46,19 @@ export async function fetchExportData(
     rows.sort((a, b) => (a.operator.localeCompare(b.operator) || (a.time + a.date).localeCompare(b.time + b.date)));
     return rows.map((b) => ({
       operator: b.operator, // Opérateur de jeux
-      support: b.support,   // Support
-      type_pari: "",        // Type de Pari (catégorie) – inconnu pour l'instant
+      support: testCatalogLabel(b.support || ""),   // Support
+      date: b.date,
+      time: b.time,
+      bet_type: testCatalogLabel(b.bet_type || ""),
+      amount_fcfa: b.amount_fcfa,
+      amount_won_fcfa: b.amount_won_fcfa,
+      status: testStatusLabel(b.status),
       montant_text: formatFcfaCompact(b.amount_fcfa), // Montant en texte "xxxxF"
       heure_text: formatHeureH(b.time),               // Heure au format "HHHMM"
-      phone: "",                                       // Numéro de téléphone (vide)
+      phone: b.phone || "",
       reference: b.reference,                          // Référence
-      statut: b.status,                                // statut
-      montant_gagne_text: formatFcfaCompact((b as any).amount_won_fcfa), // montant gagné texte
+      statut: testStatusLabel(b.status),                                // statut
+      montant_retourne_text: formatFcfaCompact(b.amount_won_fcfa),
     }));
   }
 
@@ -84,8 +90,8 @@ export async function exportToCSV(
   filename: string,
 ) {
   const csv = [
-    headers.map(escapeCell).join(";"),
-    ...rows.map((r) => headers.map((h) => escapeCell((r as any)[h])).join(";")),
+    headers.map((key) => escapeCell(({ bet_type: "Type de test", amount_fcfa: "Montant engagé (FCFA)", amount_won_fcfa: "Montant retourné (FCFA)", status: "Issue du test" } as Record<string, string>)[key] || key)).join(";"),
+    ...rows.map((r) => headers.map((h) => escapeCell(testExportValue(h, (r as any)[h]))).join(";")),
   ].join("\r\n");
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");
@@ -119,7 +125,7 @@ export async function exportToExcel(
     const isCurrency =
       h.key.toLowerCase().includes("amount") ||
       h.key.toLowerCase().includes("montant") ||
-      h.key.toLowerCase().includes("gains");
+      h.key.toLowerCase().includes("montants retournés");
     const isStatus =
       h.key.toLowerCase() === "status" ||
       h.key.toLowerCase() === "statut" ||
@@ -137,8 +143,8 @@ export async function exportToExcel(
 
   await exportStyledExcel({
     sheetName,
-    title: `Rapport Officiel — ${sheetName.toUpperCase()}`,
-    subtitle: `Exportation certifiée des données`,
+    title: `Rapport Test — ${sheetName.toUpperCase()}`,
+    subtitle: `Export des données`,
     columns,
     data: rows,
     filename,
@@ -158,7 +164,7 @@ export async function exportToPDF(
     const isCurrency =
       h.key.toLowerCase().includes("amount") ||
       h.key.toLowerCase().includes("montant") ||
-      h.key.toLowerCase().includes("gains");
+      h.key.toLowerCase().includes("montants retournés");
     const isStatus =
       h.key.toLowerCase() === "status" ||
       h.key.toLowerCase() === "statut" ||
@@ -175,7 +181,7 @@ export async function exportToPDF(
   });
 
   await exportStyledPDF({
-    title: `Rapport Officiel — ${documentTitle.toUpperCase()}`,
+    title: `Rapport Test — ${documentTitle.toUpperCase()}`,
     operator,
     periodText,
     columns,

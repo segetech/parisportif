@@ -40,13 +40,13 @@ interface LookupItem {
 
 function LookupsManagementContent() {
   const [activeTab, setActiveTab] = useState<"operators" | "platforms" | "payment_operators" | "bet_types">("operators");
-  
+
   // États pour chaque type
   const [operators, setOperators] = useState<LookupItem[]>([]);
   const [platforms, setPlatforms] = useState<LookupItem[]>([]);
   const [paymentOperators, setPaymentOperators] = useState<LookupItem[]>([]);
   const [betTypes, setBetTypes] = useState<LookupItem[]>([]);
-  
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newItemName, setNewItemName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -123,7 +123,7 @@ function LookupsManagementContent() {
       toast.success("Élément ajouté avec succès");
       setNewItemName("");
       setDialogOpen(false);
-      
+
       // Recharger la liste appropriée
       switch (activeTab) {
         case "operators":
@@ -163,7 +163,7 @@ function LookupsManagementContent() {
       if (error) throw error;
 
       toast.success("Élément supprimé avec succès");
-      
+
       // Recharger la liste appropriée
       switch (table) {
         case "operators":
@@ -195,7 +195,7 @@ function LookupsManagementContent() {
       if (error) throw error;
 
       toast.success(currentActive ? "Élément désactivé" : "Élément activé");
-      
+
       // Recharger la liste appropriée
       switch (table) {
         case "operators":
@@ -220,13 +220,13 @@ function LookupsManagementContent() {
   const getTabLabel = () => {
     switch (activeTab) {
       case "operators":
-        return "Opérateurs de jeux";
+        return "Opérateurs";
       case "platforms":
         return "Plateformes";
       case "payment_operators":
         return "Opérateurs de paiement";
       case "bet_types":
-        return "Types de paris";
+        return "Types de tests";
     }
   };
 
@@ -278,7 +278,8 @@ function LookupsManagementContent() {
               Op. Paiement ({paymentOperators.length})
             </TabsTrigger>
             <TabsTrigger value="bet_types">
-              Types de paris ({betTypes.length})
+
+              Types de tests ({betTypes.length})
             </TabsTrigger>
           </TabsList>
 

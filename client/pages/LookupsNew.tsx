@@ -1,3 +1,4 @@
+import { testCatalogLabel, testStatusLabel } from "@/lib/test-vocabulary";
 import { RecordForm } from "@/components/common/RecordForm";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -168,12 +169,12 @@ export default function LookupsPage() {
 
   const keys: { key: LookupKey; title: string }[] = useMemo(
     () => [
-      { key: "operators", title: "Opérateurs de jeux" },
+      { key: "operators", title: "Opérateurs" },
       { key: "payment_operators", title: "Opérateurs de paiement" },
       { key: "platforms", title: "Plateformes" },
       { key: "supports", title: "Supports" },
-      { key: "bet_types", title: "Types de pari" },
-      { key: "statuses", title: "Statuts de pari" },
+      { key: "bet_types", title: "Types de test" },
+      { key: "statuses", title: "Statuts de test" },
     ],
     [],
   );
@@ -227,7 +228,7 @@ export default function LookupsPage() {
                             key={v}
                             className="flex items-center justify-between border rounded px-3 py-2 hover:bg-slate-50"
                           >
-                            <span className="text-sm">{v}</span>
+                            <span className="text-sm">{testStatusLabel(testCatalogLabel(v))}</span>
                             <div className="flex items-center gap-1">
                               <Button
                                 variant="ghost"
@@ -289,7 +290,7 @@ export default function LookupsPage() {
                   <div>
                     <label className="text-sm font-medium">Valeur</label>
                     <Input
-                      value={inputValue}
+                      value={testStatusLabel(testCatalogLabel(inputValue))}
                       onChange={(e) => setInputValue(e.target.value)}
                       placeholder="Entrez une valeur..."
                     />

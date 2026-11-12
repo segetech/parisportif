@@ -78,7 +78,7 @@ interface IllegalTransaction {
 function IllegalActivitiesContent() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"bets" | "transactions">("bets");
-  
+
   // Cache TanStack React Query pour fluidité instantanée
   const { illegalBets = [], illegalTransactions = [], isLoading, isFetching, refetch } = useIllegalActivities();
   const { data: lookupsData } = useLookups();
@@ -90,7 +90,7 @@ function IllegalActivitiesContent() {
   const platforms = lookupsData?.platformNames || [];
   const paymentOperators = lookupsData?.paymentOperatorNames || [];
   const betTypes = lookupsData?.betTypeNames || [];
-  
+
   // Paris illégaux
   const [betDialogOpen, setBetDialogOpen] = useState(false);
   const [newBet, setNewBet] = useState({
@@ -133,7 +133,7 @@ function IllegalActivitiesContent() {
     const { error } = await supabase
       .from('operators')
       .insert([{ name }]);
-    
+
     if (error) {
       if (error.code === '23505') {
         toast.error('Cet opérateur existe déjà');
@@ -142,7 +142,7 @@ function IllegalActivitiesContent() {
       }
       throw error;
     }
-    
+
     invalidateRelatedQueries("lookups");
     toast.success(`Opérateur "${name}" créé avec succès`);
   }
@@ -151,7 +151,7 @@ function IllegalActivitiesContent() {
     const { error } = await supabase
       .from('platforms')
       .insert([{ name }]);
-    
+
     if (error) {
       if (error.code === '23505') {
         toast.error('Cette plateforme existe déjà');
@@ -160,7 +160,7 @@ function IllegalActivitiesContent() {
       }
       throw error;
     }
-    
+
     invalidateRelatedQueries("lookups");
     toast.success(`Plateforme "${name}" créée avec succès`);
   }
@@ -169,7 +169,7 @@ function IllegalActivitiesContent() {
     const { error } = await supabase
       .from('payment_operators')
       .insert([{ name }]);
-    
+
     if (error) {
       if (error.code === '23505') {
         toast.error('Cet opérateur de paiement existe déjà');
@@ -178,7 +178,7 @@ function IllegalActivitiesContent() {
       }
       throw error;
     }
-    
+
     invalidateRelatedQueries("lookups");
     toast.success(`Opérateur de paiement "${name}" créé avec succès`);
   }
@@ -187,18 +187,18 @@ function IllegalActivitiesContent() {
     const { error } = await supabase
       .from('bet_types')
       .insert([{ name }]);
-    
+
     if (error) {
       if (error.code === '23505') {
-        toast.error('Ce type de pari existe déjà');
+        toast.error("Ce type de test existe déjà");
       } else {
         toast.error('Erreur lors de la création');
       }
       throw error;
     }
-    
+
     invalidateRelatedQueries("lookups");
-    toast.success(`Type de pari "${name}" créé avec succès`);
+    toast.success(`Type de test "${name}" créé avec succès`);
   }
 
   const handleAddBet = async () => {
@@ -219,7 +219,7 @@ function IllegalActivitiesContent() {
 
       if (error) throw error;
 
-      toast.success("Pari illégal enregistré avec succès");
+      toast.success("Test illégal enregistré avec succès");
       await refetch();
       setBetDialogOpen(false);
       setNewBet({
@@ -296,7 +296,8 @@ function IllegalActivitiesContent() {
             Activités Illégales
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Enregistrement des paris et transactions illégaux
+
+            Enregistrement des tests et transactions illégaux
           </p>
         </div>
       </div>
@@ -305,7 +306,8 @@ function IllegalActivitiesContent() {
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="bets">
-              Paris Illégaux ({illegalBets.length})
+
+              Tests Illégaux ({illegalBets.length})
             </TabsTrigger>
             <TabsTrigger value="transactions">
               Dépôts/Retraits Illégaux ({illegalTransactions.length})
@@ -320,7 +322,7 @@ function IllegalActivitiesContent() {
             }
           >
             <Plus className="h-4 w-4 mr-2" />
-            + {activeTab === "bets" ? "Nouveau pari" : "Nouvelle transaction"}
+            + {activeTab === "bets" ? "Nouveau test" : "Nouvelle transaction"}
           </Button>
         </div>
 
@@ -346,7 +348,7 @@ function IllegalActivitiesContent() {
                 <tr>
                   <th className="text-left p-2">N°</th>
                   <th className="text-left p-2">Date</th>
-                  <th className="text-left p-2">Opérateur de jeux</th>
+                  <th className="text-left p-2">Opérateur</th>
                   <th className="text-left p-2">Plateforme</th>
                   <th className="text-left p-2">Opérateur de paiement</th>
                   <th className="text-left p-2">Type</th>
@@ -405,7 +407,8 @@ function IllegalActivitiesContent() {
                       className="text-center text-sm text-muted-foreground p-4"
                       colSpan={8}
                     >
-                      Aucun pari illégal enregistré
+
+                      Aucun test illégal enregistré
                     </td>
                   </tr>
                 )}
@@ -421,7 +424,7 @@ function IllegalActivitiesContent() {
                 <tr>
                   <th className="text-left p-2">N°</th>
                   <th className="text-left p-2">Date</th>
-                  <th className="text-left p-2">Opérateur de jeux</th>
+                  <th className="text-left p-2">Opérateur</th>
                   <th className="text-left p-2">Plateforme</th>
                   <th className="text-left p-2">Opérateur de paiement</th>
                   <th className="text-left p-2">Type</th>
@@ -504,7 +507,7 @@ function IllegalActivitiesContent() {
       <Dialog open={betDialogOpen} onOpenChange={setBetDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Enregistrer un pari illégal</DialogTitle>
+            <DialogTitle>Enregistrer un test illégal</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
             <DateTimeRow

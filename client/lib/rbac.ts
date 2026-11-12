@@ -19,7 +19,7 @@ export type Permission = typeof ALL_PERMISSIONS[number];
 
 export const PERMISSION_LABELS: Record<Permission, string> = {
   manage_transactions: "Gérer les transactions",
-  manage_bets: "Gérer les paris",
+  manage_bets: "Gérer les tests",
   manage_venues: "Gérer les salles",
   validate_records: "Valider/Rejeter les enregistrements",
   delete_records: "Supprimer des enregistrements",

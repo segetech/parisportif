@@ -57,7 +57,7 @@ const CACHE_ENTITIES: CacheEntityDefinition[] = [
     queryKey: "transactions",
     domain: "transactions",
     label: "Transactions Financières",
-    description: "Dépôts, retraits et flux monétaires des parieurs",
+    description: "Dépôts, retraits et flux monétaires des participants",
     tier: "OPERATIONAL",
     icon: CreditCard,
     staleTimeLabel: "1 min",
@@ -66,8 +66,8 @@ const CACHE_ENTITIES: CacheEntityDefinition[] = [
     id: "bets",
     queryKey: "bets",
     domain: "bets",
-    label: "Paris Sportifs",
-    description: "Tickets enregistrés, cotes et résultats des événements",
+    label: "Tests",
+    description: "Tests enregistrés, cotes et résultats des événements",
     tier: "OPERATIONAL",
     icon: Trophy,
     staleTimeLabel: "1 min",
@@ -96,7 +96,7 @@ const CACHE_ENTITIES: CacheEntityDefinition[] = [
     id: "venues",
     queryKey: "venues",
     domain: "venues",
-    label: "Salles & Points de Vente",
+    label: "Sites & Points de Vente",
     description: "Établissements physiques, localisations et capacités",
     tier: "REFERENCE",
     icon: Building2,
@@ -285,7 +285,7 @@ function CacheManagement() {
       cache.invalidateDomain("bets");
       cache.invalidateDomain("validation");
       updateCacheInfo();
-      toast.success("Données opérationnelles invalidées (Paris, Transactions, Validations).");
+      toast.success("Données opérationnelles invalidées (Tests, Transactions, Validations).");
     } catch (error) {
       toast.error("Erreur lors du nettoyage opérationnel.");
     }
@@ -499,7 +499,8 @@ function CacheManagement() {
                 Invalider l'Opérationnel
               </div>
               <p className="text-[11px] text-[#556B5C] mt-1">
-                Force la réactualisation des paris, transactions et files de validation sans impacter les référentiels stables.
+
+                Force la réactualisation des tests, transactions et files de validation sans impacter les référentiels stables.
               </p>
             </div>
             <Button
@@ -509,7 +510,8 @@ function CacheManagement() {
               className="w-full min-h-[44px] h-10 bg-white border-[#D8E6DB] hover:bg-emerald-50 text-[#006B2D] font-semibold"
             >
               <RefreshCw className="h-3.5 w-3.5 mr-2" />
-              Invalider Paris & Transactions
+
+              Invalider Tests & Transactions
             </Button>
           </div>
 
@@ -543,7 +545,8 @@ function CacheManagement() {
                 Recharger les Référentiels
               </div>
               <p className="text-[11px] text-[#556B5C] mt-1">
-                Recharge les listes de salles, opérateurs, moyens de paiement et configurations système.
+
+                Recharge les listes de sites, opérateurs, moyens de paiement et configurations système.
               </p>
             </div>
             <Button
@@ -730,7 +733,8 @@ function CacheManagement() {
             </h3>
           </div>
           <p className="text-xs text-[#556B5C] leading-relaxed">
-            Chaque opération d'écriture (création d'un pari, validation d'une transaction, modification de point de vente) déclenche une invalidation ciblée des caches dépendants. Vos listes et tableaux de bord restent perpétuellement synchronisés sans nécessiter de rechargement complet de page.
+
+            Chaque opération d'écriture (création d'un test, validation d'une transaction, modification de point de vente) déclenche une invalidation ciblée des caches dépendants. Vos listes et tableaux de bord restent perpétuellement synchronisés sans nécessiter de rechargement complet de page.
           </p>
           <div className="text-xs text-[#556B5C] space-y-1.5 pt-1">
             <div className="flex items-center gap-1.5">

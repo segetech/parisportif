@@ -96,7 +96,7 @@ export default function ForgotPassword() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="agent@parisportif.com"
+                  placeholder="agent@example.com"
                   required
                   disabled={loading}
                   autoComplete="email"

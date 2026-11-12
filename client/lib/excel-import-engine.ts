@@ -77,6 +77,14 @@ export interface ParsedVenueGroup {
   isValid: boolean;
 }
 
+/** Public names and legacy worksheet names share the existing persistence code. */
+export function detectImportEntity(sheetName: string): "depotretrait" | "pari" | "salles" {
+  const name = sheetName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/test|pari/.test(name)) return "pari";
+  if (/site|salle/.test(name)) return "salles";
+  return "depotretrait";
+}
+
 // -----------------------------------------------------------------------------
 // RÉFÉRENTIELS ET ALIASES OFFICIELS
 // -----------------------------------------------------------------------------
@@ -343,7 +351,7 @@ export function parseTransactionRow(
     anomalies.push({
       row: rowNumber,
       field: "operator",
-      message: "Opérateur de jeux manquant",
+      message: "Opérateur manquant",
       severity: "error",
       rawValue: rawOp,
     });
@@ -466,13 +474,13 @@ export function parseBetRow(
 
   const rawOp = rowValues["Opérateur de jeux"] || rowValues["Opérateur"] || rowValues["operator"] || "";
   const rawSupport = rowValues["Support"] || rowValues["Plateforme"] || rowValues["platform"] || "";
-  const rawBetType = rowValues["Type de Pari"] || rowValues["Type de pari"] || rowValues["bet_type"] || "";
+  const rawBetType = rowValues["Type de test"] || rowValues["Type de Test"] || rowValues["Type de Pari"] || rowValues["Type de pari"] || rowValues["bet_type"] || "";
   const rawAmount = rowValues["Montant"] || rowValues["amount"] || "";
   const rawTime = rowValues["Heure"] || rowValues["time"] || "";
   const rawPhone = rowValues["Numéro de téléphone"] || rowValues["phone"] || "";
-  const rawRef = rowValues["Référence"] || rowValues["reference"] || "";
+  const rawRef = rowValues["Référence du test"] || rowValues["Référence"] || rowValues["reference"] || "";
   const rawStatus = rowValues["statut"] || rowValues["Statut"] || "";
-  const rawAmountWon = rowValues["montant gagné"] || rowValues["Montant gagné"] || "";
+  const rawAmountWon = rowValues["Montant retourné"] || rowValues["montant retourné"] || rowValues["montant gagné"] || rowValues["Montant gagné"] || "";
 
   // 1. Opérateur
   const operator = resolveAlias(rawOp, OPERATOR_ALIASES);
@@ -480,7 +488,7 @@ export function parseBetRow(
     anomalies.push({
       row: rowNumber,
       field: "operator",
-      message: "Opérateur de jeux manquant",
+      message: "Opérateur manquant",
       severity: "error",
       rawValue: rawOp,
     });
@@ -503,7 +511,7 @@ export function parseBetRow(
     anomalies.push({
       row: rowNumber,
       field: "betType",
-      message: "Type de pari / jeu manquant",
+      message: "Type de test manquant",
       severity: "error",
       rawValue: rawBetType,
     });
@@ -515,7 +523,7 @@ export function parseBetRow(
     anomalies.push({
       row: rowNumber,
       field: "amount",
-      message: "Montant misé invalide",
+      message: "Montant engagé invalide",
       severity: "error",
       rawValue: String(rawAmount),
     });
@@ -547,9 +555,9 @@ export function parseBetRow(
   // 6. Statut du résultat du jeu
   let status: "en_attente" | "gagné" | "perdu" = "en_attente";
   const st = String(rawStatus || "").toLowerCase().trim();
-  if (st.includes("gagn")) {
+  if (st === "issue favorable" || st.includes("gagn")) {
     status = "gagné";
-  } else if (st.includes("perd") || st.includes("perdu")) {
+  } else if (st === "issue défavorable" || st.includes("perd") || st.includes("perdu")) {
     status = "perdu";
   } else {
     status = "en_attente";
@@ -568,7 +576,7 @@ export function parseBetRow(
       anomalies.push({
         row: rowNumber,
         field: "amountWon",
-        message: "Pari marqué 'gagné' mais montant du gain non renseigné",
+        message: "Issue favorable renseignée mais montant retourné absent",
         severity: "warning",
       });
     }

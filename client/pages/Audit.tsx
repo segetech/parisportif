@@ -111,7 +111,7 @@ function AuditTable() {
       await exportStyledExcel({
         sheetName: "Audit",
         title: "Journal d'Audit et Traçabilité Système",
-        subtitle: "Rapport certifié d'activité et de sécurité des opérations",
+        subtitle: "Historique d'activité et de sécurité des opérations",
         columns,
         data,
         filename: `journal_audit_${new Date().toISOString().slice(0, 10)}.xlsx`,
@@ -149,7 +149,7 @@ function AuditTable() {
       toast.loading("Génération du rapport d'audit PDF...", { id: "audit-pdf" });
       await exportStyledPDF({
         title: "Journal d'Audit et Traçabilité Système",
-        subtitle: "Rapport certifié d'activité et de sécurité des opérations",
+        subtitle: "Historique d'activité et de sécurité des opérations",
         columns,
         data,
         filename: `journal_audit_${new Date().toISOString().slice(0, 10)}.pdf`,
@@ -212,8 +212,8 @@ function AuditTable() {
           <select className="border rounded px-2 py-1 text-sm" value={filters.entity} onChange={(e) => setFilters({ ...filters, entity: e.target.value })}>
             <option value="">Toutes</option>
             <option value="Transaction">Transaction</option>
-            <option value="Pari">Pari</option>
-            <option value="Salle">Salle</option>
+            <option value="Pari">Test</option>
+            <option value="Salle">Site</option>
             <option value="Systeme">Système</option>
           </select>
         </div>
@@ -313,7 +313,7 @@ function labelEntity(e: AuditEntry["entity"]): string {
     case "Transaction":
       return "Transaction";
     case "Pari":
-      return "Pari";
+      return "Test";
     case "Salle":
       return "Salle";
     default:

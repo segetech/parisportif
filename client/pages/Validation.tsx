@@ -1,3 +1,4 @@
+import { testStatusLabel, testCatalogLabel } from "@/lib/test-vocabulary";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import {
@@ -162,7 +163,7 @@ function ValidationContent() {
           <p className="text-2xl font-bold text-orange-600">{totalPending}</p>
         </div>
         <div className="p-4 border rounded-lg">
-          <p className="text-sm text-muted-foreground">Paris</p>
+          <p className="text-sm text-muted-foreground">Tests</p>
           <p className="text-2xl font-bold">{pendingBets.length}</p>
         </div>
         <div className="p-4 border rounded-lg">
@@ -170,7 +171,7 @@ function ValidationContent() {
           <p className="text-2xl font-bold">{pendingTransactions.length}</p>
         </div>
         <div className="p-4 border rounded-lg">
-          <p className="text-sm text-muted-foreground">Salles</p>
+          <p className="text-sm text-muted-foreground">Sites</p>
           <p className="text-2xl font-bold">{pendingVenues.length}</p>
         </div>
       </div>
@@ -179,13 +180,15 @@ function ValidationContent() {
       <Tabs defaultValue="bets" className="space-y-4">
         <TabsList>
           <TabsTrigger value="bets">
-            Paris ({pendingBets.length})
+
+            Tests ({pendingBets.length})
           </TabsTrigger>
           <TabsTrigger value="transactions">
             Transactions ({pendingTransactions.length})
           </TabsTrigger>
           <TabsTrigger value="venues">
-            Salles ({pendingVenues.length})
+
+            Sites ({pendingVenues.length})
           </TabsTrigger>
         </TabsList>
 
@@ -212,9 +215,9 @@ function ValidationContent() {
                         {new Date(bet.date).toLocaleDateString("fr-FR")}
                       </TableCell>
                       <TableCell>{bet.operator}</TableCell>
-                      <TableCell>{bet.bet_type}</TableCell>
+                      <TableCell>{testCatalogLabel(bet.bet_type)}</TableCell>
                       <TableCell>{formatAmount(bet.amount_fcfa)}</TableCell>
-                      <TableCell>{bet.status}</TableCell>
+                      <TableCell>{testStatusLabel(bet.status)}</TableCell>
                       <TableCell>
                         {bet.users?.nom} {bet.users?.prenom}
                       </TableCell>
@@ -245,7 +248,8 @@ function ValidationContent() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      Aucun pari en attente
+
+                      Aucun test en attente
                     </TableCell>
                   </TableRow>
                 )}
@@ -325,7 +329,7 @@ function ValidationContent() {
                 <TableRow>
                   <TableHead>Quartier</TableHead>
                   <TableHead>Opérateur</TableHead>
-                  <TableHead>Type de pari</TableHead>
+                  <TableHead>Type de test</TableHead>
                   <TableHead>Adresse</TableHead>
                   <TableHead>Créé par</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -337,7 +341,7 @@ function ValidationContent() {
                     <TableRow key={venue.id}>
                       <TableCell>{venue.quartier}</TableCell>
                       <TableCell>{venue.operator}</TableCell>
-                      <TableCell>{venue.bet_type}</TableCell>
+                      <TableCell>{testCatalogLabel(venue.bet_type)}</TableCell>
                       <TableCell>{venue.address}</TableCell>
                       <TableCell>
                         {venue.users?.nom} {venue.users?.prenom}
@@ -369,7 +373,8 @@ function ValidationContent() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      Aucune salle en attente
+
+                      Aucun site en attente
                     </TableCell>
                   </TableRow>
                 )}
@@ -390,7 +395,7 @@ function ValidationContent() {
           <div className="space-y-4">
             <div className="p-3 bg-slate-50 rounded">
               <p className="text-sm font-medium">
-                {selectedItem?.type === "bet" && "Pari"}
+                {selectedItem?.type === "bet" && "Test"}
                 {selectedItem?.type === "transaction" && "Transaction"}
                 {selectedItem?.type === "venue" && "Salle"}
               </p>

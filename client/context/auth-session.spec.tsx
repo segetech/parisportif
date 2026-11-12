@@ -168,6 +168,8 @@ describe("Real AuthContext & RequireAuth Component Tree Suite", () => {
     await vi.waitFor(() => {
       const emailEl = container.querySelector('[data-testid="user-email"]');
       expect(emailEl?.textContent).toBe("assalia@example.com");
+      // The passive mount effect can run after the initial DOM commit.
+      expect(mountCount).toBe(1);
     });
 
     const input = container.querySelector('[data-testid="ticket-input"]') as HTMLInputElement;

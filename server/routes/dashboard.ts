@@ -45,7 +45,7 @@ export const handleDashboardData: RequestHandler = async (req, res) => {
 
     if (betsError) {
       console.error("Dashboard bets query error:", betsError);
-      return res.status(500).json({ error: "Erreur lors de la récupération des paris" });
+      return res.status(500).json({ error: "Erreur lors de la récupération des tests" });
     }
 
     const transactions = txData || [];

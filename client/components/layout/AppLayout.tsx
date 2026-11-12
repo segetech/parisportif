@@ -3,7 +3,7 @@ import { useMemo, useState, useEffect } from "react";
 import {
   LayoutDashboard,
   CreditCard,
-  Trophy,
+  ClipboardCheck,
   Building2,
   Book,
   Link2,
@@ -64,7 +64,7 @@ export default function AppLayout({
   const location = useLocation();
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<PeriodState>(getDefaultPeriod());
-  
+
   // État du sidebar rétractable
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window !== "undefined") {
@@ -104,13 +104,13 @@ export default function AppLayout({
             icon: <CreditCard className="h-4 w-4 shrink-0" />,
           },
           {
-            to: "/bets",
-            label: "Paris",
-            icon: <Trophy className="h-4 w-4 shrink-0" />,
+            to: "/tests",
+            label: "Tests",
+            icon: <ClipboardCheck className="h-4 w-4 shrink-0" />,
           },
           {
             to: "/venues",
-            label: "Salles de jeux",
+            label: "Sites de test",
             icon: <Building2 className="h-4 w-4 shrink-0" />,
           },
           {
@@ -259,8 +259,8 @@ export default function AppLayout({
             {/* Boîte Logo officiel */}
             <div className="h-10 w-10 rounded-xl bg-white border border-white/20 p-1 flex items-center justify-center shrink-0 shadow-xs">
               <img
-                src="/logo.png"
-                alt="Logo officiel Test"
+                src="/logo-test.svg"
+                alt="Logo Test"
                 className="h-full w-full object-contain"
               />
             </div>
@@ -270,7 +270,7 @@ export default function AppLayout({
                   Test
                 </span>
                 <span className="text-[10px] font-bold text-[#FFD000] tracking-wider uppercase truncate">
-                  Supervision & Contrôle
+                  Application de test
                 </span>
               </div>
             )}
@@ -459,7 +459,7 @@ export default function AppLayout({
           </NavLink>
 
           <NavLink
-            to="/bets"
+            to="/tests"
             className={({ isActive }) =>
               cn(
                 "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
@@ -469,8 +469,8 @@ export default function AppLayout({
               )
             }
           >
-            <Trophy className="h-5 w-5 mb-0.5" />
-            <span>Paris</span>
+            <ClipboardCheck className="h-5 w-5 mb-0.5" />
+            <span>Tests</span>
           </NavLink>
 
           <NavLink
@@ -485,7 +485,7 @@ export default function AppLayout({
             }
           >
             <Building2 className="h-5 w-5 mb-0.5" />
-            <span>Salles</span>
+            <span>Sites</span>
           </NavLink>
 
           <button

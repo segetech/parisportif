@@ -1,3 +1,4 @@
+import { testStatusLabel, testCatalogLabel } from "@/lib/test-vocabulary";
 import AppLayout from "@/components/layout/AppLayout";
 import Placeholder from "@/components/common/Placeholder";
 import { RequireAuth, RequireRole } from "@/context/AuthContext";
@@ -6,7 +7,7 @@ export function BetsPage() {
   return (
     <RequireAuth>
       <AppLayout>
-        <Placeholder title="Paris" />
+        <Placeholder title="Tests" />
       </AppLayout>
     </RequireAuth>
   );
@@ -15,7 +16,7 @@ export function VenuesPage() {
   return (
     <RequireAuth>
       <AppLayout>
-        <Placeholder title="Salles" />
+        <Placeholder title="Sites" />
       </AppLayout>
     </RequireAuth>
   );
@@ -54,12 +55,12 @@ export function LookupsPage() {
 
   const keys: { key: LookupKey; title: string }[] = useMemo(
     () => [
-      { key: "operators", title: "Opérateurs de jeux" },
+      { key: "operators", title: "Opérateurs" },
       { key: "payment_operators", title: "Opérateurs de paiement" },
       { key: "platforms", title: "Plateformes" },
       { key: "supports", title: "Supports" },
-      { key: "bet_types", title: "Types de pari" },
-      { key: "statuses", title: "Statuts de pari" },
+      { key: "bet_types", title: "Types de test" },
+      { key: "statuses", title: "Statuts de test" },
     ],
     [],
   );
@@ -284,7 +285,7 @@ export function MatchingPage() {
     window.location.href = `/transactions?ref=${encodeURIComponent(ref)}`;
   }
   function navigateToBet(ref: string) {
-    window.location.href = `/bets?ref=${encodeURIComponent(ref)}`;
+    window.location.href = `/tests?ref=${encodeURIComponent(ref)}`;
   }
   async function validateLink(betId: string, txId: string) {
     try {
@@ -380,7 +381,7 @@ export function MatchingPage() {
                   <th className="text-left p-2">Score</th>
                   <th className="text-left p-2">Opérateur</th>
                   <th className="text-left p-2">Transaction</th>
-                  <th className="text-left p-2">Pari</th>
+                  <th className="text-left p-2">Test</th>
                   <th className="text-left p-2">Raisons</th>
                   <th className="text-left p-2">Actions</th>
                 </tr>
@@ -400,7 +401,7 @@ export function MatchingPage() {
                       <td className="p-2">
                         <div className="font-medium">{r.bet.reference}</div>
                         <div className="text-xs text-muted-foreground">
-                          {new Intl.NumberFormat("fr-FR").format(r.bet.amount_fcfa)} F CFA • {r.bet.time} • {r.bet.status}
+                          {new Intl.NumberFormat("fr-FR").format(r.bet.amount_fcfa)} F CFA • {r.bet.time} • {testStatusLabel(r.bet.status)}
                         </div>
                         {(r.bet as any).linked_tx_id && (
                           <div className="inline-block mt-1 text-[10px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700">
@@ -418,7 +419,7 @@ export function MatchingPage() {
                       <td className="p-2">
                         <div className="flex flex-wrap gap-2">
                           <Button variant="outline" size="sm" onClick={() => navigateToTx(r.tx.reference)}>Voir transaction</Button>
-                          <Button variant="outline" size="sm" onClick={() => navigateToBet(r.bet.reference)}>Voir pari</Button>
+                          <Button variant="outline" size="sm" onClick={() => navigateToBet(r.bet.reference)}>Voir test</Button>
                           <RequireRole allow={["ADMIN"]}>
                             <Button
                               size="sm"
@@ -492,7 +493,7 @@ export function MatchingPage() {
           {viewBet && (
             <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4" onClick={() => setViewBet(null)}>
               <div className="bg-white max-w-lg w-full rounded shadow p-4" onClick={(e) => e.stopPropagation()}>
-                <div className="font-semibold mb-2">Pari</div>
+                <div className="font-semibold mb-2">Test</div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
                     <div className="text-muted-foreground">Date</div>
@@ -582,7 +583,7 @@ export function ExportsPage() {
   }
 
   function filenameBase() {
-    const mod = moduleKey === "transactions" ? "Transactions" : moduleKey === "bets" ? "Paris" : "Salles";
+    const mod = moduleKey === "transactions" ? "Transactions" : moduleKey === "bets" ? "Tests" : "Sites";
     return `${mod}_${operator || "Operateur"}_${start}_${end}`;
   }
 
@@ -600,7 +601,7 @@ export function ExportsPage() {
         headers = [
           { key: "date", title: "Date", width: 12, numFmt: "yyyy-mm-dd" },
           { key: "time", title: "Heure", width: 10, numFmt: "hh:mm" },
-          { key: "operator", title: "Opérateur de jeux", width: 18 },
+          { key: "operator", title: "Opérateur", width: 18 },
           { key: "platform", title: "Plateforme", width: 16 },
           { key: "payment_operator", title: "Opérateur de paiement", width: 22 },
           { key: "type", title: "Type (Dépôt/Retrait)", width: 16 },
@@ -614,24 +615,24 @@ export function ExportsPage() {
         headers = [
           { key: "date", title: "Date", width: 12, numFmt: "yyyy-mm-dd" },
           { key: "time", title: "Heure", width: 10, numFmt: "hh:mm" },
-          { key: "operator", title: "Opérateur de jeux", width: 18 },
+          { key: "operator", title: "Opérateur", width: 18 },
           { key: "support", title: "Support", width: 16 },
           { key: "category", title: "Catégorie", width: 14 },
           { key: "forme", title: "Forme", width: 14 },
           { key: "amount_fcfa", title: "Montant (F CFA)", width: 18, numFmt: "#,##0 \"F CFA\"" },
           { key: "status", title: "Statut", width: 12 },
-          { key: "amount_won_fcfa", title: "Montant gagné (F CFA)", width: 22, numFmt: "#,##0 \"F CFA\"" },
+          { key: "amount_won_fcfa", title: "Montant retourné (F CFA)", width: 22, numFmt: "#,##0 \"F CFA\"" },
           { key: "reference", title: "Référence", width: 20 },
-          { key: "ticket_url", title: "Lien du ticket", width: 24 },
+          { key: "ticket_url", title: "Lien du justificatif", width: 24 },
           { key: "notes", title: "Notes", width: 30 },
         ];
       } else {
         headers = [
           { key: "quartier_no", title: "N° quartier", width: 12 },
           { key: "quartier", title: "Quartier", width: 18 },
-          { key: "operator", title: "Opérateur de jeux", width: 18 },
+          { key: "operator", title: "Opérateur", width: 18 },
           { key: "support", title: "Support", width: 16 },
-          { key: "bet_type", title: "Type de pari", width: 16 },
+          { key: "bet_type", title: "Type de test", width: 16 },
           { key: "address", title: "Adresse", width: 24 },
           { key: "contact_phone", title: "Téléphone", width: 16 },
           { key: "gps_lat", title: "Latitude", width: 14, numFmt: "0.000000" },
@@ -640,7 +641,7 @@ export function ExportsPage() {
         ];
       }
       await exportToExcel(
-        moduleKey === "transactions" ? "Transactions" : moduleKey === "bets" ? "Paris" : "Salles",
+        moduleKey === "transactions" ? "Transactions" : moduleKey === "bets" ? "Tests" : "Sites",
         headers,
         data,
         `${filenameBase()}.xlsx`,
@@ -662,7 +663,9 @@ export function ExportsPage() {
         return;
       }
       // En-têtes FR
-      const headers = Object.keys(data[0]);
+      const headers = moduleKey === "bets"
+        ? ["operator", "support", "bet_type", "date", "time", "amount_fcfa", "reference", "status", "amount_won_fcfa", "phone"]
+        : Object.keys(data[0]);
       await exportToCSV(headers, data, `${filenameBase()}.csv`);
     } catch (e: any) {
       toast.error(e?.message || "Erreur");
@@ -701,7 +704,7 @@ export function ExportsPage() {
           { key: "heure_text", title: "Heure" },
           { key: "reference", title: "Référence" },
           { key: "statut", title: "Statut" },
-          { key: "montant_gagne_text", title: "Gains" },
+          { key: "montant_retourne_text", title: "Montants retournés" },
         ];
       } else {
         headers = [
@@ -714,7 +717,7 @@ export function ExportsPage() {
           { key: "contact_phone", title: "Téléphone" },
         ];
       }
-      const titleMod = moduleKey === "transactions" ? "Transactions" : moduleKey === "bets" ? "Paris" : "Salles de Jeux";
+      const titleMod = moduleKey === "transactions" ? "Transactions" : moduleKey === "bets" ? "Tests" : "Sites de test";
       await exportToPDF(
         titleMod,
         headers,
@@ -742,8 +745,8 @@ export function ExportsPage() {
               <label className="text-xs font-medium">Module</label>
               <select className="border rounded px-2 py-1 text-sm min-w-[14rem]" value={moduleKey} onChange={(e) => setModuleKey(e.target.value as any)}>
                 <option value="transactions">Transactions</option>
-                <option value="bets">Paris</option>
-                <option value="venues">Salles</option>
+                <option value="bets">Tests</option>
+                <option value="venues">Sites</option>
               </select>
             </div>
             <div className="flex flex-col">
@@ -812,10 +815,10 @@ export function ExportsPage() {
               <Download className="h-5 w-5 text-[#006B2D]" />
               <div>
                 <h3 className="text-sm font-bold text-[#17251C]">
-                  Modèles d'Importation Excel Vierges (Templates Officiels)
+                  Modèles d’import Excel
                 </h3>
                 <p className="text-xs text-[#556B5C]">
-                  Téléchargez un gabarit pré-formaté avec les en-têtes officiels et des exemples conformes pour préparer vos saisies d'agents.
+                  Téléchargez un gabarit pré-formaté avec les en-têtes attendus et des exemples pour préparer vos saisies d'agents.
                 </p>
               </div>
             </div>
@@ -832,11 +835,12 @@ export function ExportsPage() {
 
               <Button
                 variant="outline"
-                onClick={() => generateBlankImportTemplate("pari")}
+                onClick={() => generateBlankImportTemplate("tests")}
                 className="justify-start gap-2 border-[#D8E6DB] bg-[#F5F8F5] hover:bg-white text-[#17251C] text-xs font-semibold min-h-[44px]"
               >
                 <Download className="h-4 w-4 text-[#006B2D]" />
-                Modèle Paris & Mises (.xlsx)
+
+                Modèle Tests & Montants engagés (.xlsx)
               </Button>
 
               <Button
@@ -845,7 +849,8 @@ export function ExportsPage() {
                 className="justify-start gap-2 border-[#D8E6DB] bg-[#F5F8F5] hover:bg-white text-[#17251C] text-xs font-semibold min-h-[44px]"
               >
                 <Download className="h-4 w-4 text-[#006B2D]" />
-                Modèle Salles de jeux (.xlsx)
+
+                Modèle Sites de test (.xlsx)
               </Button>
             </div>
           </div>
@@ -885,7 +890,7 @@ export function SettingsPage() {
                           <input type="checkbox" className="h-4 w-4" checked={settings.uniqueReferences.transactions} onChange={(e) => setSettings((s) => ({ ...s, uniqueReferences: { ...s.uniqueReferences, transactions: e.target.checked } }))} />
                         </div>
                         <div className="flex items-center justify-between border rounded p-2 mt-2">
-                          <span>Paris</span>
+                          <span>Tests</span>
                           <input type="checkbox" className="h-4 w-4" checked={settings.uniqueReferences.bets} onChange={(e) => setSettings((s) => ({ ...s, uniqueReferences: { ...s.uniqueReferences, bets: e.target.checked } }))} />
                         </div>
                       </div>
@@ -940,7 +945,7 @@ export function SettingsPage() {
                         <input type="checkbox" className="h-4 w-4" checked={settings.agentCanExport} onChange={(e) => setSettings((s) => ({ ...s, agentCanExport: e.target.checked }))} />
                       </div>
                       <div className="flex items-center justify-between border rounded p-2">
-                        <span>Agent peut gérer Salles</span>
+                        <span>Agent peut gérer Sites</span>
                         <input type="checkbox" className="h-4 w-4" checked={settings.agentCanManageVenues} onChange={(e) => setSettings((s) => ({ ...s, agentCanManageVenues: e.target.checked }))} />
                       </div>
                       <div>
@@ -1026,7 +1031,7 @@ export function SettingsPage() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="flex items-center justify-between border rounded p-2">
-                        <span>Inclure colonne « Numéro de téléphone » (Paris)</span>
+                        <span>Inclure colonne « Numéro de téléphone » (Tests)</span>
                         <input type="checkbox" className="h-4 w-4" checked={settings.includePhoneInBetsExport} onChange={(e) => setSettings((s) => ({ ...s, includePhoneInBetsExport: e.target.checked }))} />
                       </div>
                       <div className="space-y-2">
@@ -1040,7 +1045,7 @@ export function SettingsPage() {
                           <input type="checkbox" className="h-4 w-4" checked={settings.exportExcelStyles.autoFilter} onChange={(e) => setSettings((s) => ({ ...s, exportExcelStyles: { ...s.exportExcelStyles, autoFilter: e.target.checked } }))} />
                         </div>
                         <div className="flex items-center justify-between border rounded p-2">
-                          <span>Couleur par opérateur (Paris)</span>
+                          <span>Couleur par opérateur (Tests)</span>
                           <input type="checkbox" className="h-4 w-4" checked={settings.exportExcelStyles.colorByOperator} onChange={(e) => setSettings((s) => ({ ...s, exportExcelStyles: { ...s.exportExcelStyles, colorByOperator: e.target.checked } }))} />
                         </div>
                       </div>

@@ -116,7 +116,7 @@ export function NotificationBell() {
       } else {
         // Pour les agents, naviguer vers la page de l'opération
         const pageMap: Record<string, string> = {
-          bets: "/bets",
+          bets: "/tests",
           transactions: "/transactions",
           venues: "/venues",
         };

@@ -1,3 +1,4 @@
+import { testStatusLabel, testCatalogLabel } from "@/lib/test-vocabulary";
 import AppLayout from "@/components/layout/AppLayout";
 import { useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,7 +10,7 @@ import {
   TrendingUp,
   Building2,
   AlertTriangle,
-  Trophy,
+  ClipboardCheck,
   Activity,
   ArrowUpRight,
   ArrowDownRight,
@@ -232,7 +233,7 @@ function Dashboard() {
           <p className="text-xs md:text-sm text-[#556B5C] mt-1 font-medium">
             {isAdmin && "Pilotage exécutif des flux financiers, réseau de distribution et conformité"}
             {isController && "Supervision des flux saisis par les agents, file d'approbation et détection des fraudes"}
-            {isAgent && "Enregistrement de vos opérations de paris, transactions et suivi des validations"}
+            {isAgent && "Enregistrement de vos opérations de tests, transactions et suivi des validations"}
           </p>
         </div>
 
@@ -254,9 +255,9 @@ function Dashboard() {
 
           {isAgent && (
             <Button asChild size="sm" className="min-h-[44px] sm:min-h-0 h-9 gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold shadow-xs">
-              <Link to="/bets">
+              <Link to="/tests">
                 <Plus className="h-4 w-4" />
-                <span>Nouveau pari</span>
+                <span>Créer un test</span>
               </Link>
             </Button>
           )}
@@ -272,9 +273,9 @@ function Dashboard() {
 
           {isAdmin && (
             <Button asChild size="sm" className="min-h-[44px] sm:min-h-0 h-9 gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold shadow-xs">
-              <Link to="/bets">
+              <Link to="/tests">
                 <Plus className="h-4 w-4" />
-                <span>Nouveau pari</span>
+                <span>Créer un test</span>
               </Link>
             </Button>
           )}
@@ -291,23 +292,23 @@ function Dashboard() {
             {/* Mes Paris Enregistrés */}
             <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Mes Paris Saisis</span>
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Mes Tests Saisis</span>
                 <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
-                  <Trophy className="h-4 w-4" />
+                  <ClipboardCheck className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
                 <div className="text-2xl font-black text-[#17251C] font-mono">
                   <AnimatedNumber value={stats.totalBets} />
                 </div>
-                <p className="text-xs text-[#556B5C] mt-1">tickets enregistrés par votre compte</p>
+                <p className="text-xs text-[#556B5C] mt-1">tests enregistrés par votre compte</p>
               </div>
             </motion.div>
 
             {/* Volume Financier Saisi */}
             <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Volume Misé Saisi</span>
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Volume Engagé Saisi</span>
                 <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
                   <Coins className="h-4 w-4" />
                 </div>
@@ -339,7 +340,7 @@ function Dashboard() {
             {/* Tickets Gagnants Saisis */}
             <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Tickets Gagnants</span>
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Issues favorables</span>
                 <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
@@ -348,7 +349,7 @@ function Dashboard() {
                 <div className="text-2xl font-black text-[#17251C] font-mono">
                   <AnimatedNumber value={stats.wonBetsCount} />
                 </div>
-                <p className="text-xs text-[#556B5C] mt-1">sur {stats.totalBets} paris saisis</p>
+                <p className="text-xs text-[#556B5C] mt-1">sur {stats.totalBets}  tests saisis</p>
               </div>
             </motion.div>
           </motion.div>
@@ -356,7 +357,7 @@ function Dashboard() {
           {/* Actions Rapides pour l'Agent */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Link
-              to="/bets"
+              to="/tests"
               className="p-4 rounded-xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group shadow-xs"
             >
               <div className="flex items-center gap-3">
@@ -364,7 +365,7 @@ function Dashboard() {
                   <Plus className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-[#17251C]">Enregistrer un Pari</div>
+                  <div className="text-sm font-bold text-[#17251C]">Enregistrer un Test</div>
                   <div className="text-xs text-[#556B5C]">Saisie avec contrôle des justificatifs</div>
                 </div>
               </div>
@@ -396,7 +397,7 @@ function Dashboard() {
                   <Building2 className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-[#17251C]">Consulter les Salles</div>
+                  <div className="text-sm font-bold text-[#17251C]">Consulter les Sites</div>
                   <div className="text-xs text-[#556B5C]">Points de vente et opérateurs agréés</div>
                 </div>
               </div>
@@ -446,7 +447,7 @@ function Dashboard() {
                   <AnimatedNumber value={totalAnomalies} />
                 </div>
                 <p className="text-xs text-[#556B5C] mt-1">
-                  {stats.totalIllegalBets} paris • {stats.totalIllegalTransactions} trans.
+                  {stats.totalIllegalBets}  tests • {stats.totalIllegalTransactions} trans.
                 </p>
               </div>
             </motion.div>
@@ -454,7 +455,7 @@ function Dashboard() {
             {/* Volume Contrôlé */}
             <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Volume Misé Global</span>
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Volume Engagé Global</span>
                 <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
                   <Coins className="h-4 w-4" />
                 </div>
@@ -463,14 +464,14 @@ function Dashboard() {
                 <div className="text-2xl font-black text-[#17251C] font-mono">
                   <AnimatedNumber value={stats.totalBetsAmount} suffix="FCFA" />
                 </div>
-                <p className="text-xs text-[#556B5C] mt-1">{stats.totalBets} paris sur le réseau</p>
+                <p className="text-xs text-[#556B5C] mt-1">{stats.totalBets}  tests sur le réseau</p>
               </div>
             </motion.div>
 
             {/* Établissements Supervisés */}
             <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Salles Physiques</span>
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Sites Physiques</span>
                 <div className="h-9 w-9 rounded-lg bg-[#004D20]/10 text-[#004D20] flex items-center justify-center">
                   <Building2 className="h-4 w-4" />
                 </div>
@@ -517,7 +518,7 @@ function Dashboard() {
             {/* Volume des Mises */}
             <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Volume des Mises</span>
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Volume des Montants engagés</span>
                 <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
                   <Coins className="h-4 w-4" />
                 </div>
@@ -529,9 +530,10 @@ function Dashboard() {
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <Badge variant="outline" className="bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30 text-[11px] font-bold px-1.5 py-0">
                     <ArrowUpRight className="h-3 w-3" />
-                    Mises engagées
+
+                    Montants engagés engagées
                   </Badge>
-                  <span className="text-xs text-[#556B5C]">{stats.totalBets} tickets</span>
+                  <span className="text-xs text-[#556B5C]">{stats.totalBets}  tests</span>
                 </div>
               </div>
             </motion.div>
@@ -581,9 +583,9 @@ function Dashboard() {
             {/* Gains Connus Distribués */}
             <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Gains Renseignés</span>
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Montants retournés renseignés</span>
                 <div className="h-9 w-9 rounded-lg bg-[#FFD000]/20 text-[#004D20] flex items-center justify-center">
-                  <Trophy className="h-4 w-4" />
+                  <ClipboardCheck className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
@@ -592,7 +594,7 @@ function Dashboard() {
                 </div>
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <Badge variant="outline" className="bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50 text-[11px] font-bold px-1.5 py-0">
-                    {stats.wonBetsCount} tickets gagnés
+                    {stats.wonBetsCount}  issues favorables
                   </Badge>
                   <span className="text-xs text-[#556B5C]">retour brut</span>
                 </div>
@@ -604,7 +606,7 @@ function Dashboard() {
           <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between shadow-xs">
               <div className="space-y-1">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Salles Répertoriées</span>
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Sites Répertoriées</span>
                 <div className="text-xl font-black text-[#17251C]">
                   <AnimatedNumber value={stats.totalVenues} />
                   <span className="text-xs font-normal text-[#556B5C] ml-2">points de vente</span>
@@ -660,7 +662,8 @@ function Dashboard() {
                     Opérateurs Agréés
                   </CardTitle>
                   <CardDescription className="text-xs text-[#556B5C]">
-                    Répartition des salles et points de vente
+
+                    Répartition des sites et points de vente
                   </CardDescription>
                 </div>
                 <Badge variant="outline" className="text-xs bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/20 font-bold">
@@ -711,7 +714,8 @@ function Dashboard() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex items-center justify-center h-full text-xs text-[#556B5C]">
-                    Aucune salle de jeux enregistrée.
+
+                    Aucun site de test enregistrée.
                   </div>
                 )}
               </div>
@@ -771,7 +775,7 @@ function Dashboard() {
                     <Line
                       type="monotone"
                       dataKey="paris"
-                      name="Paris non conformes"
+                      name="Tests non conformes"
                       stroke="#E52329"
                       strokeWidth={2}
                       dot={{ r: 3, fill: "#E52329" }}
@@ -800,17 +804,17 @@ function Dashboard() {
           <CardHeader className="pb-3 flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base font-bold tracking-tight text-[#17251C]">
-                {isAgent ? "Mes Derniers Paris Enregistrés" : "Derniers Paris Enregistrés sur le Réseau"}
+                {isAgent ? "Mes Derniers Tests Enregistrés" : "Derniers Tests Enregistrés sur le Réseau"}
               </CardTitle>
               <CardDescription className="text-xs text-[#556B5C]">
                 {isAgent
-                  ? "Suivi direct de vos 30 derniers tickets saisis"
-                  : "Flux en direct des 30 derniers tickets sur les plateformes"}
+                  ? "Suivi direct de vos 30 derniers tests saisis"
+                  : "Flux en direct des 30 derniers tests sur les plateformes"}
               </CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild className="text-xs gap-1 text-[#006B2D] hover:bg-[#006B2D]/10 font-bold">
-              <Link to="/bets">
-                <span>Voir tous les paris</span>
+              <Link to="/tests">
+                <span>Voir tous les tests</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
@@ -826,7 +830,7 @@ function Dashboard() {
                       <th className="py-2.5 px-3">Support</th>
                       <th className="py-2.5 px-3">Type</th>
                       <th className="py-2.5 px-3 text-right">Montant</th>
-                      <th className="py-2.5 px-3 text-right">Gains</th>
+                      <th className="py-2.5 px-3 text-right">Montants retournés</th>
                       <th className="py-2.5 px-3 text-center">Statut</th>
                     </tr>
                   </thead>
@@ -852,7 +856,7 @@ function Dashboard() {
                             </span>
                           </td>
                           <td className="py-2.5 px-3 text-[#556B5C]">
-                            {bet.bet_type}
+                            {testCatalogLabel(bet.bet_type)}
                           </td>
                           <td className="py-2.5 px-3 text-right font-mono font-bold text-[#17251C]">
                             {new Intl.NumberFormat("fr-FR").format(bet.amount_fcfa)} FCFA
@@ -877,7 +881,7 @@ function Dashboard() {
                                   : "bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50 text-[10px] font-bold"
                               }
                             >
-                              {bet.status}
+                              {testStatusLabel(bet.status)}
                             </Badge>
                           </td>
                         </tr>
@@ -888,7 +892,8 @@ function Dashboard() {
               </div>
             ) : (
               <div className="py-8 text-center text-xs text-muted-foreground">
-                Aucun pari enregistré.
+
+                Aucun test enregistré.
               </div>
             )}
           </CardContent>

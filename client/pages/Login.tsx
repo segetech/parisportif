@@ -104,14 +104,14 @@ export default function Login() {
         <div className="relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#003816] border border-[#006B2D] text-[11px] font-semibold text-[#FFD000] tracking-wider uppercase mb-6 sm:mb-8">
             <span className="h-1.5 w-1.5 rounded-full bg-[#FFD000]" />
-            Plateforme Officielle de Supervision
+            Application de test
           </div>
 
           <div className="flex items-center gap-4 mb-6">
             <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl bg-white p-2.5 shadow-md flex items-center justify-center border border-white/20 flex-shrink-0">
               <img
-                src="/logo.png"
-                alt="Logo officiel Test"
+                src="/logo-test.svg"
+                alt="Logo Test"
                 className="h-full w-full object-contain"
                 loading="eager"
               />
@@ -121,14 +121,15 @@ export default function Login() {
                 Test
               </h1>
               <p className="text-xs sm:text-sm text-[#FFD000] font-semibold tracking-wide">
-                Direction du Contrôle & de l'Intégrité
+                Application de test
               </p>
             </div>
           </div>
 
           <p className="text-sm sm:text-base text-white/90 font-normal leading-relaxed max-w-lg">
-            Système centralisé de pilotage des flux financiers, de surveillance
-            des activités de jeux et de validation réglementaire des opérations.
+
+            Une application pour saisir vos tests, suivre les opérations
+            et consulter leurs résultats.
           </p>
         </div>
 
@@ -139,9 +140,9 @@ export default function Login() {
               <ShieldCheck className="h-4 w-4" />
             </div>
             <div className="text-xs">
-              <p className="font-semibold text-white">Traçabilité & Immuabilité</p>
+              <p className="font-semibold text-white">Historique et traçabilité</p>
               <p className="text-white/70">
-                Journal d'audit infalsifiable et protection des transactions.
+                Historique des actions et suivi des transactions.
               </p>
             </div>
           </div>
@@ -151,9 +152,9 @@ export default function Login() {
               <Activity className="h-4 w-4" />
             </div>
             <div className="text-xs">
-              <p className="font-semibold text-white">Contrôle Métier en Temps Réel</p>
+              <p className="font-semibold text-white">Suivi des opérations</p>
               <p className="text-white/70">
-                Workflow d'approbation strict pour agents et contrôleurs.
+                Saisie et validation selon les rôles des utilisateurs.
               </p>
             </div>
           </div>
@@ -163,9 +164,9 @@ export default function Login() {
               <CheckCircle2 className="h-4 w-4" />
             </div>
             <div className="text-xs">
-              <p className="font-semibold text-white">Conformité et Détection</p>
+              <p className="font-semibold text-white">Contrôle des données</p>
               <p className="text-white/70">
-                Surveillance des anomalies et des opérateurs non régulés.
+                Repérage des anomalies et des données à vérifier.
               </p>
             </div>
           </div>
@@ -173,7 +174,7 @@ export default function Login() {
 
         {/* Pied de l'espace de marque */}
         <div className="relative z-10 pt-4 border-t border-[#006B2D]/50 flex items-center justify-between text-[11px] text-white/75">
-          <span>Direction de la Régulation des Jeux</span>
+          <span>Contrôle et suivi des tests</span>
           <span className="font-mono text-white/60">v2.4.0 • 2026</span>
         </div>
       </section>
@@ -190,20 +191,20 @@ export default function Login() {
           <div className="md:hidden flex flex-col items-center text-center mb-5">
             <div className="h-16 w-16 rounded-2xl bg-white p-2 flex items-center justify-center border border-[#D8E6DB] shadow-xs mb-3">
               <img
-                src="/logo.png"
-                alt="Logo officiel Test"
+                src="/logo-test.svg"
+                alt="Logo Test"
                 className="h-full w-full object-contain"
               />
             </div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#004D20] text-[10px] font-bold text-[#FFD000] tracking-wider uppercase mb-1">
               <span className="h-1.5 w-1.5 rounded-full bg-[#FFD000]" />
-              Plateforme Officielle
+              Application de test
             </div>
             <h1 className="text-xl font-extrabold text-[#17251C] tracking-tight">
               Test
             </h1>
             <p className="text-xs text-[#556B5C]">
-              Direction du Contrôle & de l'Intégrité
+              Application de test
             </p>
           </div>
 
@@ -255,7 +256,7 @@ export default function Login() {
                     name="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="agent@parisportif.com"
+                    placeholder="agent@example.com"
                     autoComplete="email"
                     required
                     disabled={loading}
@@ -341,8 +342,8 @@ export default function Login() {
                   ← Accéder au tableau de bord (mode aperçu)
                 </Link>
                 <p className="text-[11px] text-[#556B5C] leading-tight">
-                  Accès strictement restreint au personnel habilité. Toute tentative
-                  d'intrusion est enregistrée et transmise aux autorités de régulation.
+                  Connectez-vous avec votre compte pour accéder
+                  aux fonctionnalités de l’application.
                 </p>
               </div>
             </form>

@@ -1,4 +1,5 @@
 import { sanitizeForSpreadsheet } from "./excel-import-engine";
+import { testExportValue } from "./test-vocabulary";
 
 /**
  * Moteur d'exportation Excel Haute Définition avec ExcelJS
@@ -215,7 +216,7 @@ export async function exportStyledExcel({
       };
     }
     const kpi1Cell = kpiRow.getCell(1);
-    kpi1Cell.value = `Volume Misé : ${new Intl.NumberFormat("fr-FR").format(totalMise)} FCFA`;
+    kpi1Cell.value = `Volume Engagé : ${new Intl.NumberFormat("fr-FR").format(totalMise)} FCFA`;
     kpi1Cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF065F46" } };
     kpi1Cell.alignment = { horizontal: "center", vertical: "middle" };
 
@@ -231,7 +232,7 @@ export async function exportStyledExcel({
       };
     }
     const kpi2Cell = kpiRow.getCell(span2Start);
-    kpi2Cell.value = `Gains Remportés : ${new Intl.NumberFormat("fr-FR").format(totalGains)} FCFA`;
+    kpi2Cell.value = `Montants retournés : ${new Intl.NumberFormat("fr-FR").format(totalGains)} FCFA`;
     kpi2Cell.font = { name: "Segoe UI", size: 10, bold: true, color: { argb: "FF92400E" } };
     kpi2Cell.alignment = { horizontal: "center", vertical: "middle" };
 
@@ -300,7 +301,7 @@ export async function exportStyledExcel({
 
     columns.forEach((col, colIdx) => {
       const cell = dataRow.getCell(colIdx + 1);
-      const val = item[col.key];
+      const val = testExportValue(col.key, item[col.key]);
 
       // Formatage et valeur
       if (col.isCurrency) {
@@ -337,13 +338,13 @@ export async function exportStyledExcel({
       // Badge de statut stylisé et traduction automatique en français
       if (col.isStatus && val) {
         const st = String(val).toLowerCase();
-        if (st.includes("gagn") || st === "won" || st.includes("valid")) {
-          cell.value = st.includes("valid") ? "Validé" : "Gagné";
+        if (st === "issue favorable" || st.includes("gagn") || st === "won" || st.includes("valid")) {
+          cell.value = st.includes("valid") ? "Validé" : "Issue favorable";
           cell.font = { name: "Segoe UI", size: 9.5, bold: true, color: { argb: "FF166534" } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
           cell.alignment = { horizontal: "center", vertical: "middle" };
-        } else if (st.includes("perdu") || st === "lost" || st.includes("refus")) {
-          cell.value = st.includes("refus") ? "Refusé" : "Perdu";
+        } else if (st === "issue défavorable" || st.includes("perdu") || st === "lost" || st.includes("refus")) {
+          cell.value = st.includes("refus") ? "Refusé" : "Issue défavorable";
           cell.font = { name: "Segoe UI", size: 9.5, bold: true, color: { argb: "FF991B1B" } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } };
           cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -470,7 +471,7 @@ export async function exportStyledExcel({
  * Génère et télécharge un modèle Excel vierge officiel prêt à l'importation
  * Conforme aux spécifications des feuilles : depotretrait, pari, ou Salle jeux
  */
-export async function generateBlankImportTemplate(type: "depotretrait" | "pari" | "salles") {
+export async function buildImportTemplate(type: "depotretrait" | "tests" | "pari" | "salles") {
   const ExcelJS = await getExcelJS();
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Plateforme Test";
@@ -484,7 +485,7 @@ export async function generateBlankImportTemplate(type: "depotretrait" | "pari" 
     sheetName = "depotretrait";
     filename = "modele_officiel_depot_retrait.xlsx";
     headers = [
-      "Opérateur de jeux",
+      "Opérateur",
       "Plateforme",
       "Opérateur de paiement",
       "Type",
@@ -495,7 +496,7 @@ export async function generateBlankImportTemplate(type: "depotretrait" | "pari" 
       "preuve",
     ];
     sampleRow = [
-      "1xBet",
+      "Opérateur de test",
       "App mobile",
       "Orange",
       "Dépôt",
@@ -505,48 +506,48 @@ export async function generateBlankImportTemplate(type: "depotretrait" | "pari" 
       "CI250326.0438.B13742",
       "dispo",
     ];
-  } else if (type === "pari") {
-    sheetName = "pari";
-    filename = "modele_officiel_paris.xlsx";
+  } else if (type === "tests" || type === "pari") {
+    sheetName = "Tests";
+    filename = "modele_officiel_tests.xlsx";
     headers = [
-      "Opérateur de jeux",
+      "Opérateur",
       "Support",
-      "Type de Pari",
+      "Type de test",
       "Montant",
       "Heure",
       "Numéro de téléphone",
-      "Référence",
-      "statut",
-      "montant gagné",
+      "Référence du test",
+      "Statut",
+      "Montant retourné",
     ];
     sampleRow = [
-      "1xBet",
+      "Opérateur de test",
       "App mobile",
-      "Casino",
+      "Test fonctionnel",
       1000,
       "04:38",
       "0701020304",
       "CI250326.0438.B13742",
-      "gagné",
+      "Issue favorable",
       3500,
     ];
   } else {
-    sheetName = "Salle jeux";
-    filename = "modele_officiel_salles_de_jeux.xlsx";
+    sheetName = "Sites";
+    filename = "modele_officiel_sites.xlsx";
     headers = [
       "N°",
       "Quartier",
-      "Opérateur de jeux",
+      "Opérateur",
       "Support",
-      "Type de Pari",
+      "Type de test",
       "localisation",
     ];
     sampleRow = [
       1,
       "Niamana",
-      "Bet223",
-      "Salle de jeux",
-      "Keno boule",
+      "Opérateur de test",
+      "Site de test",
+      "Test fonctionnel",
       "Ancienne poste du 11e arrondissement",
     ];
   }
@@ -576,10 +577,12 @@ export async function generateBlankImportTemplate(type: "depotretrait" | "pari" 
   });
 
   const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
+  return { buffer, filename, sheetName };
+}
 
+export async function generateBlankImportTemplate(type: "depotretrait" | "tests" | "pari" | "salles") {
+  const { buffer, filename } = await buildImportTemplate(type);
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

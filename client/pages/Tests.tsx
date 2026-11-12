@@ -1,3 +1,5 @@
+import { HISTORICAL_RESULT_NOTICE } from "@/lib/test-vocabulary";
+import { testStatusLabel, testCatalogLabel } from "@/lib/test-vocabulary";
 import {
   readRecordReference,
   writeRecordReference,
@@ -12,6 +14,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,7 +37,7 @@ import {
   Download,
   Settings,
   RefreshCw,
-  Trophy,
+  ClipboardCheck,
   Coins,
   ArrowUpRight,
   TrendingDown,
@@ -96,15 +99,15 @@ interface Bet {
   updated_at?: string;
 }
 
-export default function BetsPage() {
+export default function TestsPage() {
   return (
     <RequireAuth>
-      <Bets />
+      <Tests />
     </RequireAuth>
   );
 }
 
-function Bets() {
+function Tests() {
   const { user } = useAuth();
   // Centralisation TanStack React Query pour navigation instantanée
   const { data: bets = [], isLoading, isFetching, refetch } = useBets();
@@ -205,14 +208,14 @@ function Bets() {
     const { error } = await supabase.from("bet_types").insert([{ name }]);
     if (error) {
       if (error.code === "23505") {
-        toast.error("Ce type de pari existe déjà");
+        toast.error("Ce type de test existe déjà");
       } else {
         toast.error("Erreur lors de la création");
       }
       throw error;
     }
     invalidateRelatedQueries("lookups");
-    toast.success(`Type de pari "${name}" créé avec succès`);
+    toast.success(`Type de test "${name}" créé avec succès`);
   }
 
   function handleTicketRefChange(val: string) {
@@ -237,7 +240,7 @@ function Bets() {
       setFormData((prev) => ({
         ...prev,
         operator: v.operator || prev.operator,
-        support: "Salle de jeux",
+        support: "Site de test",
         notes: prev.notes
           ? `${prev.notes} (Salle: ${v.quartier} - ${v.address})`
           : `Salle: ${v.quartier} - ${v.address}`,
@@ -326,7 +329,7 @@ function Bets() {
           .single();
 
         if (error) throw error;
-        toast.success("Pari modifié avec succès");
+        toast.success("Test modifié avec succès");
       } else {
         const isAgent = user?.role === "AGENT";
         const newBetData = {
@@ -355,8 +358,8 @@ function Bets() {
               support: formData.support,
               amount_fcfa: transAmount,
               notes: ticketRef
-                ? `Flux lié au ticket [${ticketRef.trim()}] (${formData.bet_type})`
-                : `Flux généré automatiquement depuis le pari (${formData.bet_type})`,
+                ? `Flux lié au justificatif [${ticketRef.trim()}] (${formData.bet_type})`
+                : `Flux généré automatiquement depuis le test (${formData.bet_type})`,
               created_by: user?.id,
               validation_status: isAgent ? "en_attente" : "valide",
             };
@@ -369,10 +372,10 @@ function Bets() {
 
         toast.success(
           isAgent
-            ? "Pari enregistré avec succès. Transmis au contrôleur en attente de validation."
+            ? "Test enregistré avec succès. Transmis au contrôleur en attente de validation."
             : autoCreateTransaction
-              ? "Pari et transaction financière liée créés avec succès."
-              : "Pari créé avec succès.",
+              ? "Test et transaction financière liée créés avec succès."
+              : "Test créé avec succès.",
         );
       }
 
@@ -534,7 +537,7 @@ function Bets() {
     const filteredByPeriod = filterBetsByPeriod(betsToExport);
 
     if (filteredByPeriod.length === 0) {
-      toast.error("Aucun pari à exporter pour cette période");
+      toast.error("Aucun test à exporter pour cette période");
       return;
     }
 
@@ -566,27 +569,27 @@ function Bets() {
         align: "center" as const,
       },
       {
-        header: "TYPE DE PARI",
+        header: "TYPE DE TEST",
         key: "bet_type",
         width: 18,
         align: "left" as const,
       },
       {
-        header: "MONTANT MISÉ",
+        header: "MONTANT ENGAGÉ",
         key: "amount_fcfa",
         width: 20,
         align: "right" as const,
         isCurrency: true,
       },
       {
-        header: "GAINS REMPORTÉS",
+        header: "MONTANTS RETOURNÉS",
         key: "amount_won_fcfa",
         width: 20,
         align: "right" as const,
         isCurrency: true,
       },
       {
-        header: "STATUT DU PARI",
+        header: "STATUT DU TEST",
         key: "status",
         width: 16,
         align: "center" as const,
@@ -599,7 +602,7 @@ function Bets() {
         align: "center" as const,
       },
       {
-        header: "RÉFÉRENCE TICKET",
+        header: "RÉFÉRENCE DU TEST",
         key: "reference",
         width: 18,
         align: "center" as const,
@@ -618,10 +621,10 @@ function Bets() {
       status:
         (bet.status || "").toLowerCase().includes("gagn") ||
         bet.status === "won"
-          ? "Gagné"
+          ? "Issue favorable"
           : (bet.status || "").toLowerCase().includes("perd") ||
               bet.status === "lost"
-            ? "Perdu"
+            ? "Issue défavorable"
             : "En attente",
       validation_status:
         bet.validation_status === "valide"
@@ -636,17 +639,17 @@ function Bets() {
       !operatorName || operatorName === "all" || operatorName === "tous";
     const opDisplay = isAll ? "Tous les opérateurs" : operatorName;
     const fileName = isAll
-      ? `rapport_paris_tous_${new Date().toISOString().split("T")[0]}.xlsx`
-      : `rapport_paris_${operatorName}_${new Date().toISOString().split("T")[0]}.xlsx`;
+      ? `rapport_tests_tous_${new Date().toISOString().split("T")[0]}.xlsx`
+      : `rapport_tests_${operatorName}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
     try {
       toast.loading("Génération du rapport Excel stylisé en cours...", {
         id: "excel-export",
       });
       await exportStyledExcel({
-        sheetName: "Paris Sportifs",
-        title: "Rapport Officiel des Paris sur les Plateformes",
-        subtitle: "État certifié des mises, gains et statuts d'arbitrage",
+        sheetName: "Tests",
+        title: "Rapport des tests",
+        subtitle: "Récapitulatif des montants engagés, montants retournés et issues",
         operator: opDisplay,
         periodText,
         columns,
@@ -655,7 +658,7 @@ function Bets() {
         showTotals: true,
       });
       toast.success(
-        `Export réussi: ${filteredByPeriod.length} pari(s) exporté(s)`,
+        `Export réussi: ${filteredByPeriod.length} test(s) exporté(s)`,
         { id: "excel-export" },
       );
       setExportDialogOpen(false);
@@ -674,7 +677,7 @@ function Bets() {
     const filteredByPeriod = filterBetsByPeriod(betsToExport);
 
     if (filteredByPeriod.length === 0) {
-      toast.error("Aucun pari à exporter pour cette période");
+      toast.error("Aucun test à exporter pour cette période");
       return;
     }
 
@@ -697,13 +700,13 @@ function Bets() {
       { header: "SUPPORT", key: "support", align: "center" as const },
       { header: "TYPE", key: "bet_type", align: "left" as const },
       {
-        header: "MONTANT MISÉ",
+        header: "MONTANT ENGAGÉ",
         key: "amount_fcfa",
         align: "right" as const,
         isCurrency: true,
       },
       {
-        header: "GAINS REMPORTÉS",
+        header: "MONTANTS RETOURNÉS",
         key: "amount_won_fcfa",
         align: "right" as const,
         isCurrency: true,
@@ -734,10 +737,10 @@ function Bets() {
       status:
         (bet.status || "").toLowerCase().includes("gagn") ||
         bet.status === "won"
-          ? "Gagné"
+          ? "Issue favorable"
           : (bet.status || "").toLowerCase().includes("perd") ||
               bet.status === "lost"
-            ? "Perdu"
+            ? "Issue défavorable"
             : "En attente",
       validation_status:
         bet.validation_status === "valide"
@@ -752,16 +755,16 @@ function Bets() {
       !operatorName || operatorName === "all" || operatorName === "tous";
     const opDisplay = isAll ? "Tous les opérateurs" : operatorName;
     const fileName = isAll
-      ? `rapport_paris_tous_${new Date().toISOString().split("T")[0]}.pdf`
-      : `rapport_paris_${operatorName}_${new Date().toISOString().split("T")[0]}.pdf`;
+      ? `rapport_tests_tous_${new Date().toISOString().split("T")[0]}.pdf`
+      : `rapport_tests_${operatorName}_${new Date().toISOString().split("T")[0]}.pdf`;
 
     try {
       toast.loading("Génération du rapport PDF stylisé en cours...", {
         id: "pdf-export",
       });
       await exportStyledPDF({
-        title: "Rapport Officiel des Paris sur les Plateformes",
-        subtitle: "État certifié des mises, gains et statuts d'arbitrage",
+        title: "Rapport des tests",
+        subtitle: "Récapitulatif des montants engagés, montants retournés et issues",
         operator: opDisplay,
         periodText,
         columns,
@@ -771,7 +774,7 @@ function Bets() {
         orientation: "landscape",
       });
       toast.success(
-        `Export PDF réussi: ${filteredByPeriod.length} pari(s) exporté(s)`,
+        `Export PDF réussi: ${filteredByPeriod.length} test(s) exporté(s)`,
         { id: "pdf-export" },
       );
       setExportDialogOpen(false);
@@ -805,7 +808,8 @@ function Bets() {
           className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border-emerald-200/60 font-semibold text-[11px] px-2 py-0.5 gap-1"
         >
           <CheckCircle2 className="h-3 w-3" />
-          Gagné
+
+          Issue favorable
         </Badge>
       );
     }
@@ -816,7 +820,8 @@ function Bets() {
           className="bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border-rose-200/60 font-semibold text-[11px] px-2 py-0.5 gap-1"
         >
           <XCircle className="h-3 w-3" />
-          Perdu
+
+          Issue défavorable
         </Badge>
       );
     }
@@ -863,10 +868,11 @@ function Bets() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#D8E6DB]">
           <div>
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#17251C]">
-              Gestion des Paris
+
+              Gestion des Tests
             </h1>
             <p className="text-sm text-[#556B5C] mt-0.5 font-medium">
-              Journal des enjeux, suivi des cotes et résultats par opérateur
+              Journal des tests, suivi des opérations et de leur validation
             </p>
           </div>
 
@@ -899,7 +905,7 @@ function Bets() {
               className="h-9 gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold shadow-xs"
             >
               <Plus className="h-4 w-4" />
-              <span>Nouveau pari</span>
+              <span>Créer un test</span>
             </Button>
           </div>
         </div>
@@ -912,7 +918,8 @@ function Bets() {
           <div className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
-                Volume Misé
+
+                Volume Engagé
               </span>
               <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
                 <Coins className="h-4 w-4" />
@@ -927,7 +934,7 @@ function Bets() {
                   variant="outline"
                   className="bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30 text-[11px] font-bold px-1.5 py-0"
                 >
-                  {filteredBets.length} tickets
+                  {filteredBets.length}  tests
                 </Badge>
                 <span className="text-xs text-[#556B5C]">
                   Panier moy. {formatFCFA(statsSummary.avgBet)}
@@ -940,10 +947,11 @@ function Bets() {
           <div className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
-                Gains Distribués
+
+                Montants retournés
               </span>
               <div className="h-9 w-9 rounded-lg bg-[#FFD000]/20 text-[#004D20] flex items-center justify-center">
-                <Trophy className="h-4 w-4" />
+                <ClipboardCheck className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-3">
@@ -955,7 +963,7 @@ function Bets() {
                   variant="outline"
                   className="bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50 text-[11px] font-bold px-1.5 py-0"
                 >
-                  {statsSummary.wonCount} gagnés
+                  {statsSummary.wonCount}  issues favorables
                 </Badge>
                 <span className="text-xs text-[#556B5C]">
                   Taux joueur: {statsSummary.winRate}%
@@ -983,7 +991,7 @@ function Bets() {
                   variant="outline"
                   className="bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30 text-[11px] font-bold px-1.5 py-0"
                 >
-                  {statsSummary.lostCount} perdus
+                  {statsSummary.lostCount}  issues défavorables
                 </Badge>
                 <span className="text-xs text-[#556B5C]">marge conservée</span>
               </div>
@@ -994,7 +1002,8 @@ function Bets() {
           <div className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
-                Paris en Cours
+
+                Tests en Cours
               </span>
               <div className="h-9 w-9 rounded-lg bg-[#FFD000]/20 text-[#8A7100] flex items-center justify-center">
                 <Clock className="h-4 w-4" />
@@ -1026,7 +1035,7 @@ function Bets() {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[#556B5C]" />
               <Input
-                placeholder="Rechercher par opérateur, ticket, type, statut..."
+                placeholder="Rechercher par opérateur, justificatif, type, statut..."
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -1079,7 +1088,8 @@ function Bets() {
                     : "border-[#D8E6DB] bg-[#F5F8F5] text-[#17251C] hover:bg-white",
                 )}
               >
-                Gagnés
+
+                Issues favorables
               </Button>
               <Button
                 variant="outline"
@@ -1095,7 +1105,8 @@ function Bets() {
                     : "border-[#D8E6DB] bg-[#F5F8F5] text-[#17251C] hover:bg-white",
                 )}
               >
-                Perdus
+
+                Issues défavorables
               </Button>
               <Button
                 variant="outline"
@@ -1262,13 +1273,16 @@ function Bets() {
                           Support
                         </TableHead>
                         <TableHead className="font-bold text-xs text-[#556B5C]">
-                          Type de Pari
+
+                          Type de Test
                         </TableHead>
                         <TableHead className="text-right font-bold text-xs text-[#556B5C]">
-                          Montant Misé
+
+                          Montant Engagé
                         </TableHead>
                         <TableHead className="text-right font-bold text-xs text-[#556B5C]">
-                          Gains
+
+                          Montants retournés
                         </TableHead>
                         <TableHead className="text-center font-bold text-xs text-[#556B5C]">
                           Statut
@@ -1317,7 +1331,7 @@ function Bets() {
                             </TableCell>
 
                             <TableCell className="text-xs text-muted-foreground font-medium">
-                              {bet.bet_type}
+                              {testCatalogLabel(bet.bet_type)}
                             </TableCell>
 
                             <TableCell className="text-right font-mono font-semibold text-xs text-foreground">
@@ -1375,17 +1389,17 @@ function Bets() {
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center gap-1 h-8 px-2 rounded-md text-[11px] font-bold bg-[#EBF7EE] text-[#006B2D] border border-[#86EFAC] hover:bg-[#D1FAE5] transition-colors"
-                                    title="Consulter le ticket archivé sur Cloudflare R2"
+                                    title="Consulter le justificatif archivé sur Cloudflare R2"
                                   >
                                     <CheckCircle2 className="h-3 w-3" />
-                                    <span className="hidden sm:inline">Ticket</span>
+                                    <span className="hidden sm:inline">Justificatif</span>
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
                                 )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  aria-label="Consulter le pari"
+                                  aria-label="Consulter le test"
                                   onClick={() => openEditDialog(bet)}
                                   className="h-8 px-2 text-xs gap-1"
                                 >
@@ -1434,17 +1448,18 @@ function Bets() {
 
                         <div className="flex items-center gap-2 text-xs flex-wrap">
                           <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground text-[11px]">
-                            {bet.support}
+                            {testCatalogLabel(bet.support)}
                           </span>
                           <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground text-[11px]">
-                            {bet.bet_type}
+                            {testCatalogLabel(bet.bet_type)}
                           </span>
                         </div>
 
                         <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
                           <div>
                             <span className="text-muted-foreground">
-                              Misé:{" "}
+
+                              Engagé:{" "}
                             </span>
                             <span className="font-mono font-semibold text-foreground">
                               {formatFCFA(bet.amount_fcfa)}
@@ -1453,7 +1468,8 @@ function Bets() {
                           {bet.amount_won_fcfa && bet.amount_won_fcfa > 0 ? (
                             <div>
                               <span className="text-muted-foreground">
-                                Gains:{" "}
+
+                                Montants retournés:{" "}
                               </span>
                               <span className="font-mono font-semibold text-emerald-600">
                                 {formatFCFA(bet.amount_won_fcfa)}
@@ -1468,9 +1484,10 @@ function Bets() {
               )
             ) : (
               <div className="py-16 text-center">
-                <Trophy className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                <ClipboardCheck className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                 <h3 className="font-semibold text-sm text-foreground">
-                  Aucun pari trouvé
+
+                  Aucun test trouvé
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
                   Aucun résultat ne correspond à vos critères de recherche ou à
@@ -1483,7 +1500,8 @@ function Bets() {
                   className="mt-4"
                 >
                   <Plus className="h-4 w-4 mr-1.5" />
-                  Nouveau pari
+
+                  Créer un test
                 </Button>
               </div>
             )}
@@ -1505,7 +1523,8 @@ function Bets() {
                     <span className="font-medium text-foreground">
                       {currentTabBets.length}
                     </span>{" "}
-                    paris
+
+                    tests
                   </span>
 
                   <span className="text-border">|</span>
@@ -1570,17 +1589,17 @@ function Bets() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold">
-              {editingBet ? "Consulter le pari" : "Nouveau pari"}
+              {editingBet ? "Consulter le test" : "Créer un test"}
             </DialogTitle>
+            <DialogDescription>{HISTORICAL_RESULT_NOTICE}</DialogDescription>
           </DialogHeader>
-
           <RecordForm
             key={`${dialogOpen}-${editingBet?.id || "new"}`}
             existing={!!editingBet}
             onSave={handleSubmit}
             onClose={() => setDialogOpen(false)}
             onRestore={() => openEditDialog(editingBet!)}
-            createLabel="Créer le pari"
+            createLabel="Créer le test"
             hasDraft={hasDraft}
             draftTime={savedAtFormatted}
             hasConflict={hasConflict}
@@ -1594,7 +1613,8 @@ function Bets() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#17251C] flex items-center gap-1.5">
                     <Sparkles className="h-3.5 w-3.5 text-[#006B2D]" />
-                    Référence Ticket / Code SMS de paiement
+
+                    Référence du test
                   </span>
                   <span className="text-[10px] text-[#556B5C]">
                     Orange Money / Wave / Moov
@@ -1646,7 +1666,7 @@ function Bets() {
               />
 
               {/* SÉLECTEUR EN CASCADE DES SALLES DE JEUX PHYSIQUES */}
-              {formData.support === "Salle de jeux" && venues.length > 0 && (
+              {["Salle de jeux", "Site de test"].includes(formData.support) && venues.length > 0 && (
                 <div>
                   <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
                     Point de vente physique
@@ -1657,7 +1677,8 @@ function Bets() {
                     onChange={(e) => handleVenueSelect(e.target.value)}
                   >
                     <option value="">
-                      -- Choisir une salle de jeux enregistrée --
+
+                      -- Choisir un site de test enregistrée --
                     </option>
                     {venues.map((v) => (
                       <option key={v.id} value={v.id}>
@@ -1669,7 +1690,7 @@ function Bets() {
               )}
 
               <CreatableSelect
-                label="Type de pari"
+                label="Type de test"
                 required
                 value={formData.bet_type}
                 onChange={(value) =>
@@ -1700,7 +1721,8 @@ function Bets() {
                 </div>
                 <div>
                   <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Statut du ticket
+
+                    Issue du test
                   </label>
                   <select
                     className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
@@ -1710,8 +1732,8 @@ function Bets() {
                     }
                   >
                     <option value="en attente">En attente</option>
-                    <option value="gagné">Gagné</option>
-                    <option value="perdu">Perdu</option>
+                    <option value="gagné">Issue favorable</option>
+                    <option value="perdu">Issue défavorable</option>
                     <option value="annulé">Annulé</option>
                   </select>
                 </div>
@@ -1720,7 +1742,7 @@ function Bets() {
               {formData.status === "gagné" && (
                 <div>
                   <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Montant gagné (FCFA)
+                    Montant retourné (FCFA)
                   </label>
                   <Input
                     type="number"
@@ -1740,7 +1762,8 @@ function Bets() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Téléphone du parieur
+
+                    Téléphone du participant
                   </label>
                   <Input
                     type="tel"
@@ -1778,7 +1801,7 @@ function Bets() {
 
               {(formData.proof_status === "disponible" || formData.ticket_url) && (
                 <ProofUploader
-                  label="Ticket ou Reçu du pari (Stockage R2)"
+                  label="Justificatif ou Reçu du test (Stockage R2)"
                   value={formData.ticket_url}
                   onChange={(url) =>
                     setFormData((prev) => ({
@@ -1820,14 +1843,15 @@ function Bets() {
 
               <div>
                 <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                  Notes & Références complémentaires
+
+                  Observations et références complémentaires
                 </label>
                 <Textarea
                   value={formData.notes}
                   onChange={(e) =>
                     setFormData({ ...formData, notes: e.target.value })
                   }
-                  placeholder="Détails du ticket, identifiant externe, match..."
+                  placeholder="Détails du justificatif, identifiant externe, match..."
                   rows={2}
                   className="bg-white border-[#D8E6DB]"
                 />
@@ -1844,7 +1868,8 @@ function Bets() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold">
-              📥 Exporter le Rapport des Paris
+
+              📥 Exporter le Rapport des Tests
             </DialogTitle>
           </DialogHeader>
 
@@ -1858,7 +1883,7 @@ function Bets() {
                 value={exportPeriod}
                 onChange={(e) => setExportPeriod(e.target.value)}
               >
-                <option value="all">Tous les paris enregistrés</option>
+                <option value="all">Tous les tests enregistrés</option>
                 <option value="week">Dernière semaine (7 jours)</option>
                 <option value="month">Dernier mois (30 jours)</option>
                 <option value="custom">Période personnalisée</option>
@@ -1896,7 +1921,8 @@ function Bets() {
                     ).length
                   }
                 </span>{" "}
-                pari(s) seront inclus dans le tableur.
+
+                test(s) seront inclus dans le tableur.
               </p>
               <p className="text-muted-foreground">
                 Filtre opérateur actif:{" "}

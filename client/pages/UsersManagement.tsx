@@ -827,7 +827,7 @@ function UsersManagement() {
                   onChange={(e) =>
                     setFormData({ ...formData, email: e.target.value })
                   }
-                  placeholder="amadou.diallo@parisportif.com"
+                  placeholder="amadou.diallo@example.com"
                   className="bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] text-sm h-10 font-mono"
                 />
               </div>

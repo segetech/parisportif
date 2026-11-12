@@ -23,7 +23,8 @@ import {
   SettingsPage,
 } from "./pages/Placeholders";
 import LookupsPage from "./pages/LookupsNew";
-import BetsPage from "./pages/Bets";
+import TestsPage from "./pages/Tests";
+import { LegacyTestsRoute } from "./components/common/LegacyTestsRoute";
 import VenuesPage from "./pages/Venues";
 import { SettingsProvider } from "@/lib/settings";
 import AuditLogPage from "./pages/Audit";
@@ -55,7 +56,8 @@ const App = () => (
                 <Route path="/profil" element={<ProfilePage />} />
                 <Route path="/" element={<Index />} />
                 <Route path="/transactions" element={<Transactions />} />
-                <Route path="/bets" element={<BetsPage />} />
+                <Route path="/tests" element={<TestsPage />} />
+                <Route path="/bets" element={<LegacyTestsRoute />} />
                 <Route path="/venues" element={<VenuesPage />} />
                 <Route path="/lookups" element={<LookupsPage />} />
                 <Route path="/matching" element={<MatchingPage />} />

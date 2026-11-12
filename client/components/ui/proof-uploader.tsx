@@ -265,7 +265,8 @@ export function ProofUploader({
 
           <div className="space-y-0.5">
             <p className="text-xs font-bold text-[#17251C]">
-              Glissez-déposez le ticket ou reçu ici, ou{" "}
+
+              Glissez-déposez le justificatif ou reçu ici, ou{" "}
               <span className="text-[#006B2D] underline underline-offset-2">parcourez</span>
             </p>
             <p className="text-[11px] text-muted-foreground">

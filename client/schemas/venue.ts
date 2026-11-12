@@ -8,10 +8,10 @@ export const venueFormSchema = z.object({
     .transform((v) => (v === "" ? undefined : (v as any))),
   quartier: z.string().min(1, { message: "Le champ Quartier est requis." }),
   operator: z.string().min(1, { message: "Veuillez sélectionner un opérateur." }),
-  support: z.literal("Salle de jeux", {
-    errorMap: () => ({ message: "Support doit être \"Salle de jeux\"." }),
-  }),
-  bet_type: z.string().min(1, { message: "Veuillez sélectionner un type de pari." }),
+  support: z.enum(["Site de test", "Salle de jeux"], {
+    errorMap: () => ({ message: "Support doit être \"Site de test\"." }),
+  }).transform(() => "Salle de jeux" as const),
+  bet_type: z.string().min(1, { message: "Veuillez sélectionner un type de test." }),
   address: z.string().min(1, { message: "L’adresse est requise." }),
   contact_phone: z.string().optional(),
   gps_lat: z

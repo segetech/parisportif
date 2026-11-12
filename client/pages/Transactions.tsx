@@ -166,7 +166,7 @@ function Transactions() {
       setFormData((prev) => ({
         ...prev,
         operator: v.operator || prev.operator,
-        support: "Salle de jeux",
+        support: "Site de test",
         notes: prev.notes
           ? `${prev.notes} (Salle: ${v.quartier} - ${v.address})`
           : `Salle: ${v.quartier} - ${v.address}`,
@@ -463,8 +463,8 @@ function Transactions() {
       });
       await exportStyledExcel({
         sheetName: "Transactions",
-        title: "Rapport Officiel des Flux Financiers",
-        subtitle: "Historique et récapitulatif certifié des dépôts et retraits",
+        title: "Rapport des transactions",
+        subtitle: "Historique et récapitulatif des dépôts et retraits",
         periodText: typeFilter
           ? `Filtre Type : ${typeFilter}`
           : "Tous les types",
@@ -531,8 +531,8 @@ function Transactions() {
     try {
       toast.loading("Génération du rapport PDF en cours...", { id: "tx-pdf" });
       await exportStyledPDF({
-        title: "Rapport Officiel des Flux Financiers",
-        subtitle: "Historique et récapitulatif certifié des dépôts et retraits",
+        title: "Rapport des transactions",
+        subtitle: "Historique et récapitulatif des dépôts et retraits",
         periodText: typeFilter
           ? `Filtre Type : ${typeFilter}`
           : "Tous les types",
@@ -1086,7 +1086,7 @@ function Transactions() {
               </div>
 
               <CreatableSelect
-                label="Opérateur de jeux"
+                label="Opérateur"
                 required
                 value={formData.operator}
                 onChange={(value) =>
@@ -1105,7 +1105,7 @@ function Transactions() {
                   setFormData({ ...formData, support: value })
                 }
                 options={supports}
-                placeholder="En ligne, Salle de jeux, Guichet..."
+                placeholder="En ligne, Site de test, Guichet..."
                 onCreateNew={createSupport}
               />
 
@@ -1181,10 +1181,10 @@ function Transactions() {
               </div>
 
               {/* SÉLECTEUR EN CASCADE DES SALLES DE JEUX PHYSIQUES */}
-              {formData.support === "Salle de jeux" && venues.length > 0 && (
+              {["Salle de jeux", "Site de test"].includes(formData.support) && venues.length > 0 && (
                 <div>
                   <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Point de Vente Physique ({venues.length} salles
+                    Point de Vente Physique ({venues.length}  sites
                     répertoriées)
                   </label>
                   <select
@@ -1193,7 +1193,8 @@ function Transactions() {
                     onChange={(e) => handleVenueSelect(e.target.value)}
                   >
                     <option value="">
-                      -- Choisir une salle de jeux enregistrée --
+
+                      -- Choisir un site de test enregistrée --
                     </option>
                     {venues.map((v) => (
                       <option key={v.id} value={v.id}>

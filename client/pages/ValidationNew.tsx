@@ -73,16 +73,16 @@ export default function ValidationPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("bets");
   const [filterStatus, setFilterStatus] = useState("en_attente");
-  
+
   const [validationDialog, setValidationDialog] = useState<{
     operation: Operation;
     type: string;
   } | null>(null);
-  
+
   const [validationAction, setValidationAction] = useState<"valide" | "refuse" | "modify">("valide");
   const [validationNotes, setValidationNotes] = useState("");
   const [modifiedData, setModifiedData] = useState<Partial<Operation>>({});
-  
+
   const [historyDialog, setHistoryDialog] = useState<{
     operationId: string;
     type: string;
@@ -330,9 +330,9 @@ export default function ValidationPage() {
             {/* Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList>
-                <TabsTrigger value="bets">Paris</TabsTrigger>
+                <TabsTrigger value="bets">Tests</TabsTrigger>
                 <TabsTrigger value="transactions">Transactions</TabsTrigger>
-                <TabsTrigger value="venues">Salles</TabsTrigger>
+                <TabsTrigger value="venues">Sites</TabsTrigger>
               </TabsList>
 
               <TabsContent value={activeTab} className="mt-4">

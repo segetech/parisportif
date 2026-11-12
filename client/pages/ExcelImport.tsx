@@ -1,3 +1,5 @@
+import { importEntityLabel } from "@/lib/test-vocabulary";
+import { testStatusLabel, testCatalogLabel } from "@/lib/test-vocabulary";
 import React, { useState, useRef, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,7 @@ import {
   Calendar,
   Building2,
   CreditCard,
-  Trophy,
+  ClipboardCheck,
   ArrowRight,
   ArrowLeft,
   Download,
@@ -37,6 +39,7 @@ import {
 } from "lucide-react";
 import { DatePickerCustom } from "@/components/ui/date-picker-custom";
 import {
+  detectImportEntity,
   parseTransactionRow,
   parseBetRow,
   parseVenuesGrouped,
@@ -215,13 +218,7 @@ function ExcelImportContent() {
     let type: TargetEntityType = explicitType || "depotretrait";
     if (!explicitType) {
       const lower = newSheet.toLowerCase().trim();
-      if (lower.includes("depot") || lower.includes("retrait")) {
-        type = "depotretrait";
-      } else if (lower.includes("pari")) {
-        type = "pari";
-      } else if (lower.includes("salle")) {
-        type = "salles";
-      }
+      type = detectImportEntity(lower);
     }
     setDetectedType(type);
 
@@ -271,11 +268,11 @@ function ExcelImportContent() {
           defaultSheet = name;
           type = "depotretrait";
           break;
-        } else if (lower.includes("pari")) {
+        } else if ((lower.includes("pari") || lower.includes("test"))) {
           defaultSheet = name;
           type = "pari";
           break;
-        } else if (lower.includes("salle")) {
+        } else if (/salle|site/.test(lower)) {
           defaultSheet = name;
           type = "salles";
           break;
@@ -635,7 +632,7 @@ function ExcelImportContent() {
                 .from("venue_games")
                 .insert(gameRecords);
               if (gameError)
-                throw importDatabaseError(gameError, "Jeux de la salle");
+                throw importDatabaseError(gameError, "Jeux de le site");
             }
           }
         }
@@ -816,7 +813,8 @@ function ExcelImportContent() {
               Module d'Import Excel Professionnel
             </h1>
             <p className="text-xs sm:text-sm text-[#556B5C]">
-              Contrôle strict des données, regroupement multi-jeux, détection des anomalies et traçabilité des lots
+
+              Contrôle strict des données, regroupement multi-tests, détection des anomalies et traçabilité des lots
             </p>
           </div>
 
@@ -836,7 +834,7 @@ function ExcelImportContent() {
                 Reprise d'importation disponible : {activeSession.fileName}
               </div>
               <p className="text-amber-800">
-                Feuille : <strong>{activeSession.selectedSheet}</strong> • Type : <strong>{activeSession.detectedType}</strong> • {activeSession.importedCount}/{activeSession.totalRows} enregistrements déjà inscrits en base.
+                Feuille : <strong>{activeSession.selectedSheet}</strong> • Type : <strong>{importEntityLabel(activeSession.detectedType)}</strong> • {activeSession.importedCount}/{activeSession.totalRows} enregistrements déjà inscrits en base.
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -928,7 +926,7 @@ function ExcelImportContent() {
                 </p>
                 <p className="text-xs sm:text-sm text-[#556B5C]">
                   Fichiers supportés : <code className="font-semibold text-[#006B2D]">formulaire type excel.xlsx</code> ou{" "}
-                  <code className="font-semibold text-[#006B2D]">SALLE DE JEUX PAR QUARTIER.xlsx</code> (max 20 Mo)
+                  <code className="font-semibold text-[#006B2D]">modele_officiel_sites.xlsx</code> (max 20 Mo)
                 </p>
               </div>
               <Button
@@ -952,21 +950,25 @@ function ExcelImportContent() {
 
               <div className="p-3 bg-[#F5F8F5] rounded-xl border border-[#D8E6DB]">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#17251C]">
-                  <Trophy className="h-4 w-4 text-[#006B2D]" />
-                  Paris & Jeux
+                  <ClipboardCheck className="h-4 w-4 text-[#006B2D]" />
+
+                  Tests
                 </div>
                 <p className="text-[11px] text-[#556B5C] mt-1">
-                  Distinction stricte du résultat (gagné/perdu), gains réels et validation multi-rôles.
+
+                  Suivi des issues historiques, des montants financiers et de la validation par rôle.
                 </p>
               </div>
 
               <div className="p-3 bg-[#F5F8F5] rounded-xl border border-[#D8E6DB]">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#17251C]">
                   <Building2 className="h-4 w-4 text-[#006B2D]" />
-                  Salles de jeux
+
+                  Sites de test
                 </div>
                 <p className="text-[11px] text-[#556B5C] mt-1">
-                  Regroupement intelligent de plusieurs jeux sous une même salle physique (34 établissements).
+
+                  Regroupement intelligent de plusieurs types de test sous une même site physique selon les données du fichier.
                 </p>
               </div>
             </div>
@@ -1025,8 +1027,8 @@ function ExcelImportContent() {
                     className="w-full min-h-[44px] px-3 py-2 text-xs bg-[#F5F8F5] border border-[#D8E6DB] rounded-xl text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
                   >
                     <option value="depotretrait">Transactions financières (Dépôt / Retrait)</option>
-                    <option value="pari">Paris sportifs & jeux</option>
-                    <option value="salles">Points de vente physiques (Salles de jeux)</option>
+                    <option value="pari">Tests</option>
+                    <option value="salles">Points de vente physiques (Sites de test)</option>
                   </select>
                 </div>
               </div>
@@ -1276,7 +1278,7 @@ function ExcelImportContent() {
                               Ligne {b.rowNumber}
                             </span>
                             <span className="text-sm font-bold text-[#17251C]">{b.operator}</span>
-                            <Badge className="bg-slate-100 text-slate-800">{b.betType}</Badge>
+                            <Badge className="bg-slate-100 text-slate-800">{testCatalogLabel(b.betType)}</Badge>
                             <Badge
                               className={
                                 b.status === "gagné"
@@ -1286,12 +1288,12 @@ function ExcelImportContent() {
                                   : "bg-amber-100 text-amber-800"
                               }
                             >
-                              {b.status}
+                              {testStatusLabel(b.status)}
                             </Badge>
                           </div>
 
                           <div className="text-right">
-                            <span className="text-xs text-[#556B5C]">Misé : </span>
+                            <span className="text-xs text-[#556B5C]">Engagé : </span>
                             <span className="text-sm font-black text-[#17251C]">
                               {b.amount.toLocaleString()} FCFA
                             </span>
@@ -1314,7 +1316,7 @@ function ExcelImportContent() {
                           </div>
                           <div>
                             <span className="text-[10px] uppercase font-bold text-[#556B5C]/70 block">Support</span>
-                            {b.support}
+                            {testCatalogLabel(b.support)}
                           </div>
                           <div>
                             <span className="text-[10px] uppercase font-bold text-[#556B5C]/70 block">Téléphone</span>
@@ -1364,7 +1366,8 @@ function ExcelImportContent() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black px-2.5 py-1 rounded bg-[#006B2D]/10 text-[#006B2D] border border-[#006B2D]/20">
-                            Salle N° {v.venueNumber || idx + 1}
+
+                            Site N° {v.venueNumber || idx + 1}
                           </span>
                           <span className="text-sm font-bold text-[#17251C]">{v.quartier}</span>
                           <Badge className="bg-[#17251C] text-white font-bold">{v.operator}</Badge>
@@ -1381,7 +1384,8 @@ function ExcelImportContent() {
 
                       <div>
                         <span className="text-[10px] uppercase font-bold text-[#556B5C] block mb-1">
-                          Jeux proposés dans cet établissement ({v.games.length}) :
+
+                          Types de test proposés dans cet établissement ({v.games.length}) :
                         </span>
                         <div className="flex flex-wrap gap-1.5">
                           {v.games.map((g, gi) => (

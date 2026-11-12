@@ -1,3 +1,4 @@
+import { testCatalogLabel } from "@/lib/test-vocabulary";
 import { RecordForm } from "@/components/common/RecordForm";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
@@ -98,7 +99,7 @@ function Venues() {
     quartier_no: "",
     quartier: "",
     operator: "",
-    support: "Salle de jeux",
+    support: "Site de test",
     bet_type: "",
     address: "",
     contact_phone: "",
@@ -162,7 +163,7 @@ function Venues() {
 
     if (error) {
       if (error.code === "23505") {
-        toast.error("Ce type de pari existe déjà");
+        toast.error("Ce type de test existe déjà");
       } else {
         toast.error("Erreur lors de la création");
       }
@@ -170,7 +171,7 @@ function Venues() {
     }
 
     invalidateRelatedQueries("lookups");
-    toast.success(`Type de pari "${name}" créé avec succès`);
+    toast.success(`Type de test "${name}" créé avec succès`);
   }
 
   const filteredVenues = useMemo(() => {
@@ -219,7 +220,7 @@ function Venues() {
         quartier_no: "",
         quartier: "",
         operator: operators[0] || "",
-        support: "Salle de jeux",
+        support: "Site de test",
         bet_type: "",
         address: "",
         contact_phone: "",
@@ -277,7 +278,7 @@ function Venues() {
           .single();
 
         if (error) throw error;
-        toast.success("Salle mise à jour avec succès");
+        toast.success("Site mise à jour avec succès");
       } else {
         const { data: newV, error } = await supabase
           .from("venues")
@@ -299,8 +300,8 @@ function Venues() {
 
         toast.success(
           isAgent
-            ? "Salle créée avec succès. En attente de validation par le contrôleur."
-            : "Salle créée avec succès",
+            ? "Site créée avec succès. En attente de validation par le contrôleur."
+            : "Site créée avec succès",
         );
       }
 
@@ -314,7 +315,7 @@ function Venues() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Êtes-vous sûr de vouloir supprimer cette salle ?")) {
+    if (!confirm("Êtes-vous sûr de vouloir supprimer ce site ?")) {
       return;
     }
 
@@ -322,7 +323,7 @@ function Venues() {
       const { error } = await supabase.from("venues").delete().eq("id", id);
 
       if (error) throw error;
-      toast.success("Salle supprimée avec succès");
+      toast.success("Site supprimée avec succès");
       await refetch();
     } catch (error: any) {
       console.error("Erreur:", error);
@@ -345,14 +346,16 @@ function Venues() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Salles de jeux</h1>
+            <h1 className="text-2xl font-bold">Sites de test</h1>
             <p className="text-sm text-muted-foreground">
-              Gérer les salles de paris physiques
+
+              Gérer les sites de test
             </p>
           </div>
           <Button onClick={() => openDialog()}>
             <Plus className="h-4 w-4 mr-2" />
-            Nouvelle salle
+
+            Nouveau site
           </Button>
         </div>
 
@@ -382,7 +385,7 @@ function Venues() {
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium">Type de pari</label>
+            <label className="text-xs font-medium">Type de test</label>
             <select
               className="w-full border rounded px-3 py-2 text-sm"
               value={betTypeFilter}
@@ -390,7 +393,7 @@ function Venues() {
             >
               <option value="">Tous</option>
               {betTypes.map((bt) => (
-                <option key={bt} value={bt}>
+                <option key={testCatalogLabel(bt)} value={bt}>
                   {bt}
                 </option>
               ))}
@@ -425,7 +428,8 @@ function Venues() {
                   Opérateur
                 </TableHead>
                 <TableHead className="text-xs font-bold text-[#556B5C]">
-                  Jeux proposés
+
+                  Types de test proposés
                 </TableHead>
                 <TableHead className="text-xs font-bold text-[#556B5C]">
                   Adresse
@@ -491,7 +495,7 @@ function Venues() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            aria-label="Consulter la salle"
+                            aria-label="Consulter le site"
                             onClick={() => openDialog(venue)}
                             className="h-8 w-8 p-0 text-[#556B5C] hover:text-[#006B2D] hover:bg-[#F5F8F5]"
                           >
@@ -518,7 +522,8 @@ function Venues() {
                     colSpan={8}
                     className="text-center text-sm text-[#556B5C] py-12"
                   >
-                    Aucune salle trouvée
+
+                    Aucun site trouvée
                   </TableCell>
                 </TableRow>
               )}
@@ -609,13 +614,14 @@ function Venues() {
             })
           ) : (
             <div className="p-8 text-center text-sm text-[#556B5C] bg-white rounded-2xl border border-[#D8E6DB]">
-              Aucune salle trouvée
+
+              Aucun site trouvée
             </div>
           )}
         </div>
 
         <div className="text-sm text-muted-foreground">
-          Total : {filteredVenues.length} salle(s)
+          Total : {filteredVenues.length}  site(s)
         </div>
       </div>
 
@@ -624,7 +630,7 @@ function Venues() {
         <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg font-bold text-[#17251C]">
-              {editing ? "Consulter la salle" : "Nouvelle salle de jeux"}
+              {editing ? "Consulter le site" : "Nouveau site de test"}
             </DialogTitle>
           </DialogHeader>
           <RecordForm
@@ -633,7 +639,7 @@ function Venues() {
             onSave={handleSubmit}
             onClose={() => setDialogOpen(false)}
             onRestore={() => openDialog(editing!)}
-            createLabel="Créer la salle"
+            createLabel="Créer le site"
             hasDraft={hasDraft}
             draftTime={savedAtFormatted}
             hasConflict={hasConflict}
@@ -672,7 +678,7 @@ function Venues() {
               </div>
 
               <CreatableSelect
-                label="Opérateur de jeux"
+                label="Opérateur"
                 required
                 value={formData.operator}
                 onChange={(value) =>
@@ -691,7 +697,7 @@ function Venues() {
                   setFormData({ ...formData, support: value })
                 }
                 options={supports}
-                placeholder="Salle de jeux, Guichet..."
+                placeholder="Site de test, Guichet..."
                 onCreateNew={createSupport}
               />
 
@@ -706,8 +712,9 @@ function Venues() {
                   </span>
                 </div>
                 <p className="text-[11px] text-[#556B5C]">
-                  Cochez tous les jeux proposés par cette salle (un seul
-                  établissement, plusieurs jeux).
+
+                  Cochez tous les types de test proposés par ce site (un seul
+                  établissement, plusieurs types de test).
                 </p>
                 <div className="grid grid-cols-2 gap-2 pt-1 max-h-48 overflow-y-auto no-scrollbar">
                   {betTypes.map((bt) => {

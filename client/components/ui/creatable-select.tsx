@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Check, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { testCatalogLabel } from "@/lib/test-vocabulary";
 
 interface CreatableSelectProps {
   value: string;
@@ -29,7 +30,7 @@ export function CreatableSelect({
 
   // Filtrer les options selon la recherche
   const filteredOptions = options.filter((option) =>
-    option.toLowerCase().includes(search.toLowerCase())
+    testCatalogLabel(option).toLowerCase().includes(search.toLowerCase()) || option.toLowerCase().includes(search.toLowerCase())
   );
 
   // Vérifier si la recherche correspond exactement à une option existante
@@ -90,7 +91,7 @@ export function CreatableSelect({
           type="text"
           className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           placeholder={placeholder}
-          value={isOpen ? search : value}
+          value={isOpen ? search : testCatalogLabel(value)}
           onChange={(e) => {
             setSearch(e.target.value);
             setIsOpen(true);
@@ -119,7 +120,7 @@ export function CreatableSelect({
                   )}
                   onClick={() => handleSelect(option)}
                 >
-                  <span>{option}</span>
+                  <span>{testCatalogLabel(option)}</span>
                   {value === option && <Check className="h-4 w-4" />}
                 </button>
               ))}
