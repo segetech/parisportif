@@ -86,7 +86,10 @@ function Venues() {
   const [editing, setEditing] = useState<Venue | null>(null);
 
   // Listes déroulantes synchronisées depuis le cache
-  const operators = lookupsData?.operatorNames || [];
+  const operators =
+    lookupsData?.activeOperatorNames && lookupsData.activeOperatorNames.length > 0
+      ? lookupsData.activeOperatorNames
+      : lookupsData?.operatorNames || [];
   const supports = lookupsData?.supportNames || [];
   const betTypes = lookupsData?.betTypeNames || [];
 

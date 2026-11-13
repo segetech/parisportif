@@ -135,7 +135,10 @@ function Tests() {
   const [exportEndDate, setExportEndDate] = useState("");
 
   // Listes déroulantes synchronisées depuis le cache React Query
-  const operators = lookupsData?.operatorNames || [];
+  const operators =
+    lookupsData?.activeOperatorNames && lookupsData.activeOperatorNames.length > 0
+      ? lookupsData.activeOperatorNames
+      : lookupsData?.operatorNames || [];
   const supports = lookupsData?.supportNames || [];
   const betTypes = lookupsData?.betTypeNames || [];
   const venues = venuesData;
