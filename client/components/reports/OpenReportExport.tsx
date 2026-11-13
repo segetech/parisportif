@@ -1,22 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Loader2, Filter, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, FileType2, Loader2, Filter, ShieldCheck, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useAuth } from "@/context/AuthContext";
 import { useLookups } from "@/hooks/use-data-queries";
 import { useSettings } from "@/lib/settings";
 import { supabase } from "@/lib/supabase";
-import { currentReportPeriod, REPORT_MONTHS, REPORT_TRANCHES, reportPeriod } from "@/lib/report-periods";
+import { currentReportPeriod, customReportPeriod, reportPeriod } from "@/lib/report-periods";
 import { fetchOpenReport, type ReportFilters } from "@/lib/open-report-data";
+import { exportOpenReportPDF, triggerOpenReportCsvDownload } from "@/lib/open-report-exports";
 import { isLegalOperator } from "@/lib/operator-classification";
+import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
 import { cn } from "@/lib/utils";
 
 export function OpenReportExport({ initialOperator = "", onBusyChange }: { initialOperator?: string; onBusyChange?: (busy: boolean) => void }) {
   const initial = useMemo(() => currentReportPeriod(), []);
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("fixed");
   const [year, setYear] = useState(initial.year);
   const [month, setMonth] = useState(initial.month);
   const [tranche, setTranche] = useState<number>(initial.tranche);
+  const [customStart, setCustomStart] = useState(initial.start);
+  const [customEnd, setCustomEnd] = useState(initial.end);
   const [operator, setOperator] = useState(initialOperator);
   const [selectedOperators, setSelectedOperators] = useState<string[]>(() => initialOperator ? [initialOperator] : []);
   const [operatorCategory, setOperatorCategory] = useState<"all" | "legal" | "illegal">("all");
@@ -58,11 +62,13 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
 
   const period = useMemo(() => {
     try {
-      return reportPeriod(year, month, tranche);
+      return periodMode === "custom"
+        ? customReportPeriod(customStart, customEnd)
+        : reportPeriod(year, month, tranche);
     } catch {
       return null;
     }
-  }, [year, month, tranche]);
+  }, [periodMode, customStart, customEnd, year, month, tranche]);
 
   const allowed = !!user && ["ADMIN", "CONTROLEUR", "AGENT"].includes(user.role) && (user.role !== "AGENT" || settings.agentCanExport);
 
@@ -140,7 +146,7 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
     });
   }
 
-  async function generate() {
+  async function generate(format: "xlsx" | "pdf" | "csv" = "xlsx") {
     if (lock.current || !period || !allowed) return;
     lock.current = true;
     setBusy(true);
@@ -168,12 +174,42 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
         if (mounted.current) setMessage(status);
       });
       if (!mounted.current || activeUser.current?.id !== account) return;
+
+      if (format === "csv") {
+        setMessage("Génération du fichier CSV…");
+        const csvResult = triggerOpenReportCsvDownload(data);
+        if (!mounted.current || activeUser.current?.id !== account) return;
+        setMessage(
+          `${csvResult.summary.tests.length} test(s), ${csvResult.summary.deposits.length} dépôt(s), ${csvResult.summary.withdrawals.length} retrait(s) exportés en CSV (${csvResult.filename}).`,
+        );
+        return;
+      }
+
+      if (format === "pdf") {
+        setMessage("Génération du document PDF…");
+        const pdfResult = await exportOpenReportPDF(data);
+        if (!mounted.current || activeUser.current?.id !== account) return;
+        setMessage(
+          `${pdfResult.summary.tests.length} test(s), ${pdfResult.summary.deposits.length} dépôt(s), ${pdfResult.summary.withdrawals.length} retrait(s) exportés en PDF (${pdfResult.filename}).`,
+        );
+        return;
+      }
+
       setMessage("Construction des onglets et des graphiques Excel…");
       // Paint the loading state before starting the browser-side workbook build.
       await new Promise(resolve => setTimeout(resolve, 0));
       const { buildOpenReport } = await import("@/lib/open-report-workbook");
       const report = await buildOpenReport(data);
       if (!mounted.current || activeUser.current?.id !== account) return;
+      if (
+        report.summary.tests.length === 0 &&
+        report.summary.deposits.length === 0 &&
+        report.summary.withdrawals.length === 0 &&
+        report.summary.anomalies.length === 0
+      ) {
+        setMessage("Aucune donnée trouvée pour cette période.");
+        return;
+      }
       const url = URL.createObjectURL(new Blob([report.bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -206,57 +242,30 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
   return (
     <section className="space-y-5 rounded-xl border border-[#D8E6DB] bg-white p-4 shadow-xs sm:p-6" aria-label="Rapport Excel par période">
       <div className="border-b border-[#D8E6DB] pb-3">
-        <h2 className="text-lg font-bold text-[#17251C]">Rapport Excel OPEN</h2>
+        <h2 className="text-lg font-bold text-[#17251C]">Export officiel OPEN (Excel, PDF, CSV)</h2>
         <p className="text-xs text-[#556B5C] sm:text-sm">
-          Synthèse, graphiques natifs modifiables, tests, dépôts, retraits et un onglet par opérateur.
+          Synthèse, graphiques natifs modifiables, tests, dépôts, retraits et un onglet par opérateur sur les 4 tranches mensuelles fixes.
         </p>
       </div>
 
       <fieldset disabled={busy} className="space-y-4">
-        {/* Ligne 1 : Période temporelle (Mois, Année en saisie libre, Tranche) */}
-        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
-          <label className="grid gap-1.5 text-xs font-semibold text-[#17251C]">
-            <span>Mois</span>
-            <select
-              aria-label="Mois du rapport"
-              className="min-h-11 rounded-lg border border-[#D8E6DB] bg-white px-3 text-sm text-[#17251C] focus:border-[#006B2D] focus:outline-none"
-              value={month}
-              onChange={e => setMonth(Number(e.target.value))}
-            >
-              {REPORT_MONTHS.map((label, i) => (
-                <option key={label} value={i + 1}>{label}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-1.5 text-xs font-semibold text-[#17251C]">
-            <span>Année (saisie libre)</span>
-            <Input
-              aria-label="Année du rapport"
-              className="min-h-11 rounded-lg border-[#D8E6DB] bg-white text-sm"
-              type="number"
-              min={1900}
-              max={9998}
-              value={year || ""}
-              onChange={e => setYear(Number(e.target.value))}
-              placeholder="Ex. 2026"
-            />
-          </label>
-
-          <label className="grid gap-1.5 text-xs font-semibold text-[#17251C]">
-            <span>Période mensuelle fixe</span>
-            <select
-              aria-label="Période du rapport"
-              className="min-h-11 rounded-lg border border-[#D8E6DB] bg-white px-3 text-sm text-[#17251C] focus:border-[#006B2D] focus:outline-none"
-              value={tranche}
-              onChange={e => setTranche(Number(e.target.value))}
-            >
-              {REPORT_TRANCHES.map((label, i) => (
-                <option key={label} value={i + 1}>{label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        {/* Ligne 1 : Période temporelle (Mois, Année, Tranche mensuelle fixe + récapitulatif) */}
+        <PeriodSelector
+          year={year}
+          month={month}
+          tranche={tranche}
+          onYearChange={setYear}
+          onMonthChange={setMonth}
+          onTrancheChange={setTranche}
+          mode={periodMode}
+          onModeChange={setPeriodMode}
+          allowCustomMode
+          customStart={customStart}
+          customEnd={customEnd}
+          onCustomStartChange={setCustomStart}
+          onCustomEndChange={setCustomEnd}
+          disabled={busy}
+        />
 
         {/* Ligne 2 : Filtres rapides */}
         <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
@@ -510,29 +519,46 @@ export function OpenReportExport({ initialOperator = "", onBusyChange }: { initi
         </div>
       </fieldset>
 
-      {/* Récapitulatif des dates exactes de la période */}
-      <div className="rounded-lg bg-[#E8F3EC] p-3.5 text-xs sm:text-sm text-[#004D20] font-medium border border-[#C2DEC9]" aria-live="polite">
-        {period
-          ? `📅 ${period.label} — dates incluses (${period.start} → ${period.end}), heure de Bamako.`
-          : "Sélectionnez un mois et une année valides."}
-      </div>
-
       {!allowed && (
         <p className="text-xs sm:text-sm text-red-600 font-medium">
           L’export n’est pas autorisé pour ce compte ou est désactivé pour les agents dans les paramètres.
         </p>
       )}
 
-      {/* Bouton de génération */}
-      <Button
-        type="button"
-        className="min-h-11 w-full bg-[#006B2D] hover:bg-[#004D20] text-white font-semibold shadow-xs sm:w-auto"
-        disabled={busy || !period || !allowed}
-        onClick={() => void generate()}
-      >
-        {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4 text-[#FFD000]" />}
-        {busy ? "Génération en cours…" : "Exporter le rapport Excel"}
-      </Button>
+      {/* Boutons de génération (Excel, PDF, CSV) */}
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+        <Button
+          type="button"
+          className="min-h-11 w-full bg-[#006B2D] hover:bg-[#004D20] text-white font-semibold shadow-xs sm:w-auto"
+          disabled={busy || !period || !allowed}
+          onClick={() => void generate("xlsx")}
+        >
+          {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4 text-[#FFD000]" />}
+          {busy ? "Génération en cours…" : "Exporter le rapport Excel (.xlsx)"}
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11 w-full border-[#006B2D]/30 bg-white text-[#006B2D] hover:bg-[#E8F3EC] font-semibold sm:w-auto"
+          disabled={busy || !period || !allowed}
+          onClick={() => void generate("pdf")}
+        >
+          <FileText className="mr-2 h-4 w-4 text-[#006B2D]" />
+          Exporter en PDF (.pdf)
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11 w-full border-[#D8E6DB] bg-white text-[#17251C] hover:bg-[#F5F8F5] font-semibold sm:w-auto"
+          disabled={busy || !period || !allowed}
+          onClick={() => void generate("csv")}
+        >
+          <FileType2 className="mr-2 h-4 w-4 text-[#556B5C]" />
+          Exporter en CSV (.csv)
+        </Button>
+      </div>
 
       {message && <p role="status" className="text-xs sm:text-sm text-[#006B2D] font-semibold">{message}</p>}
       {error && <p role="alert" className="text-xs sm:text-sm text-red-600 font-semibold">{error} Aucun rapport partiel n’a été téléchargé.</p>}

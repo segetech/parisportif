@@ -494,7 +494,7 @@ export function useTransactions(filters?: any) {
         .select("*")
         .order("date", { ascending: false })
         .order("time", { ascending: false })
-        .limit(filters?.limit || 200);
+        .limit(filters?.limit || 5000);
 
       if (filters?.type) {
         query = query.eq("type", filters.type);

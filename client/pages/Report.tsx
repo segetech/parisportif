@@ -18,18 +18,18 @@ export default function ReportPage() {
                 </div>
                 <div>
                   <h1 className="text-xl font-bold tracking-tight text-[#17251C] sm:text-2xl">
-                    Rapports d’activité officiels
+                    Rapports d’activité officiels OPEN
                   </h1>
                   <p className="text-xs text-[#556B5C] sm:text-sm">
-                    Génération du rapport hebdomadaire officiel (PARI, DEPOT-RETRAIT, ILLEGAL) avec graphe intégré et du classeur mensuel.
+                    Exports Excel, PDF et CSV sur les quatre tranches mensuelles fixes (1–7, 8–15, 16–22, 23–fin de mois) avec matrices et graphiques.
                   </p>
                 </div>
               </div>
             </div>
 
-            <WeeklyReportSection />
-
             <OpenReportExport />
+
+            <WeeklyReportSection />
 
             <AiAssistantPanel />
           </div>

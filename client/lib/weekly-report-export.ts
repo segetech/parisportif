@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { readRecordReference } from "@/lib/record-reference";
+import { buildReportFilename } from "@/lib/report-periods";
 
 export interface ReportOperatorMeta {
   key: string; // Uppercase normalized key
@@ -479,12 +480,17 @@ export async function exportWeeklyOfficialReport({
   txHeaders.forEach((_, i) => styleHeaderCell(txHeaderRow.getCell(i + 1)));
 
   let txRowIdx = 3;
-  let totalTxAmount = 0;
+  let totalDepotAmount = 0;
+  let totalRetraitAmount = 0;
   filteredTx.forEach((tx, idx) => {
     const row = wsTx.getRow(txRowIdx++);
     row.height = 20;
     const amt = Number(tx.amount_fcfa) || 0;
-    totalTxAmount += amt;
+    if (String(tx.type || "").toLowerCase().includes("retrait")) {
+      totalRetraitAmount += amt;
+    } else {
+      totalDepotAmount += amt;
+    }
     const ref = readRecordReference(tx).reference || tx.notes || "";
     const proofLabel = tx.proof_attachment_url
       ? "Oui"
@@ -522,16 +528,21 @@ export async function exportWeeklyOfficialReport({
     }
   });
 
-  const txTotalRow = wsTx.getRow(txRowIdx++);
-  txTotalRow.height = 22;
-  wsTx.mergeCells(`A${txTotalRow.number}:F${txTotalRow.number}`);
-  txTotalRow.getCell(1).value = "TOTAL";
-  for (let c = 1; c <= 6; c++) styleHeaderCell(txTotalRow.getCell(c));
-  txTotalRow.getCell(7).value = totalTxAmount;
-  txTotalRow.getCell(7).numFmt = "#,##0";
-  styleHeaderCell(txTotalRow.getCell(7));
-  txTotalRow.getCell(7).alignment = { vertical: "middle", horizontal: "right" };
-  for (let c = 8; c <= 11; c++) styleHeaderCell(txTotalRow.getCell(c));
+  const appendTxTotalRow = (label: string, amount: number) => {
+    const totalRow = wsTx.getRow(txRowIdx++);
+    totalRow.height = 22;
+    wsTx.mergeCells(`A${totalRow.number}:F${totalRow.number}`);
+    totalRow.getCell(1).value = label;
+    for (let c = 1; c <= 6; c++) styleHeaderCell(totalRow.getCell(c));
+    totalRow.getCell(7).value = amount;
+    totalRow.getCell(7).numFmt = "#,##0";
+    styleHeaderCell(totalRow.getCell(7));
+    totalRow.getCell(7).alignment = { vertical: "middle", horizontal: "right" };
+    for (let c = 8; c <= 11; c++) styleHeaderCell(totalRow.getCell(c));
+  };
+
+  appendTxTotalRow("TOTAL DEPOT", totalDepotAmount);
+  appendTxTotalRow("TOTAL RETRAIT", totalRetraitAmount);
 
   // Matrice récapitulative DEPOT-RETRAIT dynamique (opérateurs actifs)
   if (reportOperators.length > 0) {
@@ -706,7 +717,7 @@ export async function exportWeeklyOfficialReport({
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `RAPPORTS_SEMAINE_${startDate}_AU_${endDate}.xlsx`;
+  a.download = buildReportFilename("officiel", startDate, endDate, "xlsx");
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

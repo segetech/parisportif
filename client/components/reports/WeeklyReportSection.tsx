@@ -19,7 +19,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { DatePickerCustom } from "@/components/ui/date-picker-custom";
+import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
+import {
+  currentReportPeriod,
+  reportPeriod,
+  buildReportFilename,
+} from "@/lib/report-periods";
+import { fetchOpenReport } from "@/lib/open-report-data";
+import { supabase } from "@/lib/supabase";
 import {
   useBets,
   useTransactions,
@@ -33,21 +40,26 @@ import {
   exportWeeklyOfficialReport,
 } from "@/lib/weekly-report-export";
 
-function getDefaultWeekRange() {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(end.getDate() - 6);
-  return {
-    start: start.toISOString().split("T")[0],
-    end: end.toISOString().split("T")[0],
-  };
-}
-
 export function WeeklyReportSection() {
-  const defaultRange = useMemo(() => getDefaultWeekRange(), []);
-  const [startDate, setStartDate] = useState(defaultRange.start);
-  const [endDate, setEndDate] = useState(defaultRange.end);
+  const initialPeriod = useMemo(() => currentReportPeriod(), []);
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("fixed");
+  const [year, setYear] = useState(initialPeriod.year);
+  const [month, setMonth] = useState(initialPeriod.month);
+  const [tranche, setTranche] = useState<number>(initialPeriod.tranche);
+  const [customStart, setCustomStart] = useState(initialPeriod.start);
+  const [customEnd, setCustomEnd] = useState(initialPeriod.end);
   const [isExporting, setIsExporting] = useState(false);
+
+  const selectedPeriod = useMemo(() => {
+    try {
+      return reportPeriod(year, month, tranche);
+    } catch {
+      return null;
+    }
+  }, [year, month, tranche]);
+
+  const startDate = periodMode === "fixed" ? (selectedPeriod?.start || "") : customStart;
+  const endDate = periodMode === "fixed" ? (selectedPeriod?.end || "") : customEnd;
 
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -166,7 +178,7 @@ export function WeeklyReportSection() {
     }
     const a = document.createElement("a");
     a.href = dataUrl;
-    a.download = `GRAPHE_TESTS_${startDate}_AU_${endDate}.png`;
+    a.download = buildReportFilename("graphe", startDate, endDate, "xlsx").replace(/\.xlsx$/, ".png");
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -178,29 +190,55 @@ export function WeeklyReportSection() {
       toast.error("Veuillez sélectionner une période valide");
       return;
     }
+    const frozenStart = startDate;
+    const frozenEnd = endDate;
+    const frozenPeriod = periodMode === "fixed" ? selectedPeriod : null;
     setIsExporting(true);
     toast.loading("Génération du rapport officiel Excel...", {
       id: "weekly-report",
     });
     try {
       const chartImg = await captureChartBase64();
+      let exportBets = bets;
+      let exportTx = transactions;
+      let exportIllegals = illegals;
+
+      if (frozenPeriod) {
+        const snapshot = await fetchOpenReport(supabase, {
+          period: frozenPeriod,
+          scope: "all",
+        });
+        exportBets = snapshot.tests as any;
+        exportTx = snapshot.transactions as any;
+        exportIllegals = snapshot.anomalies.map((r: any) => ({
+          ...r,
+          category:
+            r.report_entity === "Transaction signalée"
+              ? "Dépôt/Retrait illégal"
+              : "Pari illégal",
+        }));
+      }
+
       await exportWeeklyOfficialReport({
-        startDate,
-        endDate,
+        startDate: frozenStart,
+        endDate: frozenEnd,
         activeOperatorNames,
-        bets,
-        transactions,
-        illegals,
+        bets: exportBets,
+        transactions: exportTx,
+        illegals: exportIllegals,
         chartImageBase64: chartImg,
       });
-      toast.success("Rapport hebdomadaire officiel (.xlsx) généré avec succès", {
+      toast.success("Rapport officiel (.xlsx) généré avec succès", {
         id: "weekly-report",
       });
     } catch (err) {
       console.error(err);
-      toast.error("Erreur lors de la génération du rapport Excel", {
-        id: "weekly-report",
-      });
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de la génération du rapport Excel",
+        { id: "weekly-report" },
+      );
     } finally {
       setIsExporting(false);
     }
@@ -220,10 +258,10 @@ export function WeeklyReportSection() {
             </div>
             <div>
               <h2 className="text-lg font-extrabold text-[#17251C]">
-                Rapport Hebdomadaire Officiel (Format Excel)
+                Matrice &amp; Rapport Officiel par Période (PARI, DEPOT-RETRAIT, ILLEGAL)
               </h2>
               <p className="text-xs text-[#556B5C]">
-                Génération dynamique basée sur les {reportOperators.length} opérateur(s) actif(s) : feuilles PARI, DEPOT-RETRAIT et ILLEGAL avec graphe intégré.
+                Aperçu journalier dynamique sur les {reportOperators.length} opérateur(s) actif(s) — export complet paginé au format Excel avec graphe intégré.
               </p>
             </div>
           </div>
@@ -232,52 +270,61 @@ export function WeeklyReportSection() {
             <Button
               variant="outline"
               onClick={handleDownloadChartPng}
-              className="h-10 text-xs font-bold text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5] rounded-xl gap-1.5"
+              className="min-h-11 text-xs font-bold text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5] rounded-xl gap-1.5"
             >
               <ImageIcon className="h-4 w-4 text-[#006B2D]" />
               <span>Télécharger le graphe (PNG)</span>
             </Button>
             <Button
               onClick={handleExportExcel}
-              disabled={isExporting}
-              className="h-10 text-xs font-bold bg-[#006B2D] hover:bg-[#004D20] text-white rounded-xl gap-2 shadow-xs"
+              disabled={isExporting || !startDate || !endDate || startDate > endDate}
+              className="min-h-11 text-xs font-bold bg-[#006B2D] hover:bg-[#004D20] text-white rounded-xl gap-2 shadow-xs"
             >
               <Download className="h-4 w-4 text-[#FFD000]" />
               <span>
                 {isExporting
                   ? "Génération..."
-                  : "Télécharger le Rapport Excel Officiel (.xlsx)"}
+                  : "Télécharger le Classeur Matrice (.xlsx)"}
               </span>
             </Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-[#E2ECE4]">
-          <DatePickerCustom
-            label="Date de début"
-            value={startDate}
-            onChange={setStartDate}
+        <div className="pt-2 border-t border-[#E2ECE4] space-y-4">
+          <PeriodSelector
+            year={year}
+            month={month}
+            tranche={tranche}
+            onYearChange={setYear}
+            onMonthChange={setMonth}
+            onTrancheChange={setTranche}
+            mode={periodMode}
+            onModeChange={setPeriodMode}
+            allowCustomMode
+            customStart={customStart}
+            customEnd={customEnd}
+            onCustomStartChange={setCustomStart}
+            onCustomEndChange={setCustomEnd}
+            disabled={isExporting}
           />
-          <DatePickerCustom
-            label="Date de fin"
-            value={endDate}
-            onChange={setEndDate}
-          />
-          <div className="p-3 rounded-xl bg-[#F5F8F5] border border-[#D8E6DB] flex flex-col justify-center">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#556B5C]">
-              Tests de jeux (Période)
-            </span>
-            <span className="text-lg font-extrabold text-[#17251C]">
-              {filteredBets.length}
-            </span>
-          </div>
-          <div className="p-3 rounded-xl bg-[#F5F8F5] border border-[#D8E6DB] flex flex-col justify-center">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#556B5C]">
-              Dépôts &amp; Retraits (Période)
-            </span>
-            <span className="text-lg font-extrabold text-[#006B2D]">
-              {filteredTx.length}
-            </span>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 rounded-xl bg-[#F5F8F5] border border-[#D8E6DB] flex flex-col justify-center">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#556B5C]">
+                Aperçu Tests de jeux (Période)
+              </span>
+              <span className="text-lg font-extrabold text-[#17251C]">
+                {filteredBets.length}
+              </span>
+            </div>
+            <div className="p-3 rounded-xl bg-[#F5F8F5] border border-[#D8E6DB] flex flex-col justify-center">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#556B5C]">
+                Aperçu Dépôts &amp; Retraits (Période)
+              </span>
+              <span className="text-lg font-extrabold text-[#006B2D]">
+                {filteredTx.length}
+              </span>
+            </div>
           </div>
         </div>
       </div>

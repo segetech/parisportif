@@ -133,7 +133,11 @@ export function RecordForm({
       <fieldset
         key={readOnly ? "consultation" : "editing"}
         disabled={readOnly || pending}
-        className="min-w-0 [&_input:disabled]:opacity-100 [&_textarea:disabled]:opacity-100 [&_select:disabled]:opacity-100"
+        className={`min-w-0 [&_input:disabled]:opacity-100 [&_textarea:disabled]:opacity-100 [&_select:disabled]:opacity-100 ${
+          readOnly || pending
+            ? "caret-transparent select-none cursor-default [&_input]:caret-transparent [&_textarea]:caret-transparent [&_input]:pointer-events-none [&_textarea]:pointer-events-none [&_select]:pointer-events-none"
+            : ""
+        }`}
         onClickCapture={(event) => {
           if (readOnly || pending) {
             event.preventDefault();

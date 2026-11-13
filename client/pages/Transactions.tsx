@@ -1,10 +1,26 @@
 import { OpenReportButton } from "@/components/reports/OpenReportExport";
 import { WeeklyReportSection } from "@/components/reports/WeeklyReportSection";
+import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
+import {
+  currentReportPeriod,
+  reportPeriod,
+  buildReportFilename,
+  buildReportTitle,
+  formatBamakoDateTime,
+} from "@/lib/report-periods";
+import { fetchOpenReport } from "@/lib/open-report-data";
+import { buildCsv, downloadCsv } from "@/lib/csv";
 import {
   readRecordReference,
   writeRecordReference,
 } from "@/lib/record-reference";
 import { RecordForm } from "@/components/common/RecordForm";
+import {
+  SmartFilterBar,
+  SmartFilterState,
+  INITIAL_SMART_FILTER,
+  applySmartFilter,
+} from "@/components/common/SmartFilterBar";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -26,7 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -102,12 +118,52 @@ function Transactions() {
   const { data: lookupsData } = useLookups();
   const { data: venuesData = [] } = useVenues();
 
-  const [search, setSearch] = useState("");
+  const [smartFilter, setSmartFilter] =
+    useState<SmartFilterState>(INITIAL_SMART_FILTER);
   const [activeView, setActiveView] = useState<"list" | "report">("list");
-  const [typeFilter, setTypeFilter] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const initialExportPeriod = useMemo(() => currentReportPeriod(), []);
+  const [exportPeriodMode, setExportPeriodMode] = useState<PeriodMode>("fixed");
+  const [exportYear, setExportYear] = useState(initialExportPeriod.year);
+  const [exportMonth, setExportMonth] = useState(initialExportPeriod.month);
+  const [exportTranche, setExportTranche] = useState<number>(initialExportPeriod.tranche);
+  const [exportStartDate, setExportStartDate] = useState(initialExportPeriod.start);
+  const [exportEndDate, setExportEndDate] = useState(initialExportPeriod.end);
+  const [exportBusy, setExportBusy] = useState(false);
+
+  const selectedExportPeriod = useMemo(() => {
+    try {
+      return reportPeriod(exportYear, exportMonth, exportTranche);
+    } catch {
+      return null;
+    }
+  }, [exportYear, exportMonth, exportTranche]);
+
+  const activeExportBounds = useMemo(() => {
+    if (exportPeriodMode === "fixed") {
+      if (!selectedExportPeriod) return null;
+      return {
+        mode: "fixed" as const,
+        period: selectedExportPeriod,
+        start: selectedExportPeriod.start,
+        end: selectedExportPeriod.end,
+        label: selectedExportPeriod.label,
+      };
+    }
+    if (!exportStartDate || !exportEndDate || exportStartDate > exportEndDate) {
+      return null;
+    }
+    return {
+      mode: "custom" as const,
+      period: null,
+      start: exportStartDate,
+      end: exportEndDate,
+      label: `Du ${new Date(`${exportStartDate}T00:00:00Z`).toLocaleDateString("fr-FR", { timeZone: "Africa/Bamako" })} au ${new Date(`${exportEndDate}T00:00:00Z`).toLocaleDateString("fr-FR", { timeZone: "Africa/Bamako" })}`,
+    };
+  }, [exportPeriodMode, selectedExportPeriod, exportStartDate, exportEndDate]);
 
   // Listes déroulantes synchronisées depuis le cache
   const operators =
@@ -368,22 +424,11 @@ function Transactions() {
     }
   }
 
-  const filteredTransactions = transactions.filter((tx) => {
-    if (typeFilter && tx.type !== typeFilter) return false;
-    if (!search) return true;
-    const searchLower = search.toLowerCase();
-    return (
-      tx.operator.toLowerCase().includes(searchLower) ||
-      tx.type.toLowerCase().includes(searchLower) ||
-      (tx.platform && tx.platform.toLowerCase().includes(searchLower)) ||
-      (tx.reference && tx.reference.toLowerCase().includes(searchLower)) ||
-      (tx.notes && tx.notes.toLowerCase().includes(searchLower)) ||
-      (tx.phone && tx.phone.toLowerCase().includes(searchLower)) ||
-      (tx.payment_operator &&
-        tx.payment_operator.toLowerCase().includes(searchLower)) ||
-      tx.id.toLowerCase().includes(searchLower)
-    );
-  });
+  const filteredTransactions = applySmartFilter(
+    transactions,
+    smartFilter,
+    "transactions",
+  );
 
   const stats = {
     depots: filteredTransactions
@@ -401,194 +446,333 @@ function Transactions() {
     return new Intl.NumberFormat("fr-FR").format(amount) + " F CFA";
   };
 
+  const filterTxByPeriod = (txs: Transaction[]) => {
+    if (!activeExportBounds) return [];
+    const { start, end } = activeExportBounds;
+    return txs.filter((tx) => {
+      const d = (tx.date || "").slice(0, 10);
+      return d >= start && d <= end;
+    });
+  };
+
+  const resolvePaginatedExportTransactions = async (
+    bounds: NonNullable<typeof activeExportBounds>,
+  ): Promise<Transaction[]> => {
+    if (bounds.mode === "fixed" && bounds.period) {
+      const txType =
+        smartFilter.secondaryType === "Dépôt" || smartFilter.secondaryType === "Retrait"
+          ? smartFilter.secondaryType
+          : undefined;
+      const snapshot = await fetchOpenReport(supabase, {
+        period: bounds.period,
+        scope: "transactions",
+        transactionType: txType,
+      });
+      return applySmartFilter(
+        snapshot.transactions as unknown as Transaction[],
+        smartFilter,
+        "transactions",
+      );
+    }
+    return filteredTransactions.filter((tx) => {
+      const d = (tx.date || "").slice(0, 10);
+      return d >= bounds.start && d <= bounds.end;
+    });
+  };
+
   const handleExportExcel = async () => {
-    if (filteredTransactions.length === 0) {
-      toast.error("Aucune transaction à exporter");
+    if (!activeExportBounds) {
+      toast.error("Veuillez sélectionner une période valide");
       return;
     }
-    const columns = [
-      { header: "N°", key: "index", width: 7, align: "center" as const },
-      { header: "DATE", key: "date", width: 14, align: "center" as const },
-      {
-        header: "Opérateur de jeux",
-        key: "operator",
-        width: 20,
-        align: "left" as const,
-      },
-      {
-        header: "Plateforme",
-        key: "platform",
-        width: 16,
-        align: "center" as const,
-      },
-      {
-        header: "Opérateur de paiement",
-        key: "payment_operator",
-        width: 18,
-        align: "center" as const,
-      },
-      {
-        header: "Type",
-        key: "type",
-        width: 14,
-        align: "center" as const,
-        isStatus: true,
-      },
-      {
-        header: "Montant F CFA",
-        key: "amount_fcfa",
-        width: 18,
-        align: "right" as const,
-        isCurrency: true,
-      },
-      { header: "Heure", key: "time", width: 10, align: "center" as const },
-      {
-        header: "Numéro de téléphone",
-        key: "phone",
-        width: 18,
-        align: "center" as const,
-      },
-      {
-        header: "Référence",
-        key: "reference",
-        width: 26,
-        align: "left" as const,
-      },
-      {
-        header: "preuve",
-        key: "proof_status",
-        width: 14,
-        align: "center" as const,
-      },
-      {
-        header: "Statut",
-        key: "validation_status",
-        width: 14,
-        align: "center" as const,
-        isStatus: true,
-      },
-    ];
+    const frozenBounds = structuredClone(activeExportBounds);
+    setExportBusy(true);
+    try {
+      toast.loading("Lecture des données et génération Excel...", {
+        id: "tx-excel",
+      });
+      const rows = await resolvePaginatedExportTransactions(frozenBounds);
+      if (rows.length === 0) {
+        toast.info("Aucune transaction à exporter pour cette période", {
+          id: "tx-excel",
+        });
+        return;
+      }
+      const columns = [
+        { header: "N°", key: "index", width: 7, align: "center" as const },
+        { header: "DATE", key: "date", width: 14, align: "center" as const },
+        {
+          header: "Opérateur de jeux",
+          key: "operator",
+          width: 20,
+          align: "left" as const,
+        },
+        {
+          header: "Plateforme",
+          key: "platform",
+          width: 16,
+          align: "center" as const,
+        },
+        {
+          header: "Opérateur de paiement",
+          key: "payment_operator",
+          width: 18,
+          align: "center" as const,
+        },
+        {
+          header: "Type",
+          key: "type",
+          width: 14,
+          align: "center" as const,
+          isStatus: true,
+        },
+        {
+          header: "Montant F CFA",
+          key: "amount_fcfa",
+          width: 18,
+          align: "right" as const,
+          isCurrency: true,
+        },
+        { header: "Heure", key: "time", width: 10, align: "center" as const },
+        {
+          header: "Numéro de téléphone",
+          key: "phone",
+          width: 18,
+          align: "center" as const,
+        },
+        {
+          header: "Référence",
+          key: "reference",
+          width: 26,
+          align: "left" as const,
+        },
+        {
+          header: "preuve",
+          key: "proof_status",
+          width: 14,
+          align: "center" as const,
+        },
+        {
+          header: "Statut",
+          key: "validation_status",
+          width: 14,
+          align: "center" as const,
+          isStatus: true,
+        },
+      ];
 
-    const data = filteredTransactions.map((tx, idx) => ({
-      index: idx + 1,
-      date: new Date(tx.date).toLocaleDateString("fr-FR"),
-      operator: tx.operator,
-      platform: tx.platform || tx.support || "—",
-      payment_operator: tx.payment_operator || "—",
-      type: tx.type,
-      amount_fcfa: Number(tx.amount_fcfa) || 0,
-      time: tx.time || "—",
-      phone: tx.phone || "—",
-      reference: readRecordReference(tx).reference || tx.notes || "—",
-      proof_status:
-        tx.proof_attachment_url
+      const data = rows.map((tx, idx) => ({
+        index: idx + 1,
+        date: tx.date?.slice(0, 10) || "",
+        operator: tx.operator,
+        platform: tx.platform || tx.support || "—",
+        payment_operator: tx.payment_operator || "—",
+        type: tx.type,
+        amount_fcfa: Number(tx.amount_fcfa) || 0,
+        time: tx.time || "—",
+        phone: tx.phone || "—",
+        reference: readRecordReference(tx).reference || tx.notes || "—",
+        proof_status: tx.proof_attachment_url
           ? "Oui"
           : tx.proof_status === "disponible"
             ? "Disponible"
             : tx.proof_status === "non_disponible"
               ? "Non dispo"
               : "Non renseig.",
-      validation_status:
-        tx.validation_status === "valide"
-          ? "Validé"
-          : tx.validation_status === "refuse"
-            ? "Refusé"
-            : "En attente",
-    }));
+        validation_status:
+          tx.validation_status === "valide"
+            ? "Validé"
+            : tx.validation_status === "refuse"
+              ? "Refusé"
+              : "En attente",
+      }));
 
-    const dateStr = new Date().toISOString().split("T")[0];
-    try {
-      toast.loading("Génération du rapport Excel en cours...", {
-        id: "tx-excel",
-      });
       await exportStyledExcel({
         sheetName: "Transactions",
-        title: "Rapport des transactions",
-        subtitle: "Historique et récapitulatif des dépôts et retraits",
-        periodText: typeFilter
-          ? `Filtre Type : ${typeFilter}`
-          : "Tous les types",
+        title: buildReportTitle("Rapport des transactions", frozenBounds.label),
+        subtitle: `Généré le ${formatBamakoDateTime()} (Africa/Bamako) • ${smartFilter.secondaryType ? `Type : ${smartFilter.secondaryType}` : "Dépôts & Retraits"}`,
+        periodText: `${frozenBounds.label} (${frozenBounds.start} → ${frozenBounds.end})`,
         columns,
         data,
-        filename: `transactions_${dateStr}.xlsx`,
+        filename: buildReportFilename(
+          "transactions",
+          frozenBounds.start,
+          frozenBounds.end,
+          "xlsx",
+        ),
         showTotals: true,
       });
       toast.success(
-        `${filteredTransactions.length} transaction(s) exportée(s) en Excel`,
+        `${rows.length} transaction(s) exportée(s) en Excel`,
         { id: "tx-excel" },
       );
+      setExportDialogOpen(false);
     } catch (err) {
       console.error(err);
-      toast.error("Erreur lors de l'export Excel", { id: "tx-excel" });
+      toast.error(
+        err instanceof Error ? err.message : "Erreur lors de l'export Excel",
+        { id: "tx-excel" },
+      );
+    } finally {
+      setExportBusy(false);
     }
   };
 
   const handleExportPDF = async () => {
-    if (filteredTransactions.length === 0) {
-      toast.error("Aucune transaction à exporter");
+    if (!activeExportBounds) {
+      toast.error("Veuillez sélectionner une période valide");
       return;
     }
-    const columns = [
-      { header: "N°", key: "index", align: "center" as const },
-      { header: "DATE", key: "date", align: "center" as const },
-      { header: "HEURE", key: "time", align: "center" as const },
-      { header: "TYPE", key: "type", align: "center" as const, isStatus: true },
-      { header: "OPÉRATEUR", key: "operator", align: "left" as const },
-      { header: "SUPPORT", key: "support", align: "center" as const },
-      {
-        header: "MONTANT",
-        key: "amount_fcfa",
-        align: "right" as const,
-        isCurrency: true,
-      },
-      {
-        header: "STATUT",
-        key: "validation_status",
-        align: "center" as const,
-        isStatus: true,
-      },
-      { header: "NOTES", key: "notes", align: "left" as const },
-    ];
-
-    const data = filteredTransactions.map((tx, idx) => ({
-      index: idx + 1,
-      date: new Date(tx.date).toLocaleDateString("fr-FR"),
-      time: tx.time || "—",
-      type: tx.type,
-      operator: tx.operator,
-      support: tx.support || "—",
-      amount_fcfa: Number(tx.amount_fcfa) || 0,
-      validation_status:
-        tx.validation_status === "valide"
-          ? "Validé"
-          : tx.validation_status === "refuse"
-            ? "Refusé"
-            : "En attente",
-      notes: tx.notes || "—",
-    }));
-
-    const dateStr = new Date().toISOString().split("T")[0];
+    const frozenBounds = structuredClone(activeExportBounds);
+    setExportBusy(true);
     try {
-      toast.loading("Génération du rapport PDF en cours...", { id: "tx-pdf" });
+      toast.loading("Lecture des données et génération PDF...", { id: "tx-pdf" });
+      const rows = await resolvePaginatedExportTransactions(frozenBounds);
+      if (rows.length === 0) {
+        toast.info("Aucune transaction à exporter pour cette période", {
+          id: "tx-pdf",
+        });
+        return;
+      }
+      const columns = [
+        { header: "N°", key: "index", align: "center" as const },
+        { header: "DATE", key: "date", align: "center" as const },
+        { header: "HEURE", key: "time", align: "center" as const },
+        { header: "TYPE", key: "type", align: "center" as const, isStatus: true },
+        { header: "OPÉRATEUR", key: "operator", align: "left" as const },
+        { header: "PLATEFORME", key: "support", align: "center" as const },
+        {
+          header: "MONTANT",
+          key: "amount_fcfa",
+          align: "right" as const,
+          isCurrency: true,
+        },
+        {
+          header: "STATUT",
+          key: "validation_status",
+          align: "center" as const,
+          isStatus: true,
+        },
+        { header: "RÉFÉRENCE", key: "notes", align: "left" as const },
+      ];
+
+      const data = rows.map((tx, idx) => ({
+        index: idx + 1,
+        date: tx.date?.slice(0, 10) || "",
+        time: tx.time || "—",
+        type: tx.type,
+        operator: tx.operator,
+        support: tx.platform || tx.support || "—",
+        amount_fcfa: Number(tx.amount_fcfa) || 0,
+        validation_status:
+          tx.validation_status === "valide"
+            ? "Validé"
+            : tx.validation_status === "refuse"
+              ? "Refusé"
+              : "En attente",
+        notes: readRecordReference(tx).reference || tx.notes || "—",
+      }));
+
       await exportStyledPDF({
-        title: "Rapport des transactions",
-        subtitle: "Historique et récapitulatif des dépôts et retraits",
-        periodText: typeFilter
-          ? `Filtre Type : ${typeFilter}`
-          : "Tous les types",
+        title: buildReportTitle("Rapport des transactions", frozenBounds.label),
+        subtitle: `Généré le ${formatBamakoDateTime()} (Africa/Bamako) • ${rows.length} transaction(s)`,
+        periodText: `${frozenBounds.label} (${frozenBounds.start} → ${frozenBounds.end})`,
         columns,
         data,
-        filename: `transactions_${dateStr}.pdf`,
+        filename: buildReportFilename(
+          "transactions",
+          frozenBounds.start,
+          frozenBounds.end,
+          "pdf",
+        ),
         showTotals: true,
         orientation: "landscape",
       });
       toast.success(
-        `${filteredTransactions.length} transaction(s) exportée(s) en PDF`,
+        `${rows.length} transaction(s) exportée(s) en PDF`,
         { id: "tx-pdf" },
       );
+      setExportDialogOpen(false);
     } catch (err) {
       console.error(err);
-      toast.error("Erreur lors de l'export PDF", { id: "tx-pdf" });
+      toast.error(
+        err instanceof Error ? err.message : "Erreur lors de l'export PDF",
+        { id: "tx-pdf" },
+      );
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const handleExportCSV = async () => {
+    if (!activeExportBounds) {
+      toast.error("Veuillez sélectionner une période valide");
+      return;
+    }
+    const frozenBounds = structuredClone(activeExportBounds);
+    setExportBusy(true);
+    try {
+      toast.loading("Lecture des données et génération CSV...", { id: "tx-csv" });
+      const rows = await resolvePaginatedExportTransactions(frozenBounds);
+      if (rows.length === 0) {
+        toast.info("Aucune transaction à exporter pour cette période", {
+          id: "tx-csv",
+        });
+        return;
+      }
+      const csvCols = [
+        "Référence",
+        "Date",
+        "Heure",
+        "Opérateur",
+        "Plateforme",
+        "Moyen de paiement",
+        "Type",
+        "Montant (F CFA)",
+        "Téléphone",
+        "Validation",
+        "Notes",
+      ];
+      const csvRows = rows.map((tx) => ({
+        Référence: readRecordReference(tx).reference || tx.id,
+        Date: tx.date?.slice(0, 10) || "",
+        Heure: tx.time || "",
+        Opérateur: tx.operator || "",
+        Plateforme: tx.platform || tx.support || "",
+        "Moyen de paiement": tx.payment_operator || "",
+        Type: tx.type || "",
+        "Montant (F CFA)": Number(tx.amount_fcfa) || 0,
+        Téléphone: tx.phone || "",
+        Validation:
+          tx.validation_status === "valide"
+            ? "Validé"
+            : tx.validation_status === "refuse"
+              ? "Refusé"
+              : "En attente",
+        Notes: tx.notes || "",
+      }));
+      downloadCsv(
+        buildReportFilename(
+          "transactions",
+          frozenBounds.start,
+          frozenBounds.end,
+          "csv",
+        ),
+        buildCsv(csvRows, csvCols),
+      );
+      toast.success(
+        `${rows.length} transaction(s) exportée(s) en CSV`,
+        { id: "tx-csv" },
+      );
+      setExportDialogOpen(false);
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err instanceof Error ? err.message : "Erreur lors de l'export CSV",
+        { id: "tx-csv" },
+      );
+    } finally {
+      setExportBusy(false);
     }
   };
 
@@ -655,54 +839,42 @@ function Transactions() {
         ) : (
           <>
 
-        {/* Barre de recherche et filtres */}
-        <div className="p-4 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#556B5C]" />
-            <Input
-              placeholder="Rechercher par opérateur, type, référence..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10 h-10 bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] placeholder:text-[#556B5C]/70 rounded-xl focus-visible:ring-[#006B2D]"
-            />
-          </div>
-          <select
-            className="h-10 px-3.5 rounded-xl border border-[#D8E6DB] bg-[#F5F8F5] text-xs font-bold text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D] w-full sm:w-auto"
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-          >
-            <option value="">Tous les types</option>
-            <option value="Dépôt">Dépôts</option>
-            <option value="Retrait">Retraits</option>
-          </select>
-          <Button
-            variant="outline"
-            onClick={() => refetch()}
-            className="h-10 text-xs font-bold text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5] rounded-xl w-full sm:w-auto gap-1.5"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${isFetching ? "animate-spin text-[#006B2D]" : ""}`}
-            />
-            <span>Actualiser</span>
-          </Button>
+        {/* Barre de recherche et filtres intelligents */}
+        <div className="p-4 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs space-y-3">
+          <SmartFilterBar
+            mode="transactions"
+            filter={smartFilter}
+            onChange={setSmartFilter}
+            operators={operators}
+            platformsOrSupports={platforms}
+            paymentOperators={paymentOperators}
+            secondaryOptions={["Dépôt", "Retrait"]}
+            totalCount={transactions.length}
+            filteredCount={filteredTransactions.length}
+          />
 
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
-            <OpenReportButton />
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E2ECE4]">
             <Button
               variant="outline"
-              onClick={handleExportPDF}
-              className="h-10 text-xs font-bold text-[#006B2D] border-[#006B2D]/30 hover:bg-[#006B2D]/10 rounded-xl gap-1.5 flex-1 sm:flex-none"
+              onClick={() => refetch()}
+              className="h-9 text-xs font-bold text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5] rounded-xl gap-1.5"
             >
-              <FileText className="h-4 w-4 text-[#006B2D]" />
-              <span>PDF</span>
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${isFetching ? "animate-spin text-[#006B2D]" : ""}`}
+              />
+              <span>Actualiser</span>
             </Button>
-            <Button
-              onClick={handleExportExcel}
-              className="h-10 text-xs font-bold bg-[#006B2D] hover:bg-[#004D20] text-white rounded-xl gap-1.5 flex-1 sm:flex-none shadow-xs"
-            >
-              <Download className="h-4 w-4 text-[#FFD000]" />
-              <span>Excel</span>
-            </Button>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <OpenReportButton />
+              <Button
+                onClick={() => setExportDialogOpen(true)}
+                className="h-9 text-xs font-bold bg-[#006B2D] hover:bg-[#004D20] text-white rounded-xl gap-1.5 shadow-xs"
+              >
+                <Download className="h-4 w-4 text-[#FFD000]" />
+                <span>Exporter</span>
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -1320,6 +1492,102 @@ function Transactions() {
               </div>
             </div>
           </RecordForm>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={exportDialogOpen}
+        onOpenChange={(open) => {
+          if (!exportBusy) setExportDialogOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">
+              Exporter le Rapport des Transactions
+            </DialogTitle>
+            <DialogDescription>
+              Sélectionnez une tranche mensuelle fixe ou une période personnalisée.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <PeriodSelector
+              year={exportYear}
+              month={exportMonth}
+              tranche={exportTranche}
+              onYearChange={setExportYear}
+              onMonthChange={setExportMonth}
+              onTrancheChange={setExportTranche}
+              mode={exportPeriodMode}
+              onModeChange={setExportPeriodMode}
+              allowCustomMode
+              customStart={exportStartDate}
+              customEnd={exportEndDate}
+              onCustomStartChange={setExportStartDate}
+              onCustomEndChange={setExportEndDate}
+              disabled={exportBusy}
+            />
+
+            <div className="bg-[#F5F8F5] p-3.5 rounded-xl border border-[#D8E6DB] text-xs space-y-1">
+              <p className="font-semibold text-[#17251C]">
+                Aperçu local (selon filtres actifs) :
+              </p>
+              <p className="text-[#556B5C]">
+                <span className="font-bold text-[#17251C]">
+                  {filterTxByPeriod(filteredTransactions).length}
+                </span>{" "}
+                transaction(s) affichées localement sur la période.
+                {exportPeriodMode === "fixed" &&
+                  " L’export interroge l’intégralité de la base paginée selon vos droits."}
+              </p>
+              {smartFilter.secondaryType && (
+                <p className="text-[#556B5C]">
+                  Filtre Type actif :{" "}
+                  <span className="font-bold text-[#17251C]">
+                    {smartFilter.secondaryType}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2.5 pt-2">
+              <Button
+                variant="outline"
+                disabled={exportBusy}
+                onClick={() => setExportDialogOpen(false)}
+                className="min-h-11"
+              >
+                Annuler
+              </Button>
+              <Button
+                variant="outline"
+                disabled={exportBusy || !activeExportBounds}
+                onClick={() => void handleExportCSV()}
+                className="min-h-11 gap-1.5 border-[#D8E6DB] text-[#17251C] hover:bg-[#F5F8F5] font-semibold"
+              >
+                <FileText className="h-4 w-4 text-[#556B5C]" />
+                CSV (.csv)
+              </Button>
+              <Button
+                variant="outline"
+                disabled={exportBusy || !activeExportBounds}
+                onClick={() => void handleExportPDF()}
+                className="min-h-11 gap-1.5 border-[#006B2D]/30 text-[#006B2D] hover:bg-[#E8F3EC] font-semibold"
+              >
+                <FileText className="h-4 w-4 text-[#006B2D]" />
+                PDF (.pdf)
+              </Button>
+              <Button
+                disabled={exportBusy || !activeExportBounds}
+                onClick={() => void handleExportExcel()}
+                className="min-h-11 gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-semibold"
+              >
+                <Download className="h-4 w-4 text-[#FFD000]" />
+                {exportBusy ? "Génération..." : "Excel (.xlsx)"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </AppLayout>

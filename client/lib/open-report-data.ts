@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { reportPeriod, type ReportPeriod } from "./report-periods";
+import { customReportPeriod, reportPeriod, type ReportPeriod } from "./report-periods";
 import { isLegalOperator } from "./operator-classification";
 
 export type ReportRow = { id: string; date: string; operator?: string | null; amount_fcfa?: string | number | null; amount_won_fcfa?: string | number | null; [key: string]: any };
@@ -28,7 +28,9 @@ export async function reportPages(makeQuery: () => any, progress?: (count: numbe
 /** Uses the ordinary authenticated client and existing RLS; no privileged key. */
 export async function fetchOpenReport(client: SupabaseClient, filters: ReportFilters, progress?: (message: string) => void): Promise<ReportSnapshot> {
   const frozen = structuredClone(filters);
-  frozen.period = reportPeriod(frozen.period.year, frozen.period.month, frozen.period.tranche);
+  frozen.period = frozen.period.isCustom
+    ? customReportPeriod(frozen.period.start, frozen.period.end)
+    : reportPeriod(frozen.period.year, frozen.period.month, frozen.period.tranche);
   const { data: auth, error: authError } = await client.auth.getUser();
   if (authError || !auth.user) throw new Error("Reconnectez-vous avant d’exporter.");
   const { data: profile, error } = await client.from("users").select("id,role,statut,must_change_password").eq("id", auth.user.id).single();

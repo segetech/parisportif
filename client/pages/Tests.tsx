@@ -1,4 +1,14 @@
 import { OpenReportButton } from "@/components/reports/OpenReportExport";
+import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
+import {
+  currentReportPeriod,
+  reportPeriod,
+  buildReportFilename,
+  buildReportTitle,
+  formatBamakoDateTime,
+} from "@/lib/report-periods";
+import { fetchOpenReport } from "@/lib/open-report-data";
+import { buildCsv, downloadCsv } from "@/lib/csv";
 import { HISTORICAL_RESULT_NOTICE } from "@/lib/test-vocabulary";
 import { testStatusLabel, testCatalogLabel } from "@/lib/test-vocabulary";
 import {
@@ -6,6 +16,12 @@ import {
   writeRecordReference,
 } from "@/lib/record-reference";
 import { RecordForm } from "@/components/common/RecordForm";
+import {
+  SmartFilterBar,
+  SmartFilterState,
+  INITIAL_SMART_FILTER,
+  applySmartFilter,
+} from "@/components/common/SmartFilterBar";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
 import { cn } from "@/lib/utils";
@@ -117,7 +133,8 @@ function Tests() {
   const createBetMutation = useCreateBet();
   const updateBetMutation = useUpdateBet();
 
-  const [search, setSearch] = useState("");
+  const [smartFilter, setSmartFilter] =
+    useState<SmartFilterState>(INITIAL_SMART_FILTER);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [pageSize, setPageSize] = useState<number>(25);
@@ -130,9 +147,22 @@ function Tests() {
     new Set(),
   );
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [exportPeriod, setExportPeriod] = useState<string>("all");
-  const [exportStartDate, setExportStartDate] = useState("");
-  const [exportEndDate, setExportEndDate] = useState("");
+  const initialExportPeriod = useMemo(() => currentReportPeriod(), []);
+  const [exportPeriodMode, setExportPeriodMode] = useState<PeriodMode>("fixed");
+  const [exportYear, setExportYear] = useState(initialExportPeriod.year);
+  const [exportMonth, setExportMonth] = useState(initialExportPeriod.month);
+  const [exportTranche, setExportTranche] = useState<number>(initialExportPeriod.tranche);
+  const [exportStartDate, setExportStartDate] = useState(initialExportPeriod.start);
+  const [exportEndDate, setExportEndDate] = useState(initialExportPeriod.end);
+  const [exportBusy, setExportBusy] = useState(false);
+
+  const selectedExportPeriod = useMemo(() => {
+    try {
+      return reportPeriod(exportYear, exportMonth, exportTranche);
+    } catch {
+      return null;
+    }
+  }, [exportYear, exportMonth, exportTranche]);
 
   // Listes déroulantes synchronisées depuis le cache React Query
   const operators =
@@ -393,41 +423,19 @@ function Tests() {
     }
   }
 
-  // Filtered bets with multi-faceted criteria
+  // Filtered bets with multi-faceted smart criteria
   const filteredBets = useMemo(() => {
-    return bets.filter((bet) => {
-      // 1. Text search
-      if (search) {
-        const s = search.toLowerCase();
-        const matches =
-          bet.operator.toLowerCase().includes(s) ||
-          bet.bet_type.toLowerCase().includes(s) ||
-          bet.support?.toLowerCase().includes(s) ||
-          bet.status.toLowerCase().includes(s) ||
-          bet.id.toLowerCase().includes(s) ||
-          bet.notes?.toLowerCase().includes(s) ||
-          bet.reference?.toLowerCase().includes(s);
-        if (!matches) return false;
-      }
-
-      // 2. Status facet
-      if (statusFilter !== "all") {
-        const st = bet.status.toLowerCase();
-        if (statusFilter === "won" && !(st.includes("gagn") || st === "won"))
-          return false;
-        if (statusFilter === "lost" && st !== "perdu" && st !== "lost")
-          return false;
-        if (
-          statusFilter === "pending" &&
-          !st.includes("attente") &&
-          st !== "pending"
-        )
-          return false;
-      }
-
+    const base = applySmartFilter(bets, smartFilter, "tests");
+    if (statusFilter === "all") return base;
+    return base.filter((bet) => {
+      const st = bet.status.toLowerCase();
+      if (statusFilter === "won") return st.includes("gagn") || st === "won";
+      if (statusFilter === "lost") return st === "perdu" || st === "lost";
+      if (statusFilter === "pending")
+        return st.includes("attente") || st === "pending";
       return true;
     });
-  }, [bets, search, statusFilter]);
+  }, [bets, smartFilter, statusFilter]);
 
   // Compute High-Density KPI Metrics
   const statsSummary = useMemo(() => {
@@ -503,34 +511,57 @@ function Tests() {
     setHiddenOperators(newHidden);
   };
 
-  const filterBetsByPeriod = (betsToFilter: Bet[]) => {
-    if (exportPeriod === "all") return betsToFilter;
-
-    const now = new Date();
-    let startDate: Date;
-    let endDate = now;
-
-    switch (exportPeriod) {
-      case "week":
-        startDate = new Date(now);
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case "month":
-        startDate = new Date(now);
-        startDate.setMonth(now.getMonth() - 1);
-        break;
-      case "custom":
-        if (!exportStartDate || !exportEndDate) return betsToFilter;
-        startDate = new Date(exportStartDate);
-        endDate = new Date(exportEndDate);
-        break;
-      default:
-        return betsToFilter;
+  const activeExportBounds = useMemo(() => {
+    if (exportPeriodMode === "fixed") {
+      if (!selectedExportPeriod) return null;
+      return {
+        mode: "fixed" as const,
+        period: selectedExportPeriod,
+        start: selectedExportPeriod.start,
+        end: selectedExportPeriod.end,
+        label: selectedExportPeriod.label,
+      };
     }
+    if (!exportStartDate || !exportEndDate || exportStartDate > exportEndDate) {
+      return null;
+    }
+    return {
+      mode: "custom" as const,
+      period: null,
+      start: exportStartDate,
+      end: exportEndDate,
+      label: `Du ${new Date(`${exportStartDate}T00:00:00Z`).toLocaleDateString("fr-FR", { timeZone: "Africa/Bamako" })} au ${new Date(`${exportEndDate}T00:00:00Z`).toLocaleDateString("fr-FR", { timeZone: "Africa/Bamako" })}`,
+    };
+  }, [exportPeriodMode, selectedExportPeriod, exportStartDate, exportEndDate]);
 
+  const filterBetsByPeriod = (betsToFilter: Bet[]) => {
+    if (!activeExportBounds) return [];
+    const { start, end } = activeExportBounds;
     return betsToFilter.filter((bet) => {
-      const betDate = new Date(bet.date);
-      return betDate >= startDate && betDate <= endDate;
+      const d = (bet.date || "").slice(0, 10);
+      return d >= start && d <= end;
+    });
+  };
+
+  const resolvePaginatedExportBets = async (
+    bounds: NonNullable<typeof activeExportBounds>,
+    operatorName: string,
+    fallbackBets: Bet[],
+  ): Promise<Bet[]> => {
+    if (bounds.mode === "fixed" && bounds.period) {
+      const isAllOp = !operatorName || operatorName === "all" || operatorName === "tous";
+      const snapshot = await fetchOpenReport(supabase, {
+        period: bounds.period,
+        scope: "bets",
+        operator: isAllOp ? undefined : operatorName,
+      });
+      const fetched = snapshot.tests as unknown as Bet[];
+      const smartFiltered = applySmartFilter(fetched, smartFilter, "tests");
+      return smartFiltered.filter((b) => !hiddenOperators.has(b.operator));
+    }
+    return fallbackBets.filter((bet) => {
+      const d = (bet.date || "").slice(0, 10);
+      return d >= bounds.start && d <= bounds.end;
     });
   };
 
@@ -538,23 +569,31 @@ function Tests() {
     betsToExport: Bet[] = filteredBets,
     operatorName: string = "tous",
   ) => {
-    const filteredByPeriod = filterBetsByPeriod(betsToExport);
-
-    if (filteredByPeriod.length === 0) {
-      toast.error("Aucun test à exporter pour cette période");
+    if (!activeExportBounds) {
+      toast.error("Veuillez sélectionner une période valide");
       return;
     }
+    const frozenBounds = structuredClone(activeExportBounds);
+    const frozenOperator = operatorName;
+    setExportBusy(true);
+    try {
+      toast.loading("Lecture des données et génération Excel...", {
+        id: "excel-export",
+      });
+      const filteredByPeriod = await resolvePaginatedExportBets(
+        frozenBounds,
+        frozenOperator,
+        betsToExport,
+      );
 
-    const periodText =
-      exportPeriod === "week"
-        ? "Dernière semaine (7 jours)"
-        : exportPeriod === "month"
-          ? "Dernier mois (30 jours)"
-          : exportPeriod === "custom"
-            ? `Du ${new Date(exportStartDate).toLocaleDateString("fr-FR")} au ${new Date(
-                exportEndDate,
-              ).toLocaleDateString("fr-FR")}`
-            : "Toutes les dates";
+      if (filteredByPeriod.length === 0) {
+        toast.info("Aucun test à exporter pour cette période", {
+          id: "excel-export",
+        });
+        return;
+      }
+
+      const periodText = `${frozenBounds.label} (${frozenBounds.start} → ${frozenBounds.end})`;
 
     const columns = [
       { header: "N°", key: "index", width: 7, align: "center" as const },
@@ -639,21 +678,21 @@ function Tests() {
       reference: bet.id.substring(0, 12).toUpperCase(),
     }));
 
-    const isAll =
-      !operatorName || operatorName === "all" || operatorName === "tous";
-    const opDisplay = isAll ? "Tous les opérateurs" : operatorName;
-    const fileName = isAll
-      ? `rapport_tests_tous_${new Date().toISOString().split("T")[0]}.xlsx`
-      : `rapport_tests_${operatorName}_${new Date().toISOString().split("T")[0]}.xlsx`;
+      const isAll =
+        !frozenOperator || frozenOperator === "all" || frozenOperator === "tous";
+      const opDisplay = isAll ? "Tous les opérateurs" : frozenOperator;
+      const fileName = buildReportFilename(
+        "tests",
+        frozenBounds.start,
+        frozenBounds.end,
+        "xlsx",
+        isAll ? undefined : frozenOperator,
+      );
 
-    try {
-      toast.loading("Génération du rapport Excel stylisé en cours...", {
-        id: "excel-export",
-      });
       await exportStyledExcel({
         sheetName: "Tests",
-        title: "Rapport des tests",
-        subtitle: "Récapitulatif des montants engagés, montants retournés et issues",
+        title: buildReportTitle("Rapport des tests", frozenBounds.label),
+        subtitle: `Généré le ${formatBamakoDateTime()} (Africa/Bamako) • Récapitulatif des tests`,
         operator: opDisplay,
         periodText,
         columns,
@@ -668,9 +707,14 @@ function Tests() {
       setExportDialogOpen(false);
     } catch (err: any) {
       console.error("Erreur export:", err);
-      toast.error("Erreur lors de la génération du fichier Excel", {
-        id: "excel-export",
-      });
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de la génération du fichier Excel",
+        { id: "excel-export" },
+      );
+    } finally {
+      setExportBusy(false);
     }
   };
 
@@ -678,97 +722,105 @@ function Tests() {
     betsToExport: Bet[] = filteredBets,
     operatorName: string = "tous",
   ) => {
-    const filteredByPeriod = filterBetsByPeriod(betsToExport);
-
-    if (filteredByPeriod.length === 0) {
-      toast.error("Aucun test à exporter pour cette période");
+    if (!activeExportBounds) {
+      toast.error("Veuillez sélectionner une période valide");
       return;
     }
-
-    const periodText =
-      exportPeriod === "week"
-        ? "Dernière semaine (7 jours)"
-        : exportPeriod === "month"
-          ? "Dernier mois (30 jours)"
-          : exportPeriod === "custom"
-            ? `Du ${new Date(exportStartDate).toLocaleDateString("fr-FR")} au ${new Date(
-                exportEndDate,
-              ).toLocaleDateString("fr-FR")}`
-            : "Toutes les dates";
-
-    const columns = [
-      { header: "N°", key: "index", align: "center" as const },
-      { header: "DATE", key: "date", align: "center" as const },
-      { header: "HEURE", key: "time", align: "center" as const },
-      { header: "OPÉRATEUR", key: "operator", align: "left" as const },
-      { header: "SUPPORT", key: "support", align: "center" as const },
-      { header: "TYPE", key: "bet_type", align: "left" as const },
-      {
-        header: "MONTANT ENGAGÉ",
-        key: "amount_fcfa",
-        align: "right" as const,
-        isCurrency: true,
-      },
-      {
-        header: "MONTANTS RETOURNÉS",
-        key: "amount_won_fcfa",
-        align: "right" as const,
-        isCurrency: true,
-      },
-      {
-        header: "STATUT",
-        key: "status",
-        align: "center" as const,
-        isStatus: true,
-      },
-      {
-        header: "VALIDATION",
-        key: "validation_status",
-        align: "center" as const,
-      },
-      { header: "RÉFÉRENCE", key: "reference", align: "center" as const },
-    ];
-
-    const data = filteredByPeriod.map((bet, index) => ({
-      index: index + 1,
-      date: new Date(bet.date).toLocaleDateString("fr-FR"),
-      time: bet.time || "—",
-      operator: bet.operator,
-      support: bet.support || "—",
-      bet_type: bet.bet_type || "—",
-      amount_fcfa: Number(bet.amount_fcfa) || 0,
-      amount_won_fcfa: Number(bet.amount_won_fcfa) || 0,
-      status:
-        (bet.status || "").toLowerCase().includes("gagn") ||
-        bet.status === "won"
-          ? "Issue favorable"
-          : (bet.status || "").toLowerCase().includes("perd") ||
-              bet.status === "lost"
-            ? "Issue défavorable"
-            : "En attente",
-      validation_status:
-        bet.validation_status === "valide"
-          ? "Validé"
-          : bet.validation_status === "refuse"
-            ? "Refusé"
-            : "En attente",
-      reference: bet.id.substring(0, 12).toUpperCase(),
-    }));
-
-    const isAll =
-      !operatorName || operatorName === "all" || operatorName === "tous";
-    const opDisplay = isAll ? "Tous les opérateurs" : operatorName;
-    const fileName = isAll
-      ? `rapport_tests_tous_${new Date().toISOString().split("T")[0]}.pdf`
-      : `rapport_tests_${operatorName}_${new Date().toISOString().split("T")[0]}.pdf`;
-
+    const frozenBounds = structuredClone(activeExportBounds);
+    const frozenOperator = operatorName;
+    setExportBusy(true);
     try {
-      toast.loading("Génération du rapport PDF stylisé en cours...", {
+      toast.loading("Lecture des données et génération PDF...", {
         id: "pdf-export",
       });
+      const filteredByPeriod = await resolvePaginatedExportBets(
+        frozenBounds,
+        frozenOperator,
+        betsToExport,
+      );
+
+      if (filteredByPeriod.length === 0) {
+        toast.info("Aucun test à exporter pour cette période", {
+          id: "pdf-export",
+        });
+        return;
+      }
+
+      const periodText = `${frozenBounds.label} (${frozenBounds.start} → ${frozenBounds.end})`;
+
+      const columns = [
+        { header: "N°", key: "index", align: "center" as const },
+        { header: "DATE", key: "date", align: "center" as const },
+        { header: "HEURE", key: "time", align: "center" as const },
+        { header: "OPÉRATEUR", key: "operator", align: "left" as const },
+        { header: "SUPPORT", key: "support", align: "center" as const },
+        { header: "TYPE", key: "bet_type", align: "left" as const },
+        {
+          header: "MONTANT ENGAGÉ",
+          key: "amount_fcfa",
+          align: "right" as const,
+          isCurrency: true,
+        },
+        {
+          header: "MONTANTS RETOURNÉS",
+          key: "amount_won_fcfa",
+          align: "right" as const,
+          isCurrency: true,
+        },
+        {
+          header: "STATUT",
+          key: "status",
+          align: "center" as const,
+          isStatus: true,
+        },
+        {
+          header: "VALIDATION",
+          key: "validation_status",
+          align: "center" as const,
+        },
+        { header: "RÉFÉRENCE", key: "reference", align: "center" as const },
+      ];
+
+      const data = filteredByPeriod.map((bet, index) => ({
+        index: index + 1,
+        date: bet.date?.slice(0, 10) || "",
+        time: bet.time || "—",
+        operator: bet.operator,
+        support: bet.support || "—",
+        bet_type: bet.bet_type || "—",
+        amount_fcfa: Number(bet.amount_fcfa) || 0,
+        amount_won_fcfa: Number(bet.amount_won_fcfa) || 0,
+        status:
+          (bet.status || "").toLowerCase().includes("gagn") ||
+          bet.status === "won"
+            ? "Issue favorable"
+            : (bet.status || "").toLowerCase().includes("perd") ||
+                bet.status === "lost"
+              ? "Issue défavorable"
+              : "En attente",
+        validation_status:
+          bet.validation_status === "valide"
+            ? "Validé"
+            : bet.validation_status === "refuse"
+              ? "Refusé"
+              : "En attente",
+        reference: readRecordReference(bet).reference || bet.id.substring(0, 12).toUpperCase(),
+      }));
+
+      const isAll =
+        !frozenOperator || frozenOperator === "all" || frozenOperator === "tous";
+      const opDisplay = isAll ? "Tous les opérateurs" : frozenOperator;
+      const fileName = buildReportFilename(
+        "tests",
+        frozenBounds.start,
+        frozenBounds.end,
+        "pdf",
+        isAll ? undefined : frozenOperator,
+      );
+
       await exportStyledPDF({
-        title: "Rapport des tests",
-        subtitle: "Récapitulatif des montants engagés, montants retournés et issues",
+        title: buildReportTitle("Rapport des tests", frozenBounds.label),
+        subtitle: `Généré le ${formatBamakoDateTime()} (Africa/Bamako) • ${filteredByPeriod.length} test(s)`,
         operator: opDisplay,
         periodText,
         columns,
@@ -784,9 +836,105 @@ function Tests() {
       setExportDialogOpen(false);
     } catch (err: any) {
       console.error("Erreur export PDF:", err);
-      toast.error("Erreur lors de la génération du fichier PDF", {
-        id: "pdf-export",
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de la génération du fichier PDF",
+        { id: "pdf-export" },
+      );
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const exportToCSV = async (
+    betsToExport: Bet[] = filteredBets,
+    operatorName: string = "tous",
+  ) => {
+    if (!activeExportBounds) {
+      toast.error("Veuillez sélectionner une période valide");
+      return;
+    }
+    const frozenBounds = structuredClone(activeExportBounds);
+    const frozenOperator = operatorName;
+    setExportBusy(true);
+    try {
+      toast.loading("Lecture des données et génération CSV...", {
+        id: "csv-export",
       });
+      const filteredByPeriod = await resolvePaginatedExportBets(
+        frozenBounds,
+        frozenOperator,
+        betsToExport,
+      );
+
+      if (filteredByPeriod.length === 0) {
+        toast.info("Aucun test à exporter pour cette période", {
+          id: "csv-export",
+        });
+        return;
+      }
+
+      const csvCols = [
+        "Référence",
+        "Date",
+        "Heure",
+        "Opérateur",
+        "Support",
+        "Type de test",
+        "Montant engagé (F CFA)",
+        "Montant retourné (F CFA)",
+        "Issue",
+        "Validation",
+        "Notes",
+      ];
+      const csvRows = filteredByPeriod.map((bet) => ({
+        Référence: readRecordReference(bet).reference || bet.id,
+        Date: bet.date?.slice(0, 10) || "",
+        Heure: bet.time || "",
+        Opérateur: bet.operator || "",
+        Support: bet.support || "",
+        "Type de test": bet.bet_type || "",
+        "Montant engagé (F CFA)": Number(bet.amount_fcfa) || 0,
+        "Montant retourné (F CFA)":
+          bet.amount_won_fcfa === null || bet.amount_won_fcfa === undefined
+            ? ""
+            : Number(bet.amount_won_fcfa),
+        Issue: testStatusLabel(bet.status),
+        Validation:
+          bet.validation_status === "valide"
+            ? "Validé"
+            : bet.validation_status === "refuse"
+              ? "Refusé"
+              : "En attente",
+        Notes: bet.notes || "",
+      }));
+
+      const isAll =
+        !frozenOperator || frozenOperator === "all" || frozenOperator === "tous";
+      const fileName = buildReportFilename(
+        "tests",
+        frozenBounds.start,
+        frozenBounds.end,
+        "csv",
+        isAll ? undefined : frozenOperator,
+      );
+      downloadCsv(fileName, buildCsv(csvRows, csvCols));
+      toast.success(
+        `Export CSV réussi: ${filteredByPeriod.length} test(s) exporté(s)`,
+        { id: "csv-export" },
+      );
+      setExportDialogOpen(false);
+    } catch (err: any) {
+      console.error("Erreur export CSV:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de la génération du fichier CSV",
+        { id: "csv-export" },
+      );
+    } finally {
+      setExportBusy(false);
     }
   };
 
@@ -1035,29 +1183,22 @@ function Tests() {
             3. FACETED FILTER TOOLBAR & VIEW CONTROLS
             ========================================================================= */}
         <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white shadow-xs space-y-3">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            {/* Global Search */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[#556B5C]" />
-              <Input
-                placeholder="Rechercher par opérateur, justificatif, type, statut..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="pl-9 h-9 text-xs bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] placeholder:text-[#556B5C] focus:border-[#006B2D]"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#556B5C] hover:text-[#17251C]"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
+          <SmartFilterBar
+            mode="tests"
+            filter={smartFilter}
+            onChange={(next) => {
+              setSmartFilter(next);
+              setCurrentPage(1);
+            }}
+            operators={operators}
+            platformsOrSupports={supports}
+            secondaryOptions={betTypes}
+            totalCount={bets.length}
+            filteredCount={filteredBets.length}
+            placeholder="Recherche intelligente (ex: 1xBet Live Sport 1500, téléphone, référence...)"
+          />
 
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
             {/* Faceted Status Chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
               <span className="text-xs font-bold text-[#556B5C] mr-1 hidden lg:inline">
@@ -1869,55 +2010,41 @@ function Tests() {
       {/* =========================================================================
           DIALOG D'EXPORT EXCEL AVANCÉ
           ========================================================================= */}
-      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-        <DialogContent className="max-w-md">
+      <Dialog open={exportDialogOpen} onOpenChange={(open) => { if (!exportBusy) setExportDialogOpen(open); }}>
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold">
-
-              📥 Exporter le Rapport des Tests
+              Exporter le Rapport des Tests
             </DialogTitle>
+            <DialogDescription>
+              Sélectionnez une tranche mensuelle fixe ou une période personnalisée.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
-                Période d'export
-              </label>
-              <select
-                className="w-full border border-border bg-background rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                value={exportPeriod}
-                onChange={(e) => setExportPeriod(e.target.value)}
-              >
-                <option value="all">Tous les tests enregistrés</option>
-                <option value="week">Dernière semaine (7 jours)</option>
-                <option value="month">Dernier mois (30 jours)</option>
-                <option value="custom">Période personnalisée</option>
-              </select>
-            </div>
+            <PeriodSelector
+              year={exportYear}
+              month={exportMonth}
+              tranche={exportTranche}
+              onYearChange={setExportYear}
+              onMonthChange={setExportMonth}
+              onTrancheChange={setExportTranche}
+              mode={exportPeriodMode}
+              onModeChange={setExportPeriodMode}
+              allowCustomMode
+              customStart={exportStartDate}
+              customEnd={exportEndDate}
+              onCustomStartChange={setExportStartDate}
+              onCustomEndChange={setExportEndDate}
+              disabled={exportBusy}
+            />
 
-            {exportPeriod === "custom" && (
-              <div className="grid grid-cols-2 gap-3">
-                <DatePickerCustom
-                  label="Date début"
-                  value={exportStartDate}
-                  onChange={setExportStartDate}
-                  showPresets={false}
-                />
-                <DatePickerCustom
-                  label="Date fin"
-                  value={exportEndDate}
-                  onChange={setExportEndDate}
-                  showPresets={false}
-                />
-              </div>
-            )}
-
-            <div className="bg-muted/40 p-3.5 rounded-xl border border-border text-xs space-y-1">
-              <p className="font-semibold text-foreground">
-                Aperçu du jeu de données :
+            <div className="bg-[#F5F8F5] p-3.5 rounded-xl border border-[#D8E6DB] text-xs space-y-1">
+              <p className="font-semibold text-[#17251C]">
+                Aperçu local (onglet actif) :
               </p>
-              <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">
+              <p className="text-[#556B5C]">
+                <span className="font-bold text-[#17251C]">
                   {
                     filterBetsByPeriod(
                       activeOperator === "all"
@@ -1926,12 +2053,13 @@ function Tests() {
                     ).length
                   }
                 </span>{" "}
-
-                test(s) seront inclus dans le tableur.
+                test(s) affichés localement sur la période.
+                {exportPeriodMode === "fixed" &&
+                  " L’export interroge l’intégralité de la base paginée selon vos droits."}
               </p>
-              <p className="text-muted-foreground">
-                Filtre opérateur actif:{" "}
-                <span className="font-medium text-foreground">
+              <p className="text-[#556B5C]">
+                Filtre opérateur actif :{" "}
+                <span className="font-bold text-[#17251C]">
                   {activeOperator === "all"
                     ? "Tous les opérateurs"
                     : activeOperator}
@@ -1942,36 +2070,55 @@ function Tests() {
             <div className="flex flex-wrap justify-end gap-2.5 pt-2">
               <Button
                 variant="outline"
+                disabled={exportBusy}
                 onClick={() => setExportDialogOpen(false)}
+                className="min-h-11"
               >
                 Annuler
               </Button>
               <Button
                 variant="outline"
+                disabled={exportBusy || !activeExportBounds}
                 onClick={() => {
                   const betsToExport =
                     activeOperator === "all"
                       ? filteredBets
                       : groupedBets[activeOperator] || [];
-                  exportToPDF(betsToExport, activeOperator);
+                  void exportToCSV(betsToExport, activeOperator);
                 }}
-                className="gap-1.5 border-[#006B2D]/30 text-[#006B2D] hover:bg-[#006B2D]/10 font-semibold"
+                className="min-h-11 gap-1.5 border-[#D8E6DB] text-[#17251C] hover:bg-[#F5F8F5] font-semibold"
               >
-                <FileText className="h-4 w-4 text-[#006B2D]" />
-                Exporter en PDF (.pdf)
+                <FileText className="h-4 w-4 text-[#556B5C]" />
+                CSV (.csv)
               </Button>
               <Button
+                variant="outline"
+                disabled={exportBusy || !activeExportBounds}
                 onClick={() => {
                   const betsToExport =
                     activeOperator === "all"
                       ? filteredBets
                       : groupedBets[activeOperator] || [];
-                  exportToExcel(betsToExport, activeOperator);
+                  void exportToPDF(betsToExport, activeOperator);
                 }}
-                className="gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-semibold"
+                className="min-h-11 gap-1.5 border-[#006B2D]/30 text-[#006B2D] hover:bg-[#E8F3EC] font-semibold"
+              >
+                <FileText className="h-4 w-4 text-[#006B2D]" />
+                PDF (.pdf)
+              </Button>
+              <Button
+                disabled={exportBusy || !activeExportBounds}
+                onClick={() => {
+                  const betsToExport =
+                    activeOperator === "all"
+                      ? filteredBets
+                      : groupedBets[activeOperator] || [];
+                  void exportToExcel(betsToExport, activeOperator);
+                }}
+                className="min-h-11 gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-semibold"
               >
                 <Download className="h-4 w-4 text-[#FFD000]" />
-                Exporter en Excel (.xlsx)
+                {exportBusy ? "Génération..." : "Excel (.xlsx)"}
               </Button>
             </div>
           </div>

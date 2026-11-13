@@ -33,6 +33,7 @@ vi.mock("@/lib/supabase", async () => {
 let root: Root, container: HTMLDivElement, download: Blob | undefined;
 const anchorClick = vi.fn();
 const element = (name: string) => document.querySelector(`[aria-label="${name}"]`) as HTMLInputElement;
+const excelButton = () => Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes("Excel") || b.textContent?.includes("Génération en cours")) as HTMLButtonElement;
 async function change(name: string, value: string) {
   const node = element(name);
   await act(async () => {
@@ -42,7 +43,7 @@ async function change(name: string, value: string) {
   });
 }
 async function settle() {
-  for (let i = 0; i < 300 && document.querySelector("button")?.disabled; i++) await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+  for (let i = 0; i < 300 && excelButton()?.disabled; i++) await act(async () => { await new Promise(r => setTimeout(r, 10)); });
 }
 beforeEach(async () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -60,7 +61,7 @@ describe("real export controls and generated file", () => {
     await change("Année du rapport", "2028"); await change("Mois du rapport", "2"); await change("Période du rapport", "4");
     expect(document.body.textContent).toContain("2028-02-23 → 2028-02-29");
     await change("Année du rapport", "2026"); await change("Mois du rapport", "11"); await change("Période du rapport", "2"); await change("Opérateur du rapport", "Alpha");
-    const button = container.querySelector("button")!;
+    const button = excelButton();
     await act(async () => { button.click(); button.click(); });
     expect(element("Mois du rapport").closest("fieldset")!.disabled).toBe(true);
     await settle();
@@ -73,8 +74,34 @@ describe("real export controls and generated file", () => {
     expect(document.body.textContent).toContain("2 test(s), 1 dépôt(s), 1 retrait(s)");
   });
   it("shows a clear error without downloading a partial file, then allows retry", async () => {
-    state.fail = true; await act(async () => container.querySelector("button")!.click()); await settle();
+    state.fail = true; await act(async () => excelButton().click()); await settle();
     expect(document.querySelector('[role="alert"]')!.textContent).toContain("Aucun rapport partiel"); expect(anchorClick).not.toHaveBeenCalled();
-    state.fail = false; await act(async () => container.querySelector("button")!.click()); await settle(); expect(anchorClick).toHaveBeenCalledOnce();
+    state.fail = false; await act(async () => excelButton().click()); await settle(); expect(anchorClick).toHaveBeenCalledOnce();
+  });
+  it("allows switching to Période personnalisée mode", async () => {
+    const customBtn = Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes("Période personnalisée"))!;
+    expect(customBtn).toBeTruthy();
+    await act(async () => { customBtn.click(); });
+    expect(document.body.textContent).toContain("Période personnalisée — dates incluses");
+  });
+
+  it("freezes parameters at launch and supports CSV export for the selected tranche", async () => {
+    await change("Année du rapport", "2026");
+    await change("Mois du rapport", "11");
+    await change("Période du rapport", "2");
+    await change("Opérateur du rapport", "Alpha");
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const csvBtn = buttons.find((b) => b.textContent?.includes("CSV"))!;
+    expect(csvBtn).toBeTruthy();
+
+    await act(async () => {
+      csvBtn.click();
+    });
+    // Change period immediately while export is in-flight
+    await change("Période du rapport", "4");
+    await settle();
+
+    expect(anchorClick).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain("OPEN_rapport_2026-11-08_2026-11-15.csv");
   });
 });
