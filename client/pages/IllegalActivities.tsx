@@ -85,8 +85,11 @@ function IllegalActivitiesContent() {
   const createBetMutation = useCreateIllegalBet();
   const createTransactionMutation = useCreateIllegalTransaction();
 
-  // Listes déroulantes synchronisées depuis le cache
-  const operators = lookupsData?.operatorNames || [];
+  // Listes déroulantes synchronisées depuis le cache (opérateurs illégaux en priorité)
+  const operators =
+    lookupsData?.illegalOperatorNames && lookupsData.illegalOperatorNames.length > 0
+      ? lookupsData.illegalOperatorNames
+      : lookupsData?.operatorNames || [];
   const platforms = lookupsData?.platformNames || [];
   const paymentOperators = lookupsData?.paymentOperatorNames || [];
   const betTypes = lookupsData?.betTypeNames || [];
@@ -132,7 +135,7 @@ function IllegalActivitiesContent() {
   async function createOperator(name: string) {
     const { error } = await supabase
       .from('operators')
-      .insert([{ name }]);
+      .insert([{ name, is_illegal: true, active: true }]);
 
     if (error) {
       if (error.code === '23505') {

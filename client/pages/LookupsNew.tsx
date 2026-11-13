@@ -63,7 +63,20 @@ export default function LookupsPage() {
     title: string;
   } | null>(null);
   const [inputValue, setInputValue] = useState("");
+  const [operatorIsIllegal, setOperatorIsIllegal] = useState(false);
+  const [operatorActive, setOperatorActive] = useState(true);
   const MAX_ITEMS_PREVIEW = 5;
+
+  const operatorMetaMap = useMemo(() => {
+    const map = new Map<string, { active: boolean; is_illegal: boolean }>();
+    for (const op of lookupsData?.operators || []) {
+      map.set(op.name, {
+        active: op.active !== false,
+        is_illegal: op.is_illegal === true,
+      });
+    }
+    return map;
+  }, [lookupsData?.operators]);
 
   async function handleSave() {
     if (!dlg || !inputValue.trim()) {
@@ -75,9 +88,16 @@ export default function LookupsPage() {
 
     try {
       if (dlg.mode === "add") {
-        const { error } = await supabase
-          .from(tableName)
-          .insert([{ name: inputValue.trim() }]);
+        const payload =
+          dlg.key === "operators"
+            ? {
+                name: inputValue.trim(),
+                active: operatorActive,
+                is_illegal: operatorIsIllegal,
+              }
+            : { name: inputValue.trim() };
+
+        const { error } = await supabase.from(tableName).insert([payload]);
 
         if (error) {
           if (error.code === "23505") {
@@ -102,9 +122,18 @@ export default function LookupsPage() {
           return;
         }
 
+        const updatePayload =
+          dlg.key === "operators"
+            ? {
+                name: inputValue.trim(),
+                active: operatorActive,
+                is_illegal: operatorIsIllegal,
+              }
+            : { name: inputValue.trim() };
+
         const { error } = await supabase
           .from(tableName)
-          .update({ name: inputValue.trim() })
+          .update(updatePayload)
           .eq("id", existing.id);
 
         if (error) {
@@ -165,6 +194,16 @@ export default function LookupsPage() {
   function openDialog(key: LookupKey, mode: "add" | "edit", initial?: string) {
     setDlg({ key, mode, initial });
     setInputValue(initial || "");
+    if (key === "operators") {
+      if (mode === "edit" && initial) {
+        const meta = operatorMetaMap.get(initial);
+        setOperatorActive(meta?.active ?? true);
+        setOperatorIsIllegal(meta?.is_illegal ?? false);
+      } else {
+        setOperatorActive(true);
+        setOperatorIsIllegal(false);
+      }
+    }
   }
 
   const keys: { key: LookupKey; title: string }[] = useMemo(
@@ -228,7 +267,31 @@ export default function LookupsPage() {
                             key={v}
                             className="flex items-center justify-between border rounded px-3 py-2 hover:bg-slate-50"
                           >
-                            <span className="text-sm">{testStatusLabel(testCatalogLabel(v))}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-sm truncate">{testStatusLabel(testCatalogLabel(v))}</span>
+                              {key === "operators" && (() => {
+                                const meta = operatorMetaMap.get(v);
+                                if (!meta) return null;
+                                return (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        meta.is_illegal
+                                          ? "bg-[#FEECEB] text-[#E52329]"
+                                          : "bg-[#EBF7EE] text-[#006B2D]"
+                                      }`}
+                                    >
+                                      {meta.is_illegal ? "Illégal" : "Légal"}
+                                    </span>
+                                    {!meta.active && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">
+                                        Inactif
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
                             <div className="flex items-center gap-1">
                               <Button
                                 variant="ghost"
@@ -295,6 +358,40 @@ export default function LookupsPage() {
                       placeholder="Entrez une valeur..."
                     />
                   </div>
+                  {dlg?.key === "operators" && (
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                          Classification
+                        </label>
+                        <select
+                          className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C]"
+                          value={operatorIsIllegal ? "illegal" : "legal"}
+                          onChange={(e) =>
+                            setOperatorIsIllegal(e.target.value === "illegal")
+                          }
+                        >
+                          <option value="legal">Légal (Agréé)</option>
+                          <option value="illegal">Illégal (Non agréé)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                          Statut
+                        </label>
+                        <select
+                          className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C]"
+                          value={operatorActive ? "active" : "inactive"}
+                          onChange={(e) =>
+                            setOperatorActive(e.target.value === "active")
+                          }
+                        >
+                          <option value="active">Actif</option>
+                          <option value="inactive">Inactif</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </RecordForm>
             </DialogContent>

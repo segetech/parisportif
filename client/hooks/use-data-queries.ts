@@ -644,6 +644,8 @@ export function useDeleteVenue() {
 export interface LookupItem {
   id: string;
   name: string;
+  active?: boolean;
+  is_illegal?: boolean;
 }
 
 export interface AppLookups {
@@ -655,6 +657,8 @@ export interface AppLookups {
   statuses: LookupItem[];
   // Helper listes simples de chaînes
   operatorNames: string[];
+  activeOperatorNames: string[];
+  illegalOperatorNames: string[];
   supportNames: string[];
   betTypeNames: string[];
   paymentOperatorNames: string[];
@@ -668,7 +672,7 @@ export function useLookups() {
     queryFn: async (): Promise<AppLookups> => {
       const [operators, paymentOps, platforms, supports, betTypes, statuses] =
         await Promise.all([
-          supabase.from("operators").select("id, name").order("name"),
+          supabase.from("operators").select("id, name, active, is_illegal").order("name"),
           supabase.from("payment_operators").select("id, name").order("name"),
           supabase.from("platforms").select("id, name").order("name"),
           supabase.from("supports").select("id, name").order("name"),
@@ -691,6 +695,12 @@ export function useLookups() {
         betTypes: types,
         statuses: stats,
         operatorNames: ops.map((x: any) => x.name),
+        activeOperatorNames: ops
+          .filter((x: any) => x.active !== false && !x.is_illegal)
+          .map((x: any) => x.name),
+        illegalOperatorNames: ops
+          .filter((x: any) => x.is_illegal === true)
+          .map((x: any) => x.name),
         paymentOperatorNames: pays.map((x: any) => x.name),
         platformNames: plats.map((x: any) => x.name),
         supportNames: supps.map((x: any) => x.name),

@@ -24,13 +24,13 @@ import {
   useBets,
   useTransactions,
   useIllegalActivities,
+  useLookups,
 } from "@/hooks/use-data-queries";
 import {
-  OFFICIAL_OPERATORS,
+  resolveReportOperators,
   buildDailyBetMatrix,
   buildDailyTxMatrix,
   exportWeeklyOfficialReport,
-  type OfficialOperatorKey,
 } from "@/lib/weekly-report-export";
 
 function getDefaultWeekRange() {
@@ -51,9 +51,15 @@ export function WeeklyReportSection() {
 
   const chartRef = useRef<HTMLDivElement>(null);
 
+  const { data: lookupsData } = useLookups();
   const { data: bets = [] } = useBets();
   const { data: transactions = [] } = useTransactions();
   const { illegalBets = [], illegalTransactions = [] } = useIllegalActivities();
+
+  const activeOperatorNames = useMemo(
+    () => lookupsData?.activeOperatorNames || [],
+    [lookupsData?.activeOperatorNames],
+  );
 
   const illegals = useMemo(
     () => [
@@ -84,71 +90,58 @@ export function WeeklyReportSection() {
     [transactions, startDate, endDate],
   );
 
+  const reportOperators = useMemo(
+    () => resolveReportOperators(activeOperatorNames, filteredBets, filteredTx),
+    [activeOperatorNames, filteredBets, filteredTx],
+  );
+
   const betMatrix = useMemo(
-    () => buildDailyBetMatrix(filteredBets, startDate, endDate),
-    [filteredBets, startDate, endDate],
+    () => buildDailyBetMatrix(filteredBets, startDate, endDate, reportOperators),
+    [filteredBets, startDate, endDate, reportOperators],
   );
 
   const txMatrix = useMemo(
-    () => buildDailyTxMatrix(filteredTx, startDate, endDate),
-    [filteredTx, startDate, endDate],
+    () => buildDailyTxMatrix(filteredTx, startDate, endDate, reportOperators),
+    [filteredTx, startDate, endDate, reportOperators],
   );
 
   const betTotals = useMemo(() => {
-    const totals: Record<OfficialOperatorKey, number> = {
-      "1XBET": 0,
-      BET223: 0,
-      PREMIERBET: 0,
-      MALIBET: 0,
-      MEGAPARI: 0,
-      "888STARZ": 0,
-    };
+    const totals: Record<string, number> = {};
+    for (const op of reportOperators) totals[op.key] = 0;
     for (const row of betMatrix) {
-      for (const op of OFFICIAL_OPERATORS) {
-        totals[op.key] += row.counts[op.key];
+      for (const op of reportOperators) {
+        totals[op.key] += row.counts[op.key] || 0;
       }
     }
     return totals;
-  }, [betMatrix]);
+  }, [betMatrix, reportOperators]);
 
   const txTotals = useMemo(() => {
-    const depots: Record<OfficialOperatorKey, number> = {
-      "1XBET": 0,
-      BET223: 0,
-      PREMIERBET: 0,
-      MALIBET: 0,
-      MEGAPARI: 0,
-      "888STARZ": 0,
-    };
-    const retraits: Record<OfficialOperatorKey, number> = {
-      "1XBET": 0,
-      BET223: 0,
-      PREMIERBET: 0,
-      MALIBET: 0,
-      MEGAPARI: 0,
-      "888STARZ": 0,
-    };
+    const depots: Record<string, number> = {};
+    const retraits: Record<string, number> = {};
+    for (const op of reportOperators) {
+      depots[op.key] = 0;
+      retraits[op.key] = 0;
+    }
     for (const row of txMatrix) {
-      for (const op of OFFICIAL_OPERATORS) {
-        depots[op.key] += row.depots[op.key];
-        retraits[op.key] += row.retraits[op.key];
+      for (const op of reportOperators) {
+        depots[op.key] += row.depots[op.key] || 0;
+        retraits[op.key] += row.retraits[op.key] || 0;
       }
     }
     return { depots, retraits };
-  }, [txMatrix]);
+  }, [txMatrix, reportOperators]);
 
   const chartData = useMemo(
     () =>
-      betMatrix.map((row) => ({
-        date: row.label,
-        "1XBET": row.counts["1XBET"],
-        BET223: row.counts.BET223,
-        PREMIERBET: row.counts.PREMIERBET,
-        MALIBET: row.counts.MALIBET,
-        MEGAPARI: row.counts.MEGAPARI,
-        "888STARZ": row.counts["888STARZ"],
-      })),
-    [betMatrix],
+      betMatrix.map((row) => {
+        const entry: Record<string, string | number> = { date: row.label };
+        for (const op of reportOperators) {
+          entry[op.key] = row.counts[op.key] || 0;
+        }
+        return entry;
+      }),
+    [betMatrix, reportOperators],
   );
 
   async function captureChartBase64(): Promise<string | null> {
@@ -194,6 +187,7 @@ export function WeeklyReportSection() {
       await exportWeeklyOfficialReport({
         startDate,
         endDate,
+        activeOperatorNames,
         bets,
         transactions,
         illegals,
@@ -229,7 +223,7 @@ export function WeeklyReportSection() {
                 Rapport Hebdomadaire Officiel (Format Excel)
               </h2>
               <p className="text-xs text-[#556B5C]">
-                Génération automatisée des feuilles PARI, DEPOT-RETRAIT et ILLEGAL avec matrices journalières et graphe intégré.
+                Génération dynamique basée sur les {reportOperators.length} opérateur(s) actif(s) : feuilles PARI, DEPOT-RETRAIT et ILLEGAL avec graphe intégré.
               </p>
             </div>
           </div>
@@ -288,156 +282,154 @@ export function WeeklyReportSection() {
         </div>
       </div>
 
-      {/* Matrice 1 : Nombre de tests par jour & par opérateur + Graphe */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="p-5 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-[#006B2D]" />
-              <h3 className="text-sm font-extrabold text-[#17251C]">
-                Matrice Journalière des Tests par Opérateur
-              </h3>
-            </div>
-            <span className="text-[11px] font-semibold text-[#556B5C]">
-              Feuille PARI
-            </span>
+      {/* Matrice 1 : Nombre de tests par jour & par opérateur actif */}
+      <div className="p-5 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-[#006B2D]" />
+            <h3 className="text-sm font-extrabold text-[#17251C]">
+              Matrice Journalière des Tests par Opérateur Actif
+            </h3>
           </div>
-
-          <div className="overflow-x-auto rounded-xl border border-[#D8E6DB]">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr>
-                  <th className="p-2.5 text-center font-extrabold border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C]">
-                    DATE
-                  </th>
-                  {OFFICIAL_OPERATORS.map((op) => (
-                    <th
-                      key={op.key}
-                      className="p-2.5 text-center font-extrabold border border-[#17251C]/20 text-[#17251C]"
-                      style={{ backgroundColor: `#${op.fill.slice(2)}` }}
-                    >
-                      {op.label}
-                    </th>
-                  ))}
-                  <th className="p-2.5 text-center font-extrabold border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C]">
-                    TOTAL
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {betMatrix.length > 0 ? (
-                  betMatrix.map((row) => (
-                    <tr key={row.isoDate} className="hover:bg-[#F5F8F5]">
-                      <td className="p-2 text-center font-semibold border border-[#D8E6DB] text-[#17251C] whitespace-nowrap">
-                        {row.label}
-                      </td>
-                      {OFFICIAL_OPERATORS.map((op) => (
-                        <td
-                          key={op.key}
-                          className="p-2 text-center font-mono border border-[#D8E6DB] text-[#17251C]"
-                        >
-                          {row.counts[op.key] > 0 ? row.counts[op.key] : ""}
-                        </td>
-                      ))}
-                      <td className="p-2 text-center font-mono font-bold border border-[#D8E6DB] bg-[#F5F8F5] text-[#17251C]">
-                        {row.total}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="p-6 text-center text-[#556B5C]"
-                    >
-                      Sélectionnez une période valide
-                    </td>
-                  </tr>
-                )}
-                {betMatrix.length > 0 && (
-                  <tr className="font-extrabold bg-[#F5F8F5]">
-                    <td className="p-2.5 text-center border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C]">
-                      TOTAL
-                    </td>
-                    {OFFICIAL_OPERATORS.map((op) => (
-                      <td
-                        key={op.key}
-                        className="p-2.5 text-center font-mono border border-[#17251C]/20 text-[#17251C]"
-                      >
-                        {betTotals[op.key]}
-                      </td>
-                    ))}
-                    <td className="p-2.5 text-center font-mono border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C]">
-                      {Object.values(betTotals).reduce((a, b) => a + b, 0)}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <span className="text-[11px] font-semibold text-[#556B5C]">
+            Feuille PARI ({reportOperators.length} opérateurs)
+          </span>
         </div>
 
-        {/* Graphe visuel exportable en image PNG */}
-        <div
-          ref={chartRef}
-          className="p-5 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-[#006B2D]" />
-              <h3 className="text-sm font-extrabold text-[#17251C]">
-                Évolution Journalière des Tests par Opérateur
-              </h3>
-            </div>
-            <span className="text-[11px] font-semibold text-[#556B5C]">
-              {startDate} → {endDate}
-            </span>
-          </div>
-
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartData}
-                margin={{ top: 10, right: 12, left: -12, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2ECE4" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fill: "#17251C", fontSize: 11, fontWeight: 600 }}
-                />
-                <YAxis
-                  allowDecimals={false}
-                  tick={{ fill: "#556B5C", fontSize: 11 }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#FFFFFF",
-                    borderColor: "#D8E6DB",
-                    borderRadius: "0.75rem",
-                    fontSize: "12px",
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: "11px", fontWeight: 700 }} />
-                {OFFICIAL_OPERATORS.map((op) => (
-                  <Bar
+        <div className="overflow-x-auto rounded-xl border border-[#D8E6DB]">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr>
+                <th className="p-2.5 text-center font-extrabold border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C] whitespace-nowrap">
+                  DATE
+                </th>
+                {reportOperators.map((op) => (
+                  <th
                     key={op.key}
-                    dataKey={op.key}
-                    name={op.label}
-                    fill={op.chartColor}
-                    radius={[3, 3, 0, 0]}
-                  />
+                    className="p-2.5 text-center font-extrabold border border-[#17251C]/20 text-[#17251C] whitespace-nowrap"
+                    style={{ backgroundColor: `#${op.fill.slice(2)}` }}
+                  >
+                    {op.label}
+                  </th>
                 ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+                <th className="p-2.5 text-center font-extrabold border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C] whitespace-nowrap">
+                  TOTAL
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {betMatrix.length > 0 ? (
+                betMatrix.map((row) => (
+                  <tr key={row.isoDate} className="hover:bg-[#F5F8F5]">
+                    <td className="p-2 text-center font-semibold border border-[#D8E6DB] text-[#17251C] whitespace-nowrap">
+                      {row.label}
+                    </td>
+                    {reportOperators.map((op) => (
+                      <td
+                        key={op.key}
+                        className="p-2 text-center font-mono border border-[#D8E6DB] text-[#17251C]"
+                      >
+                        {(row.counts[op.key] || 0) > 0 ? row.counts[op.key] : ""}
+                      </td>
+                    ))}
+                    <td className="p-2 text-center font-mono font-bold border border-[#D8E6DB] bg-[#F5F8F5] text-[#17251C]">
+                      {row.total}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={reportOperators.length + 2}
+                    className="p-6 text-center text-[#556B5C]"
+                  >
+                    Sélectionnez une période valide
+                  </td>
+                </tr>
+              )}
+              {betMatrix.length > 0 && (
+                <tr className="font-extrabold bg-[#F5F8F5]">
+                  <td className="p-2.5 text-center border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C]">
+                    TOTAL
+                  </td>
+                  {reportOperators.map((op) => (
+                    <td
+                      key={op.key}
+                      className="p-2.5 text-center font-mono border border-[#17251C]/20 text-[#17251C]"
+                    >
+                      {betTotals[op.key] || 0}
+                    </td>
+                  ))}
+                  <td className="p-2.5 text-center font-mono border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C]">
+                    {Object.values(betTotals).reduce((a, b) => a + b, 0)}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Matrice 2 : Dépôts & Retraits par jour et par opérateur */}
+      {/* Graphe visuel exportable en image PNG */}
+      <div
+        ref={chartRef}
+        className="p-5 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs space-y-4"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-[#006B2D]" />
+            <h3 className="text-sm font-extrabold text-[#17251C]">
+              Évolution Journalière des Tests par Opérateur Actif
+            </h3>
+          </div>
+          <span className="text-[11px] font-semibold text-[#556B5C]">
+            {startDate} → {endDate}
+          </span>
+        </div>
+
+        <div className="h-[320px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={chartData}
+              margin={{ top: 10, right: 12, left: -12, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2ECE4" />
+              <XAxis
+                dataKey="date"
+                tick={{ fill: "#17251C", fontSize: 11, fontWeight: 600 }}
+              />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fill: "#556B5C", fontSize: 11 }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#FFFFFF",
+                  borderColor: "#D8E6DB",
+                  borderRadius: "0.75rem",
+                  fontSize: "12px",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: "11px", fontWeight: 700 }} />
+              {reportOperators.map((op) => (
+                <Bar
+                  key={op.key}
+                  dataKey={op.key}
+                  name={op.label}
+                  fill={op.chartColor}
+                  radius={[3, 3, 0, 0]}
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Matrice 2 : Dépôts & Retraits par jour et par opérateur actif */}
       <div className="p-5 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-extrabold text-[#17251C]">
-            Matrice Récapitulative Dépôts &amp; Retraits par Opérateur (F CFA)
+            Matrice Récapitulative Dépôts &amp; Retraits par Opérateur Actif (F CFA)
           </h3>
           <span className="text-[11px] font-semibold text-[#556B5C]">
             Feuille DEPOT-RETRAIT
@@ -450,15 +442,15 @@ export function WeeklyReportSection() {
               <tr>
                 <th
                   rowSpan={2}
-                  className="p-2 text-center font-extrabold border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C]"
+                  className="p-2 text-center font-extrabold border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C] whitespace-nowrap"
                 >
                   DATE
                 </th>
-                {OFFICIAL_OPERATORS.map((op) => (
+                {reportOperators.map((op) => (
                   <th
                     key={op.key}
                     colSpan={2}
-                    className="p-2 text-center font-extrabold border border-[#17251C]/20 text-[#17251C]"
+                    className="p-2 text-center font-extrabold border border-[#17251C]/20 text-[#17251C] whitespace-nowrap"
                     style={{ backgroundColor: `#${op.fill.slice(2)}` }}
                   >
                     {op.label}
@@ -466,12 +458,12 @@ export function WeeklyReportSection() {
                 ))}
               </tr>
               <tr>
-                {OFFICIAL_OPERATORS.map((op) => (
+                {reportOperators.map((op) => (
                   <React.Fragment key={op.key}>
-                    <th className="p-1.5 text-center font-bold border border-[#17251C]/20 bg-[#F5F8F5] text-[#006B2D]">
+                    <th className="p-1.5 text-center font-bold border border-[#17251C]/20 bg-[#F5F8F5] text-[#006B2D] whitespace-nowrap">
                       DEPOTS
                     </th>
-                    <th className="p-1.5 text-center font-bold border border-[#17251C]/20 bg-[#F5F8F5] text-[#E52329]">
+                    <th className="p-1.5 text-center font-bold border border-[#17251C]/20 bg-[#F5F8F5] text-[#E52329] whitespace-nowrap">
                       RETRAITS
                     </th>
                   </React.Fragment>
@@ -484,13 +476,13 @@ export function WeeklyReportSection() {
                   <td className="p-2 text-center font-semibold border border-[#D8E6DB] text-[#17251C] whitespace-nowrap">
                     {row.label}
                   </td>
-                  {OFFICIAL_OPERATORS.map((op) => (
+                  {reportOperators.map((op) => (
                     <React.Fragment key={op.key}>
                       <td className="p-2 text-right font-mono border border-[#D8E6DB] text-[#17251C] whitespace-nowrap">
-                        {formatMoney(row.depots[op.key])}
+                        {formatMoney(row.depots[op.key] || 0)}
                       </td>
                       <td className="p-2 text-right font-mono border border-[#D8E6DB] text-[#17251C] whitespace-nowrap">
-                        {formatMoney(row.retraits[op.key])}
+                        {formatMoney(row.retraits[op.key] || 0)}
                       </td>
                     </React.Fragment>
                   ))}
@@ -501,16 +493,16 @@ export function WeeklyReportSection() {
                   <td className="p-2 text-center border border-[#17251C]/20 bg-[#BFBFBF] text-[#17251C]">
                     TOTAL
                   </td>
-                  {OFFICIAL_OPERATORS.map((op) => (
+                  {reportOperators.map((op) => (
                     <React.Fragment key={op.key}>
                       <td className="p-2 text-right font-mono border border-[#17251C]/20 text-[#006B2D] whitespace-nowrap">
                         {new Intl.NumberFormat("fr-FR").format(
-                          txTotals.depots[op.key],
+                          txTotals.depots[op.key] || 0,
                         )}
                       </td>
                       <td className="p-2 text-right font-mono border border-[#17251C]/20 text-[#E52329] whitespace-nowrap">
                         {new Intl.NumberFormat("fr-FR").format(
-                          txTotals.retraits[op.key],
+                          txTotals.retraits[op.key] || 0,
                         )}
                       </td>
                     </React.Fragment>

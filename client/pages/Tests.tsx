@@ -318,7 +318,6 @@ function Tests() {
         ticket_url: formData.ticket_url || null,
         proof_attachment_url: formData.ticket_url || null,
         ...writeRecordReference(ticketRef, formData.notes),
-        venue_id: selectedVenueId || null,
       };
 
       if (editingBet) {
@@ -332,11 +331,11 @@ function Tests() {
         if (error) throw error;
         toast.success("Test modifié avec succès");
       } else {
-        const isAgent = user?.role === "AGENT";
+        const isAdmin = user?.role === "ADMIN";
         const newBetData = {
           ...betData,
           created_by: user?.id,
-          validation_status: isAgent ? "en_attente" : "valide",
+          validation_status: isAdmin ? "valide" : "en_attente",
         };
 
         const { error } = await supabase.from("bets").insert([newBetData]);
@@ -356,13 +355,14 @@ function Tests() {
               time: formData.time || null,
               type: transType,
               operator: formData.operator,
-              support: formData.support,
+              platform: formData.support || "App mobile",
+              payment_operator: "Orange",
               amount_fcfa: transAmount,
               notes: ticketRef
                 ? `Flux lié au justificatif [${ticketRef.trim()}] (${formData.bet_type})`
                 : `Flux généré automatiquement depuis le test (${formData.bet_type})`,
               created_by: user?.id,
-              validation_status: isAgent ? "en_attente" : "valide",
+              validation_status: isAdmin ? "valide" : "en_attente",
             };
 
             await supabase.from("transactions").insert([newTransaction]);
@@ -372,7 +372,7 @@ function Tests() {
         }
 
         toast.success(
-          isAgent
+          !isAdmin
             ? "Test enregistré avec succès. Transmis au contrôleur en attente de validation."
             : autoCreateTransaction
               ? "Test et transaction financière liée créés avec succès."

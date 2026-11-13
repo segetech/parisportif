@@ -57,7 +57,7 @@ export function DatePickerCustom({
   };
 
   return (
-    <div className={cn("space-y-1.5 w-full", className)}>
+    <div className={cn("space-y-1.5 w-full min-w-0", className)}>
       {label && (
         <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">
           {label} {required && <span className="text-[#E52329]">*</span>}
@@ -93,7 +93,7 @@ export function DatePickerCustom({
           max={max}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          className="absolute inset-0 !opacity-0 cursor-pointer w-full h-full min-w-0"
           tabIndex={0}
           aria-label={label || "Date"}
         />
@@ -189,7 +189,7 @@ export function TimePickerCustom({
   };
 
   return (
-    <div className={cn("space-y-1.5 w-full", className)}>
+    <div className={cn("space-y-1.5 w-full min-w-0", className)}>
       {label && (
         <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">
           {label} {required && <span className="text-[#E52329]">*</span>}
@@ -223,7 +223,7 @@ export function TimePickerCustom({
           value={value || ""}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          className="absolute inset-0 !opacity-0 cursor-pointer w-full h-full min-w-0"
           tabIndex={0}
           aria-label={label || "Heure"}
         />

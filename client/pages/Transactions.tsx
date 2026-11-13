@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -42,7 +43,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { CreatableSelect } from "@/components/ui/creatable-select";
-import { DateTimeRow } from "@/components/ui/date-picker-custom";
+import {
+  DatePickerCustom,
+  TimePickerCustom,
+} from "@/components/ui/date-picker-custom";
 import { ProofUploader } from "@/components/ui/proof-uploader";
 import { exportStyledExcel } from "@/lib/excel-export";
 import { exportStyledPDF } from "@/lib/pdf-export";
@@ -106,7 +110,10 @@ function Transactions() {
     useState<Transaction | null>(null);
 
   // Listes déroulantes synchronisées depuis le cache
-  const operators = lookupsData?.operatorNames || [];
+  const operators =
+    lookupsData?.activeOperatorNames && lookupsData.activeOperatorNames.length > 0
+      ? lookupsData.activeOperatorNames
+      : lookupsData?.operatorNames || [];
   const platforms = lookupsData?.platformNames || [];
   const supports = lookupsData?.supportNames || [];
   const paymentOperators = lookupsData?.paymentOperatorNames || [];
@@ -173,7 +180,7 @@ function Transactions() {
       setFormData((prev) => ({
         ...prev,
         operator: v.operator || prev.operator,
-        support: "Site de test",
+        platform: prev.platform || "Site de test",
         notes: prev.notes
           ? `${prev.notes} (Salle: ${v.quartier} - ${v.address})`
           : `Salle: ${v.quartier} - ${v.address}`,
@@ -280,7 +287,7 @@ function Transactions() {
       time: transaction.time || "",
       type: transaction.type,
       operator: transaction.operator,
-      platform: transaction.platform || "",
+      platform: transaction.platform || transaction.support || "",
       support: transaction.support || "",
       amount_fcfa: transaction.amount_fcfa,
       phone: transaction.phone || "",
@@ -309,15 +316,13 @@ function Transactions() {
         time: formData.time || null,
         type: formData.type,
         operator: formData.operator,
-        platform: formData.platform || null,
-        support: formData.support || null,
+        platform: formData.platform || formData.support || null,
         amount_fcfa: formData.amount_fcfa,
         phone: formData.phone.trim() || null,
         payment_operator: formData.payment_operator || null,
         proof_status: formData.proof_status,
         proof_attachment_url: formData.proof_attachment_url || null,
         ...writeRecordReference(ticketRef, formData.notes),
-        venue_id: selectedVenueId || null,
       };
 
       if (editingTransaction) {
@@ -333,11 +338,11 @@ function Transactions() {
         toast.success("Transaction modifiée avec succès");
       } else {
         // Mode création
-        const isAgent = user?.role === "AGENT";
+        const isAdmin = user?.role === "ADMIN";
         const newTransactionData = {
           ...transactionData,
           created_by: user?.id,
-          validation_status: isAgent ? "en_attente" : "valide",
+          validation_status: isAdmin ? "valide" : "en_attente",
         };
 
         const { error } = await supabase
@@ -347,7 +352,7 @@ function Transactions() {
         if (error) throw error;
 
         toast.success(
-          isAgent
+          !isAdmin
             ? "Transaction enregistrée avec succès. En attente de validation du contrôleur."
             : "Transaction créée avec succès",
         );
@@ -1080,6 +1085,11 @@ function Transactions() {
                 ? "Consulter le dépôt / retrait"
                 : "Nouveau dépôt ou retrait"}
             </DialogTitle>
+            <DialogDescription className="text-sm text-[#5C7363]">
+              {editingTransaction
+                ? "Détails et modifications de l'opération financière enregistrée."
+                : "Saisie d'une nouvelle opération de dépôt ou de retrait."}
+            </DialogDescription>
           </DialogHeader>
 
           <RecordForm
@@ -1096,13 +1106,118 @@ function Transactions() {
             onDiscardDraft={discardDraft}
             draftSaveStatus={saveStatus}
           >
-            <div className="grid gap-4 pt-2">
-              {/* ASSISTANCE INTELLIGENTE : ANALYSE DU SMS / TICKET ORANGE MONEY / MOOV / WAVE */}
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 pt-2 [&_input]:min-w-0 [&_select]:min-w-0">
+              {/* 1. DATE & Opérateur de jeux */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <DatePickerCustom
+                  label="DATE"
+                  required
+                  value={formData.date}
+                  onChange={(val) => setFormData({ ...formData, date: val })}
+                />
+                <CreatableSelect
+                  label="Opérateur de jeux"
+                  required
+                  value={formData.operator}
+                  onChange={(value) =>
+                    setFormData({ ...formData, operator: value })
+                  }
+                  options={operators}
+                  placeholder="Ex: 1XBET, BET223, PREMIERBET, MALIBET..."
+                  onCreateNew={createOperator}
+                />
+              </div>
+
+              {/* 2. Plateforme & Opérateur de paiement */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <CreatableSelect
+                  label="Plateforme"
+                  value={formData.platform}
+                  onChange={(value) =>
+                    setFormData({ ...formData, platform: value })
+                  }
+                  options={platforms}
+                  placeholder="App mobile, Web, USSD..."
+                  onCreateNew={createPlatform}
+                />
+                <CreatableSelect
+                  label="Opérateur de paiement"
+                  value={formData.payment_operator}
+                  onChange={(value) =>
+                    setFormData({ ...formData, payment_operator: value })
+                  }
+                  options={paymentOperators}
+                  placeholder="Orange Money, Moov, Wave, Espèces..."
+                  onCreateNew={createPaymentOperator}
+                />
+              </div>
+
+              {/* 3. Type & Montant F CFA */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                    Type *
+                  </label>
+                  <select
+                    className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
+                    value={formData.type}
+                    onChange={(e) =>
+                      setFormData({ ...formData, type: e.target.value })
+                    }
+                  >
+                    <option value="Dépôt">Dépôt (Entrée)</option>
+                    <option value="Retrait">Retrait (Sortie)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                    Montant F CFA *
+                  </label>
+                  <Input
+                    type="number"
+                    value={formData.amount_fcfa || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        amount_fcfa: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    placeholder="0"
+                    className="bg-white border-[#D8E6DB] font-semibold"
+                  />
+                </div>
+              </div>
+
+              {/* 4. Heure & Numéro de téléphone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <TimePickerCustom
+                  label="Heure"
+                  value={formData.time}
+                  onChange={(val) => setFormData({ ...formData, time: val })}
+                />
+                <div>
+                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                    Numéro de téléphone
+                  </label>
+                  <Input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) =>
+                      setFormData({ ...formData, phone: e.target.value })
+                    }
+                    placeholder="Ex: 70123456"
+                    className="bg-white border-[#D8E6DB]"
+                  />
+                </div>
+              </div>
+
+              {/* 5. Référence (avec analyse intelligente SMS Mobile Money) */}
               <div className="p-3 rounded-xl border border-[#D8E6DB] bg-[#F5F8F5] space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#17251C] flex items-center gap-1.5">
                     <Sparkles className="h-3.5 w-3.5 text-[#006B2D]" />
-                    Référence Transaction / SMS Mobile Money
+                    Référence (SMS Mobile Money)
                   </span>
                   <span className="text-[10px] text-[#556B5C]">
                     Orange Money / Wave / Moov
@@ -1120,114 +1235,6 @@ function Transactions() {
                     <span>{parsedRef.message}</span>
                   </div>
                 )}
-              </div>
-
-              <DateTimeRow
-                date={formData.date}
-                time={formData.time}
-                onDateChange={(val) => setFormData({ ...formData, date: val })}
-                onTimeChange={(val) => setFormData({ ...formData, time: val })}
-              />
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Type de flux *
-                  </label>
-                  <select
-                    className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
-                    value={formData.type}
-                    onChange={(e) =>
-                      setFormData({ ...formData, type: e.target.value })
-                    }
-                  >
-                    <option value="Dépôt">Dépôt (Entrée)</option>
-                    <option value="Retrait">Retrait (Sortie)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Montant (F CFA) *
-                  </label>
-                  <Input
-                    type="number"
-                    value={formData.amount_fcfa || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        amount_fcfa: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                    placeholder="0"
-                    className="bg-white border-[#D8E6DB] font-semibold"
-                  />
-                </div>
-              </div>
-
-              <CreatableSelect
-                label="Opérateur de jeux"
-                required
-                value={formData.operator}
-                onChange={(value) =>
-                  setFormData({ ...formData, operator: value })
-                }
-                options={operators}
-                placeholder="Ex: 1XBET, BET223, PREMIERBET, MALIBET, MEGAPARI, 888STARZ..."
-                onCreateNew={createOperator}
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <CreatableSelect
-                  label="Plateforme"
-                  value={formData.platform}
-                  onChange={(value) =>
-                    setFormData({ ...formData, platform: value })
-                  }
-                  options={platforms}
-                  placeholder="Web, App mobile, USSD..."
-                  onCreateNew={createPlatform}
-                />
-
-                <CreatableSelect
-                  label="Support"
-                  value={formData.support}
-                  onChange={(value) =>
-                    setFormData({ ...formData, support: value })
-                  }
-                  options={supports}
-                  placeholder="En ligne, Site de test, Guichet..."
-                  onCreateNew={createSupport}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <CreatableSelect
-                    label="Opérateur de paiement"
-                    value={formData.payment_operator}
-                    onChange={(value) =>
-                      setFormData({ ...formData, payment_operator: value })
-                    }
-                    options={paymentOperators}
-                    placeholder="Orange Money, Moov, Wave, Espèces..."
-                    onCreateNew={createPaymentOperator}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Téléphone (Momo)
-                  </label>
-                  <Input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                    placeholder="Ex: 70123456"
-                    className="bg-white border-[#D8E6DB]"
-                  />
-                </div>
               </div>
 
               <div className="space-y-3">

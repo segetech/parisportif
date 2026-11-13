@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -632,6 +633,11 @@ function Venues() {
             <DialogTitle className="text-base sm:text-lg font-bold text-[#17251C]">
               {editing ? "Consulter le site" : "Nouveau site de test"}
             </DialogTitle>
+            <DialogDescription className="text-sm text-[#5C7363]">
+              {editing
+                ? "Détails et paramètres du site physique de test."
+                : "Enregistrement d'un nouveau site physique de test."}
+            </DialogDescription>
           </DialogHeader>
           <RecordForm
             key={`${dialogOpen}-${editing?.id || "new"}`}
