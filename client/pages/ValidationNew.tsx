@@ -33,6 +33,8 @@ import {
   useValidationOperations,
   useValidateOperation,
   usePendingValidationCounts,
+  useArchivedOperationCounts,
+  useValidationStatusCounts,
 } from "@/hooks/use-data-queries";
 import { supabase } from "@/lib/supabase";
 import { dispatchAppNotification } from "@/lib/notification-navigation";
@@ -170,6 +172,12 @@ export default function ValidationPage() {
     filterStatus
   );
   const { data: pendingCounts } = usePendingValidationCounts(true);
+  const { data: archivedCounts } = useArchivedOperationCounts(true);
+  const { data: statusCounts } = useValidationStatusCounts(
+    activeTab as "bets" | "transactions" | "venues",
+    true,
+  );
+  const tabCounts = filterStatus === "archived" ? archivedCounts : pendingCounts;
   const validateMutation = useValidateOperation();
 
   useEffect(() => {
@@ -382,9 +390,10 @@ export default function ValidationPage() {
   }
 
   const stats = {
-    en_attente: operations.filter((o) => o.validation_status === "en_attente").length,
-    valide: operations.filter((o) => o.validation_status === "valide").length,
-    refuse: operations.filter((o) => o.validation_status === "refuse").length,
+    en_attente: statusCounts?.en_attente ?? 0,
+    valide: statusCounts?.valide ?? 0,
+    refuse: statusCounts?.refuse ?? 0,
+    archived: archivedCounts?.[activeTab as "bets" | "transactions" | "venues"] ?? 0,
   };
 
   return (
@@ -400,7 +409,7 @@ export default function ValidationPage() {
             </div>
 
             {/* Statistiques */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -432,6 +441,17 @@ export default function ValidationPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{stats.refuse}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Archive className="h-4 w-4 text-amber-600" />
+                    Archivées
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats.archived}</div>
                 </CardContent>
               </Card>
             </div>
@@ -470,11 +490,30 @@ export default function ValidationPage() {
               <Button
                 variant={filterStatus === "archived" ? "default" : "outline"}
                 size="sm"
-                onClick={() => setFilterStatus("archived")}
+                onClick={() => {
+                  setFilterStatus("archived");
+                  if (archivedCounts) {
+                    const currentCount =
+                      archivedCounts[activeTab as "bets" | "transactions" | "venues"] ?? 0;
+                    if (currentCount === 0) {
+                      if (archivedCounts.transactions > 0) setActiveTab("transactions");
+                      else if (archivedCounts.bets > 0) setActiveTab("bets");
+                      else if (archivedCounts.venues > 0) setActiveTab("venues");
+                    }
+                  }
+                }}
                 className="gap-1.5"
               >
                 <Archive className="h-3.5 w-3.5" />
                 Archivées
+                {archivedCounts && archivedCounts.total > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="h-5 px-1.5 text-[11px] font-mono bg-amber-100 text-amber-900 hover:bg-amber-100"
+                  >
+                    {archivedCounts.total}
+                  </Badge>
+                )}
               </Button>
             </div>
 
@@ -483,43 +522,43 @@ export default function ValidationPage() {
               <TabsList>
                 <TabsTrigger value="bets" className="gap-1.5">
                   Tests
-                  {pendingCounts && (
+                  {tabCounts && (
                     <Badge
-                      variant={pendingCounts.bets > 0 ? "default" : "secondary"}
+                      variant={tabCounts.bets > 0 ? "default" : "secondary"}
                       className={cn(
                         "h-5 px-1.5 text-[11px] font-mono",
-                        pendingCounts.bets > 0 && "bg-amber-600 text-white hover:bg-amber-600"
+                        tabCounts.bets > 0 && "bg-amber-600 text-white hover:bg-amber-600"
                       )}
                     >
-                      {pendingCounts.bets}
+                      {tabCounts.bets}
                     </Badge>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="transactions" className="gap-1.5">
                   Transactions
-                  {pendingCounts && (
+                  {tabCounts && (
                     <Badge
-                      variant={pendingCounts.transactions > 0 ? "default" : "secondary"}
+                      variant={tabCounts.transactions > 0 ? "default" : "secondary"}
                       className={cn(
                         "h-5 px-1.5 text-[11px] font-mono",
-                        pendingCounts.transactions > 0 && "bg-amber-600 text-white hover:bg-amber-600"
+                        tabCounts.transactions > 0 && "bg-amber-600 text-white hover:bg-amber-600"
                       )}
                     >
-                      {pendingCounts.transactions}
+                      {tabCounts.transactions}
                     </Badge>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="venues" className="gap-1.5">
                   Sites
-                  {pendingCounts && (
+                  {tabCounts && (
                     <Badge
-                      variant={pendingCounts.venues > 0 ? "default" : "secondary"}
+                      variant={tabCounts.venues > 0 ? "default" : "secondary"}
                       className={cn(
                         "h-5 px-1.5 text-[11px] font-mono",
-                        pendingCounts.venues > 0 && "bg-amber-600 text-white hover:bg-amber-600"
+                        tabCounts.venues > 0 && "bg-amber-600 text-white hover:bg-amber-600"
                       )}
                     >
-                      {pendingCounts.venues}
+                      {tabCounts.venues}
                     </Badge>
                   )}
                 </TabsTrigger>

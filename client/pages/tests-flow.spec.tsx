@@ -23,7 +23,10 @@ vi.mock("@/context/AuthContext", () => ({
 vi.mock("@/hooks/use-data-queries", () => ({
   useBets: () => ({ data: boundary.rows, isLoading: false, isFetching: false, refetch: boundary.refetch }),
   useLookups: () => ({ data: { operatorNames: ["Opérateur X"], supportNames: ["En ligne"], betTypeNames: ["Paris sportifs (Live)"] } }),
-  useVenues: () => ({ data: [] }), useCreateBet: () => ({}), useUpdateBet: () => ({}),
+  useVenues: () => ({ data: [] }),
+  useRolePermissions: () => ({ data: undefined }),
+  useCreateBet: () => ({}),
+  useUpdateBet: () => ({}),
 }));
 vi.mock("sonner", () => ({
   toast: {
@@ -106,7 +109,7 @@ describe("production Test page: terminology and writes", () => {
     await input(reference(), "NEW-001");
     const amount = document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
     await input(amount, "1500");
-    await click(button("Créer le test"));
+    await click(button("Enregistrer et envoyer"));
     expect(boundary.insert).toHaveBeenCalledWith("bets", [expect.objectContaining({ reference: "NEW-001", amount_fcfa: 1500, created_by: "user-admin", validation_status: "valide" })]);
     expect(boundary.dispatchNotification).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "operation_created",
@@ -124,7 +127,7 @@ describe("production Test page: terminology and writes", () => {
     const amount = document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
     await input(amount, "1500");
     boundary.insertError = { code: "23505", message: "duplicate key value violates unique constraint" };
-    await click(button("Créer le test"));
+    await click(button("Enregistrer et envoyer"));
     expect(boundary.toastError).toHaveBeenCalledWith(
       expect.stringContaining("déjà utilisée par un autre enregistrement"),
     );

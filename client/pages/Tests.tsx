@@ -87,12 +87,17 @@ import {
   useUpdateBet,
   useLookups,
   useVenues,
+  useRolePermissions,
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
 import {
   archiveOperationRecord,
+  canUserTrashRecord,
   hardDeleteOperationRecord,
+  submitDraftOperationsRecord,
+  trashOperationRecord,
 } from "@/lib/operation-archive";
+import { DraftBatchToolbar } from "@/components/common/DraftBatchToolbar";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
 import { dispatchAppNotification } from "@/lib/notification-navigation";
 import { Sparkles, Building, Zap, AlertTriangle } from "lucide-react";
@@ -147,12 +152,15 @@ function Tests() {
   const { data: bets = [], isLoading, isFetching, refetch } = useBets();
   const { data: lookupsData } = useLookups();
   const { data: venuesData = [] } = useVenues();
+  const { data: rolePerms } = useRolePermissions();
   const createBetMutation = useCreateBet();
   const updateBetMutation = useUpdateBet();
 
   const [smartFilter, setSmartFilter] =
     useState<SmartFilterState>(INITIAL_SMART_FILTER);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [showDraftsOnly, setShowDraftsOnly] = useState(false);
+  const [selectedDraftIds, setSelectedDraftIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [pageSize, setPageSize] = useState<number>(25);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -452,7 +460,7 @@ function Tests() {
     setDialogOpen(true);
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(asDraft = false) {
     if (
       !formData.date ||
       !formData.operator ||
@@ -508,7 +516,11 @@ function Tests() {
         const newBetData = {
           ...betData,
           created_by: user?.id,
-          validation_status: isAdmin ? "valide" : "en_attente",
+          validation_status: asDraft
+            ? "brouillon"
+            : isAdmin
+              ? "valide"
+              : "en_attente",
         };
 
         const insertQuery = supabase.from("bets").insert([newBetData]);
@@ -518,19 +530,21 @@ function Tests() {
             : await insertQuery;
         if (error) throw error;
 
-        void dispatchAppNotification({
-          eventType: "operation_created",
-          operationType: "bets",
-          operationId: insertedBet?.id,
-          status: newBetData.validation_status as any,
-          operator: formData.operator,
-          amountFcfa: Number(formData.amount_fcfa) || 0,
-          reference: newBetData.reference || undefined,
-          authorId: user?.id,
-        });
+        if (!asDraft) {
+          void dispatchAppNotification({
+            eventType: "operation_created",
+            operationType: "bets",
+            operationId: insertedBet?.id,
+            status: newBetData.validation_status as any,
+            operator: formData.operator,
+            amountFcfa: Number(formData.amount_fcfa) || 0,
+            reference: newBetData.reference || undefined,
+            authorId: user?.id,
+          });
+        }
 
-        // AUTOMATISATION ANTI-DOUBLE SAISIE : Génération automatique du flux financier lié
-        if (autoCreateTransaction && formData.amount_fcfa > 0) {
+        // AUTOMATISATION ANTI-DOUBLE SAISIE : Génération automatique du flux financier lié (uniquement si envoyé)
+        if (!asDraft && autoCreateTransaction && formData.amount_fcfa > 0) {
           try {
             const transType = formData.status === "gagné" ? "Retrait" : "Dépôt";
             const transAmount =
@@ -560,11 +574,13 @@ function Tests() {
         }
 
         toast.success(
-          !isAdmin
-            ? "Test enregistré avec succès. Transmis au contrôleur en attente de validation."
-            : autoCreateTransaction
-              ? "Test et transaction financière liée créés avec succès."
-              : "Test créé avec succès.",
+          asDraft
+            ? "Test enregistré en brouillon (non envoyé au contrôle)"
+            : !isAdmin
+              ? "Test enregistré avec succès. Transmis au contrôleur en attente de validation."
+              : autoCreateTransaction
+                ? "Test et transaction financière liée créés avec succès."
+                : "Test créé avec succès.",
         );
       }
 
@@ -605,11 +621,24 @@ function Tests() {
     }
   }
 
+  const draftBets = useMemo(
+    () =>
+      bets.filter(
+        (b) =>
+          b.validation_status === "brouillon" &&
+          (user?.role === "ADMIN" ||
+            user?.role === "CONTROLEUR" ||
+            b.created_by === user?.id),
+      ),
+    [bets, user?.role, user?.id],
+  );
+
   // Filtered bets with multi-faceted smart criteria
   const filteredBets = useMemo(() => {
     const base = applySmartFilter(bets, smartFilter, "tests");
-    if (statusFilter === "all") return base;
     return base.filter((bet) => {
+      if (showDraftsOnly && bet.validation_status !== "brouillon") return false;
+      if (statusFilter === "all") return true;
       const st = bet.status.toLowerCase();
       if (statusFilter === "won") return st.includes("gagn") || st === "won";
       if (statusFilter === "lost") return st === "perdu" || st === "lost";
@@ -617,7 +646,7 @@ function Tests() {
         return st.includes("attente") || st === "pending";
       return true;
     });
-  }, [bets, smartFilter, statusFilter]);
+  }, [bets, smartFilter, statusFilter, showDraftsOnly]);
 
   const visibleBets = useMemo(
     () => filteredBets.filter((b) => !hiddenOperators.has(b.operator)),
@@ -1549,6 +1578,21 @@ function Tests() {
         {/* =========================================================================
             4. TABS BY OPERATOR & DATA VIEW (TABLE / CARDS)
             ========================================================================= */}
+        <DraftBatchToolbar
+          operationType="bets"
+          draftCount={draftBets.length}
+          showDraftsOnly={showDraftsOnly}
+          onToggleDraftsOnly={() => {
+            setShowDraftsOnly((v) => !v);
+            setCurrentPage(1);
+          }}
+          selectedIds={selectedDraftIds}
+          allDraftIds={draftBets.map((b) => b.id)}
+          onSelectAllDrafts={() =>
+            setSelectedDraftIds(draftBets.map((b) => b.id))
+          }
+          onClearSelection={() => setSelectedDraftIds([])}
+        />
         <div ref={listTopRef} />
         <Tabs
           value={activeOperator}
@@ -1647,8 +1691,32 @@ function Tests() {
                             className="hover:bg-muted/40 transition-colors cursor-pointer group"
                             onClick={() => openEditDialog(bet)}
                           >
-                            <TableCell className="text-center font-mono text-xs text-muted-foreground font-semibold">
-                              #{globalIndex}
+                            <TableCell
+                              className="text-center font-mono text-xs text-muted-foreground font-semibold"
+                              onClick={(e) => {
+                                if (bet.validation_status === "brouillon") {
+                                  e.stopPropagation();
+                                }
+                              }}
+                            >
+                              <div className="inline-flex items-center gap-1.5">
+                                {bet.validation_status === "brouillon" && (
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Sélectionner le brouillon ${bet.id}`}
+                                    checked={selectedDraftIds.includes(bet.id)}
+                                    onChange={(e) => {
+                                      setSelectedDraftIds((prev) =>
+                                        e.target.checked
+                                          ? [...prev, bet.id]
+                                          : prev.filter((id) => id !== bet.id),
+                                      );
+                                    }}
+                                    className="h-3.5 w-3.5 accent-[#006B2D] cursor-pointer"
+                                  />
+                                )}
+                                <span>#{globalIndex}</span>
+                              </div>
                             </TableCell>
 
                             <TableCell className="text-xs">
@@ -1710,12 +1778,21 @@ function Tests() {
                                 >
                                   Refusé
                                 </Badge>
+                              ) : bet.validation_status === "brouillon" ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-amber-50 text-amber-800 border-amber-200 text-[10px]"
+                                >
+                                  Brouillon
+                                </Badge>
                               ) : (
                                 <Badge
                                   variant="outline"
                                   className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-border text-[10px]"
                                 >
-                                  {bet.validation_status || "Standard"}
+                                  {bet.validation_status === "en_attente"
+                                    ? "En attente"
+                                    : bet.validation_status || "Standard"}
                                 </Badge>
                               )}
                             </TableCell>
@@ -1920,10 +1997,21 @@ function Tests() {
             <RecordForm
               key={`${dialogOpen}-${editingBet?.id || "new"}`}
               existing={!!editingBet}
-              onSave={handleSubmit}
+              onSave={() => handleSubmit(false)}
+              onSaveDraft={!editingBet ? () => handleSubmit(true) : undefined}
+              onSubmitDraft={
+                editingBet?.validation_status === "brouillon"
+                  ? async () => {
+                      const count = await submitDraftOperationsRecord("bets", [
+                        editingBet.id,
+                      ]);
+                      if (count > 0) setDialogOpen(false);
+                    }
+                  : undefined
+              }
               onClose={() => setDialogOpen(false)}
               onRestore={() => openEditDialog(editingBet!)}
-              createLabel="Créer le test"
+              createLabel="Enregistrer et envoyer"
               saveLabel={
                 editingBet?.validation_status === "refuse"
                   ? "Corriger et resoumettre"
@@ -1951,6 +2039,18 @@ function Tests() {
                 (user?.role === "ADMIN" || user?.role === "CONTROLEUR")
                   ? async (reason) => {
                       const ok = await archiveOperationRecord(
+                        "bets",
+                        editingBet.id,
+                        reason,
+                      );
+                      if (ok) setDialogOpen(false);
+                    }
+                  : undefined
+              }
+              onTrash={
+                editingBet && canUserTrashRecord(user, rolePerms, editingBet)
+                  ? async (reason) => {
+                      const ok = await trashOperationRecord(
                         "bets",
                         editingBet.id,
                         reason,

@@ -44,11 +44,15 @@ import {
   useCreateVenue,
   useUpdateVenue,
   useDeleteVenue,
+  useRolePermissions,
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
 import {
   archiveOperationRecord,
+  canUserTrashRecord,
   hardDeleteOperationRecord,
+  submitDraftOperationsRecord,
+  trashOperationRecord,
 } from "@/lib/operation-archive";
 import { dispatchAppNotification } from "@/lib/notification-navigation";
 
@@ -65,6 +69,7 @@ interface Venue {
   gps_lat?: number;
   gps_lng?: number;
   notes?: string;
+  created_by?: string;
   validation_status?: string;
   created_at?: string;
   updated_at?: string;
@@ -80,6 +85,7 @@ export default function VenuesPage() {
 
 function Venues() {
   const { user } = useAuth();
+  const { data: rolePerms } = useRolePermissions();
   const isAdmin = user?.role === "ADMIN";
   const settings = useOptionalSettings();
   const canManageVenues = user?.role !== "AGENT" || settings.agentCanManageVenues;
@@ -254,7 +260,7 @@ function Venues() {
     );
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(asDraft = false) {
     const primaryGame = selectedGames[0] || formData.bet_type;
     if (
       !formData.quartier ||
@@ -295,7 +301,11 @@ function Venues() {
         const newVenueData = {
           ...baseVenueData,
           created_by: user?.id,
-          validation_status: isAdmin ? "valide" : "en_attente",
+          validation_status: asDraft
+            ? "brouillon"
+            : isAdmin
+              ? "valide"
+              : "en_attente",
         };
         const { data: newV, error } = await supabase
           .from("venues")
@@ -315,20 +325,24 @@ function Venues() {
           await supabase.from("venue_games").insert(gameRecords);
         }
 
-        void dispatchAppNotification({
-          eventType: "operation_created",
-          operationType: "venues",
-          operationId: newV?.id,
-          status: newVenueData.validation_status as any,
-          operator: formData.operator,
-          notes: `${formData.quartier} - ${formData.address}`,
-          authorId: user?.id,
-        });
+        if (!asDraft) {
+          void dispatchAppNotification({
+            eventType: "operation_created",
+            operationType: "venues",
+            operationId: newV?.id,
+            status: newVenueData.validation_status as any,
+            operator: formData.operator,
+            notes: `${formData.quartier} - ${formData.address}`,
+            authorId: user?.id,
+          });
+        }
 
         toast.success(
-          !isAdmin
-            ? "Site créé avec succès. En attente de validation par le contrôleur."
-            : "Site créé avec succès",
+          asDraft
+            ? "Site enregistré en brouillon (non envoyé au contrôle)"
+            : !isAdmin
+              ? "Site créé avec succès. En attente de validation par le contrôleur."
+              : "Site créé avec succès",
         );
       }
 
@@ -692,10 +706,21 @@ function Venues() {
           <RecordForm
             key={`${dialogOpen}-${editing?.id || "new"}`}
             existing={!!editing}
-            onSave={handleSubmit}
+            onSave={() => handleSubmit(false)}
+            onSaveDraft={!editing ? () => handleSubmit(true) : undefined}
+            onSubmitDraft={
+              editing?.validation_status === "brouillon"
+                ? async () => {
+                    const count = await submitDraftOperationsRecord("venues", [
+                      editing.id,
+                    ]);
+                    if (count > 0) setDialogOpen(false);
+                  }
+                : undefined
+            }
             onClose={() => setDialogOpen(false)}
             onRestore={() => openDialog(editing!)}
-            createLabel="Créer le site"
+            createLabel="Enregistrer et envoyer"
             hasDraft={hasDraft}
             draftTime={savedAtFormatted}
             hasConflict={hasConflict}
@@ -709,6 +734,18 @@ function Venues() {
               (user?.role === "ADMIN" || user?.role === "CONTROLEUR")
                 ? async (reason) => {
                     const ok = await archiveOperationRecord(
+                      "venues",
+                      editing.id,
+                      reason,
+                    );
+                    if (ok) setDialogOpen(false);
+                  }
+                : undefined
+            }
+            onTrash={
+              editing && canUserTrashRecord(user, rolePerms, editing)
+                ? async (reason) => {
+                    const ok = await trashOperationRecord(
                       "venues",
                       editing.id,
                       reason,

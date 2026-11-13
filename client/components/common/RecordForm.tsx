@@ -1,7 +1,7 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Pencil, Clock, AlertTriangle, Check, Archive, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Clock, AlertTriangle, Check, Archive, Trash2, Send } from "lucide-react";
 
 const RecordFormReadOnlyContext = createContext(false);
 
@@ -44,6 +44,10 @@ export function RecordForm({
   unlockRequestSent = false,
   onArchive,
   onHardDelete,
+  onTrash,
+  onSaveDraft,
+  draftButtonLabel = "Enregistrer en brouillon",
+  onSubmitDraft,
 }: {
   existing: boolean;
   children: ReactNode;
@@ -67,23 +71,29 @@ export function RecordForm({
   unlockRequestSent?: boolean;
   onArchive?: (reason?: string) => Promise<void> | void;
   onHardDelete?: () => Promise<void> | void;
+  onTrash?: (reason?: string) => Promise<void> | void;
+  onSaveDraft?: () => Promise<unknown>;
+  draftButtonLabel?: string;
+  onSubmitDraft?: () => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<"archive" | "hard_delete" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"archive" | "trash" | "hard_delete" | null>(null);
   const [archiveReason, setArchiveReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const lock = useRef(false);
   const readOnly = existing && (!editing || !canEdit);
   const pending = busy || saving || actionBusy;
 
-  async function runDangerAction(kind: "archive" | "hard_delete") {
+  async function runDangerAction(kind: "archive" | "trash" | "hard_delete") {
     if (pending || lock.current) return;
     lock.current = true;
     setActionBusy(true);
     try {
       if (kind === "archive" && onArchive) {
         await onArchive(archiveReason.trim() || undefined);
+      } else if (kind === "trash" && onTrash) {
+        await onTrash(archiveReason.trim() || undefined);
       } else if (kind === "hard_delete" && onHardDelete) {
         await onHardDelete();
       }
@@ -95,16 +105,20 @@ export function RecordForm({
     }
   }
 
-  async function save() {
+  async function saveWith(fn: () => Promise<unknown>) {
     if (readOnly || (existing && !canEdit) || pending || lock.current) return;
     lock.current = true;
     setSaving(true);
     try {
-      await onSave();
+      await fn();
     } finally {
       lock.current = false;
       setSaving(false);
     }
+  }
+
+  async function save() {
+    await saveWith(onSave);
   }
 
   return (
@@ -250,6 +264,41 @@ export function RecordForm({
           </div>
         )}
 
+        {existing && readOnly && confirmAction === "trash" && onTrash && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs">
+            <Input
+              value={archiveReason}
+              onChange={(e) => setArchiveReason(e.target.value)}
+              placeholder="Motif de mise en corbeille (optionnel)..."
+              className="h-8 flex-1 min-w-[180px] bg-white text-xs"
+              disabled={pending}
+            />
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs bg-white"
+                disabled={pending}
+                onClick={() => setConfirmAction(null)}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={pending}
+                onClick={() => void runDangerAction("trash")}
+              >
+                {actionBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                Mettre en corbeille (30 j)
+              </Button>
+            </div>
+          </div>
+        )}
+
         {existing && readOnly && confirmAction === "hard_delete" && onHardDelete && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-300 bg-rose-50 p-2.5 text-xs text-rose-900">
             <span className="font-semibold">
@@ -292,7 +341,7 @@ export function RecordForm({
               })}
             </span>
           )}
-          {existing && readOnly && (onArchive || onHardDelete) && (
+          {existing && readOnly && (onArchive || onTrash || onHardDelete) && (
             <div className="mr-auto flex flex-wrap items-center gap-2">
               {onArchive && (
                 <Button
@@ -308,11 +357,25 @@ export function RecordForm({
                   Archiver
                 </Button>
               )}
-              {onHardDelete && (
+              {onTrash && (
                 <Button
                   type="button"
                   variant="outline"
                   className="min-h-11 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                  disabled={pending}
+                  onClick={() =>
+                    setConfirmAction(confirmAction === "trash" ? null : "trash")
+                  }
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Corbeille
+                </Button>
+              )}
+              {onHardDelete && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 border-rose-300 text-rose-800 hover:bg-rose-100"
                   disabled={pending}
                   onClick={() =>
                     setConfirmAction(
@@ -321,7 +384,7 @@ export function RecordForm({
                   }
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
-                  Supprimer
+                  Supprimer définitivement
                 </Button>
               )}
             </div>
@@ -346,19 +409,34 @@ export function RecordForm({
           </Button>
           {readOnly ? (
             canEdit ? (
-              <Button
-                key="start-editing"
-                type="button"
-                className="min-h-11"
-                onClick={(event) => {
-                  event.preventDefault();
-                  setConfirmAction(null);
-                  setEditing(true);
-                }}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
-                Modifier
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {onSubmitDraft && (
+                  <Button
+                    key="submit-draft"
+                    type="button"
+                    className="min-h-11 bg-[#006B2D] hover:bg-[#005524] text-white"
+                    disabled={pending}
+                    onClick={() => void saveWith(async () => onSubmitDraft())}
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    Envoyer en validation
+                  </Button>
+                )}
+                <Button
+                  key="start-editing"
+                  type="button"
+                  variant={onSubmitDraft ? "outline" : "default"}
+                  className="min-h-11"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setConfirmAction(null);
+                    setEditing(true);
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Modifier
+                </Button>
+              </div>
             ) : (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {editBlockedReason && (
@@ -384,6 +462,30 @@ export function RecordForm({
                 )}
               </div>
             )
+          ) : !existing && onSaveDraft ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                key="save-draft"
+                type="button"
+                variant="outline"
+                className="min-h-11 border-[#B8DEC6] text-[#006B2D] hover:bg-[#E8F5EC]"
+                disabled={pending}
+                onClick={() => void saveWith(onSaveDraft)}
+              >
+                {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {draftButtonLabel}
+              </Button>
+              <Button
+                key="save-record"
+                type="submit"
+                className="min-h-11"
+                disabled={pending}
+              >
+                {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Send className="mr-2 h-4 w-4" />
+                {pending ? "Enregistrement…" : createLabel}
+              </Button>
+            </div>
           ) : (
             <Button
               key="save-record"

@@ -204,8 +204,8 @@ BEGIN
   END IF;
 
   IF v_norm_type = 'bets' THEN
-    SELECT validation_status, archived_at INTO v_prev_status, v_already_archived
-    FROM public.bets WHERE id = p_operation_id FOR UPDATE;
+    SELECT b.validation_status, b.archived_at INTO v_prev_status, v_already_archived
+    FROM public.bets AS b WHERE b.id = p_operation_id FOR UPDATE;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Opération introuvable' USING ERRCODE = '23503';
     END IF;
@@ -219,8 +219,8 @@ BEGIN
         archive_reason = COALESCE(v_reason, 'Archivée')
     WHERE id = p_operation_id;
   ELSIF v_norm_type = 'transactions' THEN
-    SELECT validation_status, archived_at INTO v_prev_status, v_already_archived
-    FROM public.transactions WHERE id = p_operation_id FOR UPDATE;
+    SELECT t.validation_status, t.archived_at INTO v_prev_status, v_already_archived
+    FROM public.transactions AS t WHERE t.id = p_operation_id FOR UPDATE;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Opération introuvable' USING ERRCODE = '23503';
     END IF;
@@ -234,8 +234,8 @@ BEGIN
         archive_reason = COALESCE(v_reason, 'Archivée')
     WHERE id = p_operation_id;
   ELSE
-    SELECT validation_status, archived_at INTO v_prev_status, v_already_archived
-    FROM public.venues WHERE id = p_operation_id FOR UPDATE;
+    SELECT v.validation_status, v.archived_at INTO v_prev_status, v_already_archived
+    FROM public.venues AS v WHERE v.id = p_operation_id FOR UPDATE;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Opération introuvable' USING ERRCODE = '23503';
     END IF;
@@ -317,8 +317,8 @@ BEGIN
   END IF;
 
   IF v_norm_type = 'bets' THEN
-    SELECT validation_status, archived_at INTO v_prev_status, v_archived_at
-    FROM public.bets WHERE id = p_operation_id FOR UPDATE;
+    SELECT b.validation_status, b.archived_at INTO v_prev_status, v_archived_at
+    FROM public.bets AS b WHERE b.id = p_operation_id FOR UPDATE;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Opération introuvable' USING ERRCODE = '23503';
     END IF;
@@ -326,8 +326,8 @@ BEGIN
     SET archived_at = NULL, archived_by = NULL, archive_reason = NULL
     WHERE id = p_operation_id;
   ELSIF v_norm_type = 'transactions' THEN
-    SELECT validation_status, archived_at INTO v_prev_status, v_archived_at
-    FROM public.transactions WHERE id = p_operation_id FOR UPDATE;
+    SELECT t.validation_status, t.archived_at INTO v_prev_status, v_archived_at
+    FROM public.transactions AS t WHERE t.id = p_operation_id FOR UPDATE;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Opération introuvable' USING ERRCODE = '23503';
     END IF;
@@ -335,8 +335,8 @@ BEGIN
     SET archived_at = NULL, archived_by = NULL, archive_reason = NULL
     WHERE id = p_operation_id;
   ELSE
-    SELECT validation_status, archived_at INTO v_prev_status, v_archived_at
-    FROM public.venues WHERE id = p_operation_id FOR UPDATE;
+    SELECT v.validation_status, v.archived_at INTO v_prev_status, v_archived_at
+    FROM public.venues AS v WHERE v.id = p_operation_id FOR UPDATE;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Opération introuvable' USING ERRCODE = '23503';
     END IF;

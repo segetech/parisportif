@@ -412,6 +412,7 @@ export function useBets(filters?: any) {
         .from("bets")
         .select("*")
         .is("archived_at", null)
+        .is("deleted_at", null)
         .order("date", { ascending: false })
         .order("time", { ascending: false });
 
@@ -512,6 +513,7 @@ export function useTransactions(filters?: any) {
         .from("transactions")
         .select("*")
         .is("archived_at", null)
+        .is("deleted_at", null)
         .order("date", { ascending: false })
         .order("time", { ascending: false })
         .limit(filters?.limit || 5000);
@@ -613,6 +615,7 @@ export function useVenues(filters?: any) {
         .from("venues")
         .select("*")
         .is("archived_at", null)
+        .is("deleted_at", null)
         .order("quartier");
 
       if (filters?.operator && filters.operator !== "all") {
@@ -805,12 +808,16 @@ export function useValidationOperations(tab: "bets" | "transactions" | "venues",
   return useQuery({
     queryKey: queryKeys.validation(userId, tab, filterStatus),
     queryFn: async () => {
-      let query = supabase.from(tab).select("*").order("created_at", { ascending: false });
+      let query = supabase
+        .from(tab)
+        .select("*")
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
 
       if (filterStatus === "archived") {
         query = query.not("archived_at", "is", null);
       } else {
-        query = query.is("archived_at", null);
+        query = query.is("archived_at", null).neq("validation_status", "brouillon");
         if (filterStatus !== "all" && tab !== "venues") {
           query = query.eq("validation_status", filterStatus);
         } else if (filterStatus !== "all" && tab === "venues") {
@@ -852,16 +859,19 @@ export function usePendingValidationCounts(enabled = true) {
           .from("bets")
           .select("id", { count: "exact", head: true })
           .is("archived_at", null)
+        .is("deleted_at", null)
           .eq("validation_status", "en_attente"),
         supabase
           .from("transactions")
           .select("id", { count: "exact", head: true })
           .is("archived_at", null)
+        .is("deleted_at", null)
           .eq("validation_status", "en_attente"),
         supabase
           .from("venues")
           .select("id", { count: "exact", head: true })
           .is("archived_at", null)
+        .is("deleted_at", null)
           .eq("validation_status", "en_attente"),
       ]);
 
@@ -873,6 +883,179 @@ export function usePendingValidationCounts(enabled = true) {
         transactions,
         venues,
         total: bets + transactions + venues,
+      };
+    },
+    staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+    gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
+  });
+}
+
+export function useValidationStatusCounts(
+  tab: "bets" | "transactions" | "venues",
+  enabled = true,
+) {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: ["validation", "status-counts", userId || "anon", tab],
+    enabled,
+    queryFn: async () => {
+      const [pendingRes, validRes, refusedRes] = await Promise.all([
+        supabase
+          .from(tab)
+          .select("id", { count: "exact", head: true })
+          .is("archived_at", null)
+        .is("deleted_at", null)
+          .eq("validation_status", "en_attente"),
+        supabase
+          .from(tab)
+          .select("id", { count: "exact", head: true })
+          .is("archived_at", null)
+        .is("deleted_at", null)
+          .eq("validation_status", "valide"),
+        supabase
+          .from(tab)
+          .select("id", { count: "exact", head: true })
+          .is("archived_at", null)
+        .is("deleted_at", null)
+          .eq("validation_status", "refuse"),
+      ]);
+
+      return {
+        en_attente: pendingRes.count ?? 0,
+        valide: validRes.count ?? 0,
+        refuse: refusedRes.count ?? 0,
+      };
+    },
+    staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+    gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
+  });
+}
+
+export function useArchivedOperationCounts(enabled = true) {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: ["validation", "archived-counts", userId || "anon"],
+    enabled,
+    queryFn: async () => {
+      const [betsRes, txRes, venuesRes] = await Promise.all([
+        supabase
+          .from("bets")
+          .select("id", { count: "exact", head: true })
+          .is("deleted_at", null)
+          .not("archived_at", "is", null),
+        supabase
+          .from("transactions")
+          .select("id", { count: "exact", head: true })
+          .is("deleted_at", null)
+          .not("archived_at", "is", null),
+        supabase
+          .from("venues")
+          .select("id", { count: "exact", head: true })
+          .is("deleted_at", null)
+          .not("archived_at", "is", null),
+      ]);
+
+      const bets = betsRes.count ?? 0;
+      const transactions = txRes.count ?? 0;
+      const venues = venuesRes.count ?? 0;
+      return {
+        bets,
+        transactions,
+        venues,
+        total: bets + transactions + venues,
+      };
+    },
+    staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+    gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
+  });
+}
+
+export function useRolePermissions() {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: ["role-permissions", userId || "anon"],
+    enabled: !!userId,
+    queryFn: () => api.roles.listPermissions(),
+    staleTime: CACHE_TIERS.REFERENCE.staleTime,
+    gcTime: CACHE_TIERS.REFERENCE.gcTime,
+  });
+}
+
+export function useTrashCount(enabled = true) {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: ["trash", "count", userId || "anon"],
+    enabled: enabled && !!userId,
+    queryFn: async () => {
+      const [betsRes, txRes, venuesRes] = await Promise.all([
+        supabase
+          .from("bets")
+          .select("id", { count: "exact", head: true })
+          .not("deleted_at", "is", null),
+        supabase
+          .from("transactions")
+          .select("id", { count: "exact", head: true })
+          .not("deleted_at", "is", null),
+        supabase
+          .from("venues")
+          .select("id", { count: "exact", head: true })
+          .not("deleted_at", "is", null),
+      ]);
+      const bets = betsRes.count ?? 0;
+      const transactions = txRes.count ?? 0;
+      const venues = venuesRes.count ?? 0;
+      return { bets, transactions, venues, total: bets + transactions + venues };
+    },
+    staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+    gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
+  });
+}
+
+export function useTrashOperations() {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: ["trash", "list", userId || "anon"],
+    enabled: !!userId,
+    queryFn: async () => {
+      // Purge silencieuse des éléments expirés (> 30 jours) à l'ouverture de la corbeille
+      try {
+        await supabase.rpc("purge_expired_trash");
+      } catch {
+        // Ignorer si indisponible
+      }
+
+      const [betsRes, txRes, venuesRes] = await Promise.all([
+        supabase
+          .from("bets")
+          .select("*")
+          .not("deleted_at", "is", null)
+          .order("deleted_at", { ascending: false }),
+        supabase
+          .from("transactions")
+          .select("*")
+          .not("deleted_at", "is", null)
+          .order("deleted_at", { ascending: false }),
+        supabase
+          .from("venues")
+          .select("*")
+          .not("deleted_at", "is", null)
+          .order("deleted_at", { ascending: false }),
+      ]);
+
+      return {
+        bets: betsRes.data || [],
+        transactions: txRes.data || [],
+        venues: venuesRes.data || [],
       };
     },
     staleTime: CACHE_TIERS.OPERATIONAL.staleTime,

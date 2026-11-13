@@ -99,21 +99,27 @@ export function invalidateRelatedQueries(domain: "bets" | "transactions" | "venu
       queryClient.invalidateQueries({ queryKey: ["bets"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["validation"] });
+      queryClient.invalidateQueries({ queryKey: ["trash"] });
       break;
     case "transactions":
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["validation"] });
+      queryClient.invalidateQueries({ queryKey: ["trash"] });
       break;
     case "venues":
       queryClient.invalidateQueries({ queryKey: ["venues"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["validation"] });
+      queryClient.invalidateQueries({ queryKey: ["trash"] });
       break;
     case "validation":
       queryClient.invalidateQueries({ queryKey: ["validation"] });
       queryClient.invalidateQueries({ queryKey: ["bets"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["venues"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["trash"] });
       break;
     case "lookups":
       queryClient.invalidateQueries({ queryKey: ["lookups"] });

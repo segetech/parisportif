@@ -81,12 +81,17 @@ import {
   useTransactions,
   useLookups,
   useVenues,
+  useRolePermissions,
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
 import {
   archiveOperationRecord,
+  canUserTrashRecord,
   hardDeleteOperationRecord,
+  submitDraftOperationsRecord,
+  trashOperationRecord,
 } from "@/lib/operation-archive";
+import { DraftBatchToolbar } from "@/components/common/DraftBatchToolbar";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
 import { dispatchAppNotification } from "@/lib/notification-navigation";
 
@@ -136,9 +141,12 @@ function Transactions() {
   } = useTransactions();
   const { data: lookupsData } = useLookups();
   const { data: venuesData = [] } = useVenues();
+  const { data: rolePerms } = useRolePermissions();
 
   const [smartFilter, setSmartFilter] =
     useState<SmartFilterState>(INITIAL_SMART_FILTER);
+  const [showDraftsOnly, setShowDraftsOnly] = useState(false);
+  const [selectedDraftIds, setSelectedDraftIds] = useState<string[]>([]);
   const [pageSize, setPageSize] = useState<number>(25);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const listTopRef = useRef<HTMLDivElement>(null);
@@ -478,7 +486,7 @@ function Transactions() {
     setDialogOpen(true);
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(asDraft = false) {
     if (
       !formData.date ||
       !formData.type ||
@@ -539,7 +547,11 @@ function Transactions() {
         const newTransactionData = {
           ...transactionData,
           created_by: user?.id,
-          validation_status: isAdmin ? "valide" : "en_attente",
+          validation_status: asDraft
+            ? "brouillon"
+            : isAdmin
+              ? "valide"
+              : "en_attente",
         };
 
         const insertQuery = supabase
@@ -552,21 +564,25 @@ function Transactions() {
 
         if (error) throw error;
 
-        void dispatchAppNotification({
-          eventType: "operation_created",
-          operationType: "transactions",
-          operationId: insertedTx?.id,
-          status: newTransactionData.validation_status as any,
-          operator: formData.operator,
-          amountFcfa: Number(formData.amount_fcfa) || 0,
-          reference: newTransactionData.reference || undefined,
-          authorId: user?.id,
-        });
+        if (!asDraft) {
+          void dispatchAppNotification({
+            eventType: "operation_created",
+            operationType: "transactions",
+            operationId: insertedTx?.id,
+            status: newTransactionData.validation_status as any,
+            operator: formData.operator,
+            amountFcfa: Number(formData.amount_fcfa) || 0,
+            reference: newTransactionData.reference || undefined,
+            authorId: user?.id,
+          });
+        }
 
         toast.success(
-          !isAdmin
-            ? "Transaction enregistrée avec succès. En attente de validation du contrôleur."
-            : "Transaction créée avec succès",
+          asDraft
+            ? "Transaction enregistrée en brouillon (non envoyée au contrôle)"
+            : !isAdmin
+              ? "Transaction enregistrée avec succès. En attente de validation du contrôleur."
+              : "Transaction créée avec succès",
         );
       }
 
@@ -606,11 +622,28 @@ function Transactions() {
     }
   }
 
-  const filteredTransactions = applySmartFilter(
+  const draftTransactions = useMemo(
+    () =>
+      transactions.filter(
+        (tx) =>
+          tx.validation_status === "brouillon" &&
+          (user?.role === "ADMIN" ||
+            user?.role === "CONTROLEUR" ||
+            tx.created_by === user?.id),
+      ),
+    [transactions, user?.role, user?.id],
+  );
+
+  const smartFilteredTransactions = applySmartFilter(
     transactions,
     smartFilter,
     "transactions",
   );
+  const filteredTransactions = showDraftsOnly
+    ? smartFilteredTransactions.filter(
+        (tx) => tx.validation_status === "brouillon",
+      )
+    : smartFilteredTransactions;
 
   const stats = {
     depots: filteredTransactions
@@ -1154,6 +1187,22 @@ function Transactions() {
           </div>
         </div>
 
+        <DraftBatchToolbar
+          operationType="transactions"
+          draftCount={draftTransactions.length}
+          showDraftsOnly={showDraftsOnly}
+          onToggleDraftsOnly={() => {
+            setShowDraftsOnly((v) => !v);
+            setCurrentPage(1);
+          }}
+          selectedIds={selectedDraftIds}
+          allDraftIds={draftTransactions.map((tx) => tx.id)}
+          onSelectAllDrafts={() =>
+            setSelectedDraftIds(draftTransactions.map((tx) => tx.id))
+          }
+          onClearSelection={() => setSelectedDraftIds([])}
+        />
+
         {/* Vue Cartes Responsive (Mobile) */}
         <div ref={listTopRef} />
         <div className="block md:hidden space-y-3">
@@ -1313,8 +1362,34 @@ function Transactions() {
                     className="cursor-pointer hover:bg-[#F5F8F5] transition-colors border-b border-[#E2ECE4]"
                     onClick={() => openEditDialog(tx)}
                   >
-                    <TableCell className="text-xs font-mono text-center text-[#556B5C]">
-                      {(pageSize <= 0 ? 0 : (currentPage - 1) * pageSize) + idx + 1}
+                    <TableCell
+                      className="text-xs font-mono text-center text-[#556B5C]"
+                      onClick={(e) => {
+                        if (tx.validation_status === "brouillon") {
+                          e.stopPropagation();
+                        }
+                      }}
+                    >
+                      <div className="inline-flex items-center gap-1.5">
+                        {tx.validation_status === "brouillon" && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Sélectionner le brouillon ${tx.id}`}
+                            checked={selectedDraftIds.includes(tx.id)}
+                            onChange={(e) => {
+                              setSelectedDraftIds((prev) =>
+                                e.target.checked
+                                  ? [...prev, tx.id]
+                                  : prev.filter((id) => id !== tx.id),
+                              );
+                            }}
+                            className="h-3.5 w-3.5 accent-[#006B2D] cursor-pointer"
+                          />
+                        )}
+                        <span>
+                          {(pageSize <= 0 ? 0 : (currentPage - 1) * pageSize) + idx + 1}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs font-semibold text-[#17251C] whitespace-nowrap">
                       {new Date(tx.date).toLocaleDateString("fr-FR")}
@@ -1502,10 +1577,22 @@ function Transactions() {
           <RecordForm
             key={`${dialogOpen}-${editingTransaction?.id || "new"}`}
             existing={!!editingTransaction}
-            onSave={handleSubmit}
+            onSave={() => handleSubmit(false)}
+            onSaveDraft={!editingTransaction ? () => handleSubmit(true) : undefined}
+            onSubmitDraft={
+              editingTransaction?.validation_status === "brouillon"
+                ? async () => {
+                    const count = await submitDraftOperationsRecord(
+                      "transactions",
+                      [editingTransaction.id],
+                    );
+                    if (count > 0) setDialogOpen(false);
+                  }
+                : undefined
+            }
             onClose={() => setDialogOpen(false)}
             onRestore={() => openEditDialog(editingTransaction!)}
-            createLabel="Enregistrer l'opération"
+            createLabel="Enregistrer et envoyer"
             saveLabel={
               editingTransaction?.validation_status === "refuse"
                 ? "Corriger et resoumettre"
@@ -1533,6 +1620,19 @@ function Transactions() {
               (user?.role === "ADMIN" || user?.role === "CONTROLEUR")
                 ? async (reason) => {
                     const ok = await archiveOperationRecord(
+                      "transactions",
+                      editingTransaction.id,
+                      reason,
+                    );
+                    if (ok) setDialogOpen(false);
+                  }
+                : undefined
+            }
+            onTrash={
+              editingTransaction &&
+              canUserTrashRecord(user, rolePerms, editingTransaction)
+                ? async (reason) => {
+                    const ok = await trashOperationRecord(
                       "transactions",
                       editingTransaction.id,
                       reason,

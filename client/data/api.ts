@@ -26,7 +26,7 @@ export interface User {
   mfa_active?: boolean;
 }
 
-export type ValidationStatus = "en_attente" | "valide" | "refuse";
+export type ValidationStatus = "brouillon" | "en_attente" | "valide" | "refuse";
 export type LegacyReviewStatus = "en_cours" | "valide" | "rejete";
 
 export interface Transaction {
@@ -190,6 +190,7 @@ const defaultRolePerms: Record<Role, Permission[]> = {
     "view_audit",
     "export_data",
     "delete_records",
+    "restore_records",
   ] as Permission[],
   AGENT: [
     "manage_transactions",
@@ -200,15 +201,47 @@ const defaultRolePerms: Record<Role, Permission[]> = {
 
 export const roles = {
   async listPermissions(): Promise<Record<Role, Permission[]>> {
-    await delay();
+    try {
+      const { data, error } = await supabase
+        .from("role_permissions")
+        .select("role, permissions");
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const merged: Record<Role, Permission[]> = JSON.parse(
+          JSON.stringify(defaultRolePerms),
+        );
+        for (const row of data as Array<{ role: string; permissions: string[] }>) {
+          const r = row.role as Role;
+          if (r in merged && Array.isArray(row.permissions)) {
+            merged[r] = row.permissions.filter((p): p is Permission =>
+              (ALL_PERMISSIONS as readonly string[]).includes(p),
+            );
+          }
+        }
+        return merged;
+      }
+    } catch {
+      // Fallback sur la configuration par défaut si hors-ligne ou en test
+    }
     return JSON.parse(JSON.stringify(defaultRolePerms));
   },
   async setPermissions(role: Role, perms: Permission[]): Promise<void> {
-    await delay();
-    const valid = perms.filter((p) =>
-      (ALL_PERMISSIONS as readonly string[]).includes(p),
+    const valid = Array.from(
+      new Set(
+        perms.filter((p) => (ALL_PERMISSIONS as readonly string[]).includes(p)),
+      ),
     );
-    defaultRolePerms[role] = Array.from(new Set(valid));
+    defaultRolePerms[role] = valid;
+    const { error } = await supabase
+      .from("role_permissions")
+      .upsert(
+        {
+          role,
+          permissions: valid,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "role" },
+      );
+    if (error) throw error;
   },
 };
 

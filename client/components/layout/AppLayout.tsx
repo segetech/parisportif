@@ -20,7 +20,9 @@ import {
   ChevronRight,
   Search,
   FileSpreadsheet,
+  Trash2,
 } from "lucide-react";
+import { useTrashCount } from "@/hooks/use-data-queries";
 import { Button } from "@/components/ui/button";
 import { DatePickerCustom } from "@/components/ui/date-picker-custom";
 import { Input } from "@/components/ui/input";
@@ -71,6 +73,7 @@ export default function AppLayout({
   newButtonLabel?: string;
 }) {
   const { user } = useAuth();
+  const { data: trashCount } = useTrashCount(!!user);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -165,6 +168,15 @@ export default function AppLayout({
             label: "Rapport",
             icon: <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-300" />,
             requiresExportPermission: true,
+          },
+          {
+            to: "/corbeille",
+            label: "Corbeille",
+            icon: <Trash2 className="h-4 w-4 shrink-0 text-rose-400" />,
+            badge:
+              trashCount && trashCount.total > 0
+                ? String(trashCount.total)
+                : undefined,
           },
         ],
       },

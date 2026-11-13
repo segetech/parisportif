@@ -6,6 +6,7 @@ export const ALL_PERMISSIONS = [
   // Contrôle qualité
   "validate_records",
   "delete_records",
+  "restore_records",
   // Visibilité / exports
   "export_data",
   "view_audit",
@@ -22,7 +23,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   manage_bets: "Gérer les tests",
   manage_venues: "Gérer les salles",
   validate_records: "Valider/Rejeter les enregistrements",
-  delete_records: "Supprimer des enregistrements",
+  delete_records: "Mettre à la corbeille / Supprimer des enregistrements",
+  restore_records: "Restaurer depuis la corbeille / archives",
   export_data: "Exporter des données",
   view_audit: "Voir le journal d’audit",
   manage_users: "Gérer les utilisateurs",
@@ -54,8 +56,8 @@ export function canAgentEditRecord(
     };
   }
 
-  // Un dossier refusé peut être corrigé et resoumis par l'agent
-  if (validationStatus === "refuse") {
+  // Un brouillon non soumis ou un dossier refusé peut être modifié librement par l'agent
+  if (validationStatus === "brouillon" || validationStatus === "refuse") {
     return { allowed: true };
   }
 
