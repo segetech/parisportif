@@ -29,3 +29,47 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   manage_roles: "Gérer les rôles",
   configure_system: "Configurer le système",
 };
+
+/**
+ * Vérifie si un utilisateur (notamment AGENT) a le droit de modifier un enregistrement existant
+ * en fonction de son statut de validation et de la fenêtre d'édition configurée.
+ */
+export function canAgentEditRecord(
+  role: string | undefined,
+  validationStatus: string | undefined,
+  createdAt?: string | null,
+  editWindowMinutes?: number,
+): { allowed: boolean; reason?: string } {
+  const normalizedRole = (role || "").toUpperCase();
+  if (normalizedRole !== "AGENT") {
+    return { allowed: true };
+  }
+
+  if (validationStatus === "valide") {
+    return {
+      allowed: false,
+      reason:
+        "Ce dossier est déjà validé et ne peut plus être modifié par un agent.",
+    };
+  }
+
+  // Un dossier refusé peut être corrigé et resoumis par l'agent
+  if (validationStatus === "refuse") {
+    return { allowed: true };
+  }
+
+  if (editWindowMinutes && editWindowMinutes > 0 && createdAt) {
+    const createdMs = new Date(createdAt).getTime();
+    if (Number.isFinite(createdMs)) {
+      const elapsedMinutes = (Date.now() - createdMs) / 60_000;
+      if (elapsedMinutes > editWindowMinutes) {
+        return {
+          allowed: false,
+          reason: `Le délai de modification (${editWindowMinutes} min) est dépassé.`,
+        };
+      }
+    }
+  }
+
+  return { allowed: true };
+}

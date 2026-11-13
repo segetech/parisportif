@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  AvatarPositionDialog,
+  AvatarViewerDialog,
+} from "@/components/profile/AvatarPhotoDialogs";
+import { TotpAuthenticatorCard } from "@/components/profile/TotpAuthenticatorCard";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import {
@@ -24,6 +29,7 @@ import {
   Save,
   Camera,
   Trash2,
+  Move,
 } from "lucide-react";
 import { RequireAuth } from "@/context/AuthContext";
 
@@ -45,10 +51,31 @@ function ProfileForm() {
   const [email] = useState(user?.email || "");
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || "");
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [positionOpen, setPositionOpen] = useState(false);
+  const [pendingPositionSrc, setPendingPositionSrc] = useState<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleAvatarChange(file: File) {
+  const revokeObjectUrl = () => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      revokeObjectUrl();
+    };
+  }, []);
+
+  useEffect(() => {
+    setAvatarUrl(user?.avatar_url || "");
+  }, [user?.avatar_url]);
+
+  function handleSelectAvatarFile(file: File) {
     if (!file || !user) return;
     if (file.size > 5 * 1024 * 1024) {
       toast.error("La photo dépasse la taille maximale autorisée (5 Mo).");
@@ -59,6 +86,39 @@ function ProfileForm() {
       toast.error("Format d'image non valide (JPG, PNG, WEBP uniquement).");
       return;
     }
+
+    revokeObjectUrl();
+    const previewUrl = URL.createObjectURL(file);
+    objectUrlRef.current = previewUrl;
+    setPendingPositionSrc(previewUrl);
+    setViewerOpen(false);
+    setPositionOpen(true);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  }
+
+  async function handleOpenRepositionExisting() {
+    if (!avatarUrl) return;
+    setViewerOpen(false);
+    revokeObjectUrl();
+
+    try {
+      const response = await fetch(avatarUrl);
+      if (response.ok) {
+        const blob = await response.blob();
+        const localUrl = URL.createObjectURL(blob);
+        objectUrlRef.current = localUrl;
+        setPendingPositionSrc(localUrl);
+      } else {
+        setPendingPositionSrc(avatarUrl);
+      }
+    } catch {
+      setPendingPositionSrc(avatarUrl);
+    }
+    setPositionOpen(true);
+  }
+
+  async function handleAvatarUpload(file: File) {
+    if (!file || !user) return;
 
     try {
       setIsUploadingAvatar(true);
@@ -88,7 +148,10 @@ function ProfileForm() {
 
       setAvatarUrl(newUrl);
       updateUser({ avatar_url: newUrl });
-      toast.success("Photo de profil mise à jour et stockée sur Cloudflare R2 !");
+      setPositionOpen(false);
+      revokeObjectUrl();
+      setPendingPositionSrc(null);
+      toast.success("Photo de profil mise à jour et position enregistrée !");
     } catch (err: any) {
       toast.error(err.message || "Erreur lors de la mise à jour de la photo");
     } finally {
@@ -368,7 +431,7 @@ function ProfileForm() {
           {/* Carte Résumé Profil */}
           <div className="rounded-2xl border border-[#D8E6DB] bg-white p-6 space-y-6 shadow-xs">
             <div className="flex flex-col items-center text-center">
-              {/* Photo de profil avec téléversement vers Cloudflare R2 */}
+              {/* Photo de profil */}
               <input
                 ref={avatarInputRef}
                 type="file"
@@ -376,7 +439,7 @@ function ProfileForm() {
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files && e.target.files[0]) {
-                    handleAvatarChange(e.target.files[0]);
+                    handleSelectAvatarFile(e.target.files[0]);
                   }
                 }}
               />
@@ -397,12 +460,18 @@ function ProfileForm() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => avatarInputRef.current?.click()}
-                    className="absolute inset-0 rounded-2xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 cursor-pointer"
-                    title="Changer la photo de profil"
+                    onClick={() => {
+                      if (avatarUrl) {
+                        setViewerOpen(true);
+                      } else {
+                        avatarInputRef.current?.click();
+                      }
+                    }}
+                    className="absolute inset-0 rounded-2xl bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 cursor-pointer"
+                    title={avatarUrl ? "Visualiser ou modifier la photo" : "Ajouter une photo de profil"}
                   >
-                    <Camera className="h-5 w-5" />
-                    <span>Modifier</span>
+                    {avatarUrl ? <Eye className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
+                    <span>{avatarUrl ? "Visualiser" : "Ajouter"}</span>
                   </button>
                 )}
 
@@ -413,17 +482,43 @@ function ProfileForm() {
               </div>
 
               {/* Actions Photo */}
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
+                {avatarUrl && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUploadingAvatar}
+                    onClick={() => setViewerOpen(true)}
+                    className="h-8 text-[11px] px-2.5 border-[#D8E6DB] text-[#17251C] hover:bg-[#F5F8F5] gap-1"
+                  >
+                    <Eye className="h-3 w-3 text-[#006B2D]" />
+                    <span>Voir</span>
+                  </Button>
+                )}
+                {avatarUrl && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUploadingAvatar}
+                    onClick={handleOpenRepositionExisting}
+                    className="h-8 text-[11px] px-2.5 border-[#D8E6DB] text-[#17251C] hover:bg-[#F5F8F5] gap-1"
+                  >
+                    <Move className="h-3 w-3 text-[#006B2D]" />
+                    <span>Position</span>
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   disabled={isUploadingAvatar}
                   onClick={() => avatarInputRef.current?.click()}
-                  className="h-7 text-[11px] px-2.5 border-[#D8E6DB] text-[#006B2D] hover:bg-[#F5F8F5] gap-1"
+                  className="h-8 text-[11px] px-2.5 border-[#D8E6DB] text-[#006B2D] hover:bg-[#F5F8F5] gap-1"
                 >
                   <Camera className="h-3 w-3" />
-                  <span>{avatarUrl ? "Changer la photo" : "Ajouter une photo"}</span>
+                  <span>{avatarUrl ? "Changer" : "Ajouter une photo"}</span>
                 </Button>
                 {avatarUrl && (
                   <Button
@@ -432,10 +527,10 @@ function ProfileForm() {
                     size="sm"
                     disabled={isUploadingAvatar}
                     onClick={handleDeleteAvatar}
-                    className="h-7 text-[11px] px-2 text-[#E52329] hover:bg-red-50 hover:text-[#E52329]"
+                    className="h-8 text-[11px] px-2 text-[#E52329] hover:bg-red-50 hover:text-[#E52329]"
                     title="Supprimer la photo"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 )}
               </div>
@@ -779,8 +874,46 @@ function ProfileForm() {
               </form>
             )}
           </div>
+
+          {/* Carte 3 : Double authentification Google / Microsoft Authenticator */}
+          <TotpAuthenticatorCard
+            user={user}
+            onMfaStatusChange={(active) => updateUser({ mfa_active: active })}
+          />
         </div>
       </div>
+
+      {/* Dialogs de visualisation et positionnement de photo de profil */}
+      <AvatarViewerDialog
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
+        avatarUrl={avatarUrl}
+        userName={[nom, prenom].filter(Boolean).join(" ") || email}
+        onReposition={handleOpenRepositionExisting}
+        onChangeFile={() => {
+          setViewerOpen(false);
+          avatarInputRef.current?.click();
+        }}
+        onDelete={async () => {
+          setViewerOpen(false);
+          await handleDeleteAvatar();
+        }}
+        isBusy={isUploadingAvatar}
+      />
+
+      <AvatarPositionDialog
+        open={positionOpen}
+        onOpenChange={(next) => {
+          setPositionOpen(next);
+          if (!next) {
+            revokeObjectUrl();
+            setPendingPositionSrc(null);
+          }
+        }}
+        imageSourceUrl={pendingPositionSrc}
+        onConfirm={handleAvatarUpload}
+        isUploading={isUploadingAvatar}
+      />
     </div>
   );
 }

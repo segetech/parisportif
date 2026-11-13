@@ -41,26 +41,44 @@ export const handleUploadWithMulter: RequestHandler = (req, res, next) => {
   });
 };
 
+const ALLOWED_FOLDERS = new Set([
+  "avatars",
+  "preuves",
+  "preuves/tests",
+  "preuves/transactions",
+  "preuves/activites-illegales",
+  "rapports",
+  "imports",
+]);
+
+function resolveStorageKey(rawFolder: unknown, sanitizedName: string, uniqueId: string): string {
+  const requested = typeof rawFolder === "string" ? rawFolder.trim().toLowerCase() : "preuves";
+  const folder = ALLOWED_FOLDERS.has(requested) ? requested : "preuves";
+  const timestamp = Date.now();
+
+  if (folder === "avatars") {
+    return `avatars/${timestamp}_${uniqueId}_${sanitizedName}`;
+  }
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+
+  return `${folder}/${year}/${month}/${timestamp}_${uniqueId}_${sanitizedName}`;
+}
+
 export const handleUploadFile: RequestHandler = async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "Aucun fichier fourni dans la requête." });
     }
 
-    const folder = (req.body.folder || req.query.folder || "preuves") === "avatars"
-      ? "avatars"
-      : "preuves";
-
-    // Extraction propre de l'extension
-    const originalExt = path.extname(req.file.originalname).toLowerCase() ||
-      (req.file.mimetype === "application/pdf" ? ".pdf" : ".jpg");
-
     // Nom unique sécurisé et non collisionnable
     const uniqueId = crypto.randomUUID();
     const sanitizedName = req.file.originalname
       .replace(/[^a-zA-Z0-9.-]/g, "_")
       .slice(0, 50);
-    const key = `${folder}/${Date.now()}_${uniqueId}_${sanitizedName}`;
+    const key = resolveStorageKey(req.body.folder || req.query.folder, sanitizedName, uniqueId);
 
     const uploaded = await uploadToR2({
       key,
@@ -83,7 +101,7 @@ export const handleUploadFile: RequestHandler = async (req: Request, res: Respon
   } catch (error: any) {
     console.error("Erreur upload Cloudflare R2:", error);
     return res.status(500).json({
-      error: "Erreur lors de l'enregistrement du fichier sur le stockage Cloudflare R2.",
+      error: "Erreur lors de l'enregistrement du fichier.",
       details: error.message,
     });
   }
@@ -138,7 +156,7 @@ export const handleGetFile: RequestHandler = async (req: Request, res: Response)
     }
   } catch (error: any) {
     if (error.name === "NoSuchKey" || error.$metadata?.httpStatusCode === 404) {
-      return res.status(404).json({ error: "Fichier introuvable sur Cloudflare R2." });
+      return res.status(404).json({ error: "Fichier introuvable." });
     }
     console.error("Erreur récupération fichier Cloudflare R2:", error);
     return res.status(500).json({ error: "Erreur lecture fichier.", details: error.message });

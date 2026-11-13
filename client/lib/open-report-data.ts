@@ -76,6 +76,91 @@ export async function fetchOpenReport(client: SupabaseClient, filters: ReportFil
   return { tests, transactions, anomalies, sites, people, filters: frozen, generatedAt: new Date().toISOString(), userId: auth.user.id, role: profile.role };
 }
 
+export interface PeriodOperatorSummary {
+  counts: Record<string, number>;
+  detectedOperators: string[];
+  legal: string[];
+  illegal: string[];
+  totalRows: number;
+}
+
+/** Lightweight period scan returning only operators that actually have rows in [start, end]. */
+export async function fetchPeriodOperatorSummary(
+  client: SupabaseClient,
+  params: {
+    period: ReportPeriod;
+    scope?: ReportFilters["scope"];
+    validations?: string[];
+  },
+): Promise<PeriodOperatorSummary> {
+  const validPeriod = params.period.isCustom
+    ? customReportPeriod(params.period.start, params.period.end)
+    : reportPeriod(params.period.year, params.period.month, params.period.tranche);
+
+  const { data: auth, error: authError } = await client.auth.getUser();
+  if (authError || !auth.user) throw new Error("Reconnectez-vous avant d’exporter.");
+  const { data: profile, error } = await client
+    .from("users")
+    .select("id,role,statut,must_change_password")
+    .eq("id", auth.user.id)
+    .single();
+  if (
+    error ||
+    !profile ||
+    profile.statut !== "actif" ||
+    profile.must_change_password ||
+    !["ADMIN", "CONTROLEUR", "AGENT"].includes(profile.role)
+  ) {
+    throw new Error("Ce compte ne peut pas exporter ce rapport.");
+  }
+
+  const agent = profile.role === "AGENT";
+  const scope = params.scope || "all";
+  const validations = params.validations && params.validations.length > 0 ? params.validations : undefined;
+
+  const scanTable = async (table: string, withValidation = true): Promise<string[]> => {
+    const rows = await reportPages(() => {
+      let q = client
+        .from(table)
+        .select("id,operator")
+        .gte("date", validPeriod.start)
+        .lte("date", validPeriod.end);
+      if (agent) q = q.eq("created_by", auth.user!.id);
+      if (withValidation && validations) {
+        if (validations.length === 1) q = q.eq("validation_status", validations[0]);
+        else q = q.in("validation_status", validations);
+      }
+      return q;
+    });
+    return rows.map((r) => operatorKey(r)).filter(Boolean);
+  };
+
+  const ops: string[] = [];
+  if (scope !== "transactions") ops.push(...(await scanTable("bets", true)));
+  if (scope !== "bets") ops.push(...(await scanTable("transactions", true)));
+  if (!agent) {
+    if (scope !== "transactions") ops.push(...(await scanTable("illegal_bets", false)));
+    if (scope !== "bets") ops.push(...(await scanTable("illegal_transactions", false)));
+  }
+
+  const counts: Record<string, number> = {};
+  for (const op of ops) {
+    counts[op] = (counts[op] || 0) + 1;
+  }
+
+  const detectedOperators = Object.keys(counts).sort((a, b) => a.localeCompare(b, "fr"));
+  const legal = detectedOperators.filter((op) => isLegalOperator(op));
+  const illegal = detectedOperators.filter((op) => !isLegalOperator(op));
+
+  return {
+    counts,
+    detectedOperators,
+    legal,
+    illegal,
+    totalRows: ops.length,
+  };
+}
+
 /** Decimal(15,2) money is summed in centimes, never by adding binary floats. */
 export function moneyCents(value: unknown): bigint | null {
   if (value === null || value === undefined || value === "") return null;

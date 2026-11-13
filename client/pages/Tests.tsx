@@ -1,4 +1,5 @@
 import { OpenReportButton } from "@/components/reports/OpenReportExport";
+import { useSearchParams } from "react-router-dom";
 import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
 import {
   currentReportPeriod,
@@ -22,6 +23,10 @@ import {
   INITIAL_SMART_FILTER,
   applySmartFilter,
 } from "@/components/common/SmartFilterBar";
+import {
+  TablePaginationFooter,
+  paginateItems,
+} from "@/components/common/TablePaginationFooter";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
 import { cn } from "@/lib/utils";
@@ -45,7 +50,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
-import { useEffect, useMemo, useState } from "react";
+import { useOptionalSettings } from "@/lib/settings";
+import { canAgentEditRecord } from "@/lib/rbac";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -139,14 +146,56 @@ function Tests() {
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [pageSize, setPageSize] = useState<number>(25);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const listTopRef = useRef<HTMLDivElement>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingBet, setEditingBet] = useState<Bet | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const isNew = searchParams.get("new") === "1";
+    const startParam = searchParams.get("start");
+    const endParam = searchParams.get("end");
+    const refParam = searchParams.get("ref");
+    const validationParam = searchParams.get("validation");
+
+    if (startParam || endParam || refParam || validationParam) {
+      setSmartFilter((prev) => ({
+        ...prev,
+        ...(startParam || endParam
+          ? {
+              dateStart: startParam || "",
+              dateEnd: endParam || "",
+            }
+          : {}),
+        ...(refParam ? { search: refParam } : {}),
+        ...(validationParam ? { validationStatus: validationParam } : {}),
+      }));
+    }
+
+    if (isNew) {
+      setEditingBet(null);
+      setDialogOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("new");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [activeOperator, setActiveOperator] = useState<string>("all");
   const [hiddenOperators, setHiddenOperators] = useState<Set<string>>(
     new Set(),
   );
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const settings = useOptionalSettings();
+  const canExport = user?.role !== "AGENT" || settings.agentCanExport;
+  const editPermission = editingBet
+    ? canAgentEditRecord(
+        user?.role,
+        editingBet.validation_status,
+        editingBet.created_at,
+        settings.agentEditWindowMinutes,
+      )
+    : { allowed: true };
   const initialExportPeriod = useMemo(() => currentReportPeriod(), []);
   const [exportPeriodMode, setExportPeriodMode] = useState<PeriodMode>("fixed");
   const [exportYear, setExportYear] = useState(initialExportPeriod.year);
@@ -480,7 +529,7 @@ function Tests() {
 
   // Grouper les paris par opérateur
   const groupedBets = useMemo(() => {
-    const acc: Record<string, Bet[]> = {};
+    const acc: Record<string, typeof filteredBets> = {};
     filteredBets.forEach((bet) => {
       if (!acc[bet.operator]) {
         acc[bet.operator] = [];
@@ -945,10 +994,10 @@ function Tests() {
   // Pagination helper for the current active tab
   const currentTabBets =
     activeOperator === "all" ? filteredBets : groupedBets[activeOperator] || [];
-  const totalPages = Math.max(1, Math.ceil(currentTabBets.length / pageSize));
-  const paginatedBets = currentTabBets.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
+  const paginatedBets = paginateItems(
+    currentTabBets as Bet[],
+    currentPage,
+    pageSize,
   );
 
   const getStatusBadge = (status: string) => {
@@ -1041,15 +1090,17 @@ function Tests() {
               <span>Actualiser</span>
             </Button>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setExportDialogOpen(true)}
-              className="h-9 gap-1.5 border-[#D8E6DB] bg-white hover:bg-[#F5F8F5] text-[#17251C] font-semibold"
-            >
-              <Download className="h-4 w-4" />
-              <span>Exporter</span>
-            </Button>
+            {canExport && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExportDialogOpen(true)}
+                className="h-9 gap-1.5 border-[#D8E6DB] bg-white hover:bg-[#F5F8F5] text-[#17251C] font-semibold"
+              >
+                <Download className="h-4 w-4" />
+                <span>Exporter</span>
+              </Button>
+            )}
 
             <OpenReportButton initialOperator={activeOperator === "all" ? "" : activeOperator} />
             <Button
@@ -1356,6 +1407,7 @@ function Tests() {
         {/* =========================================================================
             4. TABS BY OPERATOR & DATA VIEW (TABLE / CARDS)
             ========================================================================= */}
+        <div ref={listTopRef} />
         <Tabs
           value={activeOperator}
           onValueChange={(val) => {
@@ -1444,7 +1496,9 @@ function Tests() {
                     <TableBody className="divide-y divide-[#D8E6DB]">
                       {paginatedBets.map((bet, index) => {
                         const globalIndex =
-                          (currentPage - 1) * pageSize + index + 1;
+                          (pageSize <= 0 ? 0 : (currentPage - 1) * pageSize) +
+                          index +
+                          1;
                         return (
                           <TableRow
                             key={bet.id}
@@ -1535,7 +1589,7 @@ function Tests() {
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center gap-1 h-8 px-2 rounded-md text-[11px] font-bold bg-[#EBF7EE] text-[#006B2D] border border-[#86EFAC] hover:bg-[#D1FAE5] transition-colors"
-                                    title="Consulter le justificatif archivé sur Cloudflare R2"
+                                    title="Consulter le justificatif archivé"
                                   >
                                     <CheckCircle2 className="h-3 w-3" />
                                     <span className="hidden sm:inline">Justificatif</span>
@@ -1567,7 +1621,9 @@ function Tests() {
                 <div className="p-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                   {paginatedBets.map((bet, index) => {
                     const globalIndex =
-                      (currentPage - 1) * pageSize + index + 1;
+                      (pageSize <= 0 ? 0 : (currentPage - 1) * pageSize) +
+                      index +
+                      1;
                     return (
                       <div
                         key={bet.id}
@@ -1653,77 +1709,15 @@ function Tests() {
             )}
 
             {/* Pagination Controls Footer */}
-            {currentTabBets.length > 0 && (
-              <div className="p-3 border-t border-border bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <span>
-                    Affichage de{" "}
-                    <span className="font-medium text-foreground">
-                      {(currentPage - 1) * pageSize + 1}
-                    </span>{" "}
-                    à{" "}
-                    <span className="font-medium text-foreground">
-                      {Math.min(currentPage * pageSize, currentTabBets.length)}
-                    </span>{" "}
-                    sur{" "}
-                    <span className="font-medium text-foreground">
-                      {currentTabBets.length}
-                    </span>{" "}
-
-                    tests
-                  </span>
-
-                  <span className="text-border">|</span>
-
-                  <label className="flex items-center gap-1.5">
-                    <span>Lignes:</span>
-                    <select
-                      className="border border-border rounded px-1.5 py-0.5 bg-background text-foreground text-xs"
-                      value={pageSize}
-                      onChange={(e) => {
-                        setPageSize(Number(e.target.value));
-                        setCurrentPage(1);
-                      }}
-                    >
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={currentPage <= 1}
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    className="h-7 px-2 text-xs gap-1"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                    <span>Précédent</span>
-                  </Button>
-
-                  <span className="px-2 font-mono text-xs font-medium text-foreground">
-                    Page {currentPage} / {totalPages}
-                  </span>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={currentPage >= totalPages}
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages, p + 1))
-                    }
-                    className="h-7 px-2 text-xs gap-1"
-                  >
-                    <span>Suivant</span>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-            )}
+            <TablePaginationFooter
+              totalItems={currentTabBets.length}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              itemLabel="tests"
+              scrollAnchorRef={listTopRef}
+            />
           </div>
         </Tabs>
       </div>
@@ -1752,6 +1746,8 @@ function Tests() {
             onRestoreDraft={restoreDraft}
             onDiscardDraft={discardDraft}
             draftSaveStatus={saveStatus}
+            canEdit={editPermission.allowed}
+            editBlockedReason={editPermission.reason}
           >
             <div className="grid gap-4 pt-2">
               {/* ASSISTANCE INTELLIGENTE DE SAISIE PAR ANALYSE AUTOMATIQUE DE RÉFÉRENCE */}
@@ -1947,7 +1943,7 @@ function Tests() {
 
               {(formData.proof_status === "disponible" || formData.ticket_url) && (
                 <ProofUploader
-                  label="Justificatif ou Reçu du test (Stockage R2)"
+                  label="Justificatif ou Reçu du test"
                   value={formData.ticket_url}
                   onChange={(url) =>
                     setFormData((prev) => ({
@@ -1960,7 +1956,7 @@ function Tests() {
                   onStatusChange={(status) =>
                     setFormData((prev) => ({ ...prev, proof_status: status }))
                   }
-                  folder="preuves"
+                  folder="preuves/tests"
                 />
               )}
 

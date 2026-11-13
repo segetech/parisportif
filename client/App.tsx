@@ -17,8 +17,8 @@ import ResetPassword from "./pages/ResetPassword";
 import ProfilePage from "./pages/Profile";
 import Transactions from "./pages/Transactions";
 import { AuthProvider } from "./context/AuthContext";
+import MatchingPage from "./pages/Matching";
 import {
-  MatchingPage,
   ExportsPage,
   SettingsPage,
 } from "./pages/Placeholders";

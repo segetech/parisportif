@@ -2,7 +2,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { RequireAuth, RequireRole, useAuth } from "@/context/AuthContext";
 import { auditService, type AuditEntry } from "@/lib/audit";
 import { Button } from "@/components/ui/button";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { exportStyledExcel } from "@/lib/excel-export";
@@ -10,6 +10,10 @@ import { exportStyledPDF } from "@/lib/pdf-export";
 import { FileText, Download, RefreshCw } from "lucide-react";
 import { useAuditLogs } from "@/hooks/use-data-queries";
 import { DatePickerCustom } from "@/components/ui/date-picker-custom";
+import {
+  TablePaginationFooter,
+  paginateItems,
+} from "@/components/common/TablePaginationFooter";
 
 export default function AuditLogPage() {
   return (
@@ -26,6 +30,9 @@ export default function AuditLogPage() {
 function AuditTable() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const listTopRef = useRef<HTMLDivElement>(null);
   const [filters, setFilters] = useState({
     start: "",
     end: "",
@@ -249,7 +256,7 @@ function AuditTable() {
         </div>
       </div>
 
-      <div className="rounded-md border overflow-auto">
+      <div ref={listTopRef} className="rounded-md border overflow-auto">
         <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-muted/40">
             <tr>
@@ -263,7 +270,7 @@ function AuditTable() {
             </tr>
           </thead>
           <tbody>
-            {rows.length ? rows.map((r) => (
+            {rows.length ? paginateItems(rows, currentPage, pageSize).map((r) => (
               <tr key={r.id} className="border-t">
                 <td className="p-2">{new Date(r.ts).toLocaleString("fr-FR")}</td>
                 <td className="p-2">{r.user?.email || ""}</td>
@@ -282,6 +289,15 @@ function AuditTable() {
             )}
           </tbody>
         </table>
+        <TablePaginationFooter
+          totalItems={rows.length}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="entrées"
+          scrollAnchorRef={listTopRef}
+        />
       </div>
     </div>
   );

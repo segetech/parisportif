@@ -17,6 +17,8 @@ export function RecordForm({
   onRestoreDraft,
   onDiscardDraft,
   draftSaveStatus = "idle",
+  canEdit = true,
+  editBlockedReason,
 }: {
   existing: boolean;
   children: ReactNode;
@@ -31,15 +33,17 @@ export function RecordForm({
   onRestoreDraft?: () => void;
   onDiscardDraft?: () => void;
   draftSaveStatus?: "idle" | "saving" | "saved";
+  canEdit?: boolean;
+  editBlockedReason?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const lock = useRef(false);
-  const readOnly = existing && !editing;
+  const readOnly = existing && (!editing || !canEdit);
   const pending = busy || saving;
 
   async function save() {
-    if (readOnly || pending || lock.current) return;
+    if (readOnly || (existing && !canEdit) || pending || lock.current) return;
     lock.current = true;
     setSaving(true);
     try {
@@ -174,18 +178,27 @@ export function RecordForm({
               : "Annuler"}
         </Button>
         {readOnly ? (
-          <Button
-            key="start-editing"
-            type="button"
-            className="min-h-11"
-            onClick={(event) => {
-              event.preventDefault();
-              setEditing(true);
-            }}
-          >
-            <Pencil className="mr-2 h-4 w-4" />
-            Modifier
-          </Button>
+          canEdit ? (
+            <Button
+              key="start-editing"
+              type="button"
+              className="min-h-11"
+              onClick={(event) => {
+                event.preventDefault();
+                setEditing(true);
+              }}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Modifier
+            </Button>
+          ) : (
+            editBlockedReason && (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                {editBlockedReason}
+              </span>
+            )
+          )
         ) : (
           <Button
             key="save-record"

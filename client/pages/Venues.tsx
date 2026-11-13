@@ -21,6 +21,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
+import { useOptionalSettings } from "@/lib/settings";
+import { canAgentEditRecord } from "@/lib/rbac";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -73,6 +75,8 @@ export default function VenuesPage() {
 function Venues() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const settings = useOptionalSettings();
+  const canManageVenues = user?.role !== "AGENT" || settings.agentCanManageVenues;
 
   // États
   // Centralisation TanStack React Query pour navigation instantanée
@@ -356,11 +360,13 @@ function Venues() {
               Gérer les sites de test
             </p>
           </div>
-          <Button onClick={() => openDialog()}>
-            <Plus className="h-4 w-4 mr-2" />
+          {canManageVenues && (
+            <Button onClick={() => openDialog()}>
+              <Plus className="h-4 w-4 mr-2" />
 
-            Nouveau site
-          </Button>
+              Nouveau site
+            </Button>
+          )}
         </div>
 
         {/* Filtres */}
@@ -642,6 +648,22 @@ function Venues() {
                 : "Enregistrement d'un nouveau site physique de test."}
             </DialogDescription>
           </DialogHeader>
+          {(() => {
+            const venueEdit = !canManageVenues
+              ? {
+                  allowed: false,
+                  reason:
+                    "La gestion des sites est désactivée pour les agents dans les paramètres.",
+                }
+              : editing
+                ? canAgentEditRecord(
+                    user?.role,
+                    editing.validation_status,
+                    undefined,
+                    settings.agentEditWindowMinutes,
+                  )
+                : { allowed: true };
+            return (
           <RecordForm
             key={`${dialogOpen}-${editing?.id || "new"}`}
             existing={!!editing}
@@ -655,6 +677,8 @@ function Venues() {
             onRestoreDraft={restoreDraft}
             onDiscardDraft={discardDraft}
             draftSaveStatus={saveStatus}
+            canEdit={venueEdit.allowed}
+            editBlockedReason={venueEdit.reason}
           >
             <div className="grid gap-4 pt-2">
               <div className="grid grid-cols-2 gap-3">
@@ -839,6 +863,8 @@ function Venues() {
               </div>
             </div>
           </RecordForm>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </AppLayout>

@@ -219,18 +219,20 @@ export async function fetchAllRows<T = any>(
   return { data: allRows, error: null, totalCount: totalCount ?? allRows.length };
 }
 
-export function useDashboardData() {
+export function useDashboardData(start?: string, end?: string) {
   const { user } = useAuth();
   const userId = user?.id || "guest-user";
   const userRole = user?.role;
+  const hasDateFilter = Boolean(start || end);
 
   return useQuery({
-    queryKey: queryKeys.dashboard(userId, userRole),
+    queryKey: [...queryKeys.dashboard(userId, userRole), start || "", end || ""],
     queryFn: async (): Promise<DashboardStats> => {
-      // 1. Tenter en priorité l'appel RPC sécurisé PostgreSQL get_dashboard_aggregates
+      // 1. Tenter en priorité l'appel RPC sécurisé PostgreSQL get_dashboard_aggregates (uniquement sans filtre de dates)
       let rpcData: any = null;
       let rpcError: any = null;
 
+      if (!hasDateFilter) {
       try {
         const rpcRes = await supabase.rpc(
           "get_dashboard_aggregates",
@@ -256,6 +258,7 @@ export function useDashboardData() {
           throw err;
         }
         rpcError = err;
+      }
       }
 
       // 2. Requête ciblée pour les 30 paris les plus récents (ordre total et stable)
@@ -356,6 +359,8 @@ export function useDashboardData() {
           if (userRole === "AGENT" && user?.id) {
             q = q.eq("created_by", user.id);
           }
+          if (start) q = q.gte("date", start);
+          if (end) q = q.lte("date", end);
           return q;
         }),
         fetchAllRows<RawTransaction>(() => {
@@ -367,6 +372,8 @@ export function useDashboardData() {
           if (userRole === "AGENT" && user?.id) {
             q = q.eq("created_by", user.id);
           }
+          if (start) q = q.gte("date", start);
+          if (end) q = q.lte("date", end);
           return q;
         }),
       ]);

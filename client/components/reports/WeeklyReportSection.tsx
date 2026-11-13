@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
 import {
   currentReportPeriod,
+  customReportPeriod,
   reportPeriod,
   buildReportFilename,
 } from "@/lib/report-periods";
@@ -40,7 +41,19 @@ import {
   exportWeeklyOfficialReport,
 } from "@/lib/weekly-report-export";
 
-export function WeeklyReportSection() {
+export interface WeeklyReportSectionProps {
+  externalStartDate?: string;
+  externalEndDate?: string;
+  externalOperators?: string[];
+  hidePeriodControls?: boolean;
+}
+
+export function WeeklyReportSection({
+  externalStartDate,
+  externalEndDate,
+  externalOperators,
+  hidePeriodControls = false,
+}: WeeklyReportSectionProps = {}) {
   const initialPeriod = useMemo(() => currentReportPeriod(), []);
   const [periodMode, setPeriodMode] = useState<PeriodMode>("fixed");
   const [year, setYear] = useState(initialPeriod.year);
@@ -58,8 +71,18 @@ export function WeeklyReportSection() {
     }
   }, [year, month, tranche]);
 
-  const startDate = periodMode === "fixed" ? (selectedPeriod?.start || "") : customStart;
-  const endDate = periodMode === "fixed" ? (selectedPeriod?.end || "") : customEnd;
+  const startDate =
+    externalStartDate !== undefined
+      ? externalStartDate
+      : periodMode === "fixed"
+        ? selectedPeriod?.start || ""
+        : customStart;
+  const endDate =
+    externalEndDate !== undefined
+      ? externalEndDate
+      : periodMode === "fixed"
+        ? selectedPeriod?.end || ""
+        : customEnd;
 
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -68,10 +91,17 @@ export function WeeklyReportSection() {
   const { data: transactions = [] } = useTransactions();
   const { illegalBets = [], illegalTransactions = [] } = useIllegalActivities();
 
-  const activeOperatorNames = useMemo(
-    () => lookupsData?.activeOperatorNames || [],
-    [lookupsData?.activeOperatorNames],
-  );
+  const operatorFilterSet = useMemo(() => {
+    if (!externalOperators || externalOperators.length === 0) return null;
+    return new Set(externalOperators.map((op) => op.trim().toLowerCase()).filter(Boolean));
+  }, [externalOperators]);
+
+  const activeOperatorNames = useMemo(() => {
+    const base = lookupsData?.activeOperatorNames || [];
+    if (!operatorFilterSet) return base;
+    const filtered = base.filter((name) => operatorFilterSet.has(name.trim().toLowerCase()));
+    return filtered.length > 0 ? filtered : externalOperators || [];
+  }, [lookupsData?.activeOperatorNames, operatorFilterSet, externalOperators]);
 
   const illegals = useMemo(
     () => [
@@ -88,18 +118,24 @@ export function WeeklyReportSection() {
     () =>
       bets.filter(
         (b: any) =>
-          (!startDate || b.date >= startDate) && (!endDate || b.date <= endDate),
+          (!startDate || b.date >= startDate) &&
+          (!endDate || b.date <= endDate) &&
+          (!operatorFilterSet ||
+            operatorFilterSet.has(String(b.operator || "").trim().toLowerCase())),
       ),
-    [bets, startDate, endDate],
+    [bets, startDate, endDate, operatorFilterSet],
   );
 
   const filteredTx = useMemo(
     () =>
       transactions.filter(
         (t: any) =>
-          (!startDate || t.date >= startDate) && (!endDate || t.date <= endDate),
+          (!startDate || t.date >= startDate) &&
+          (!endDate || t.date <= endDate) &&
+          (!operatorFilterSet ||
+            operatorFilterSet.has(String(t.operator || "").trim().toLowerCase())),
       ),
-    [transactions, startDate, endDate],
+    [transactions, startDate, endDate, operatorFilterSet],
   );
 
   const reportOperators = useMemo(
@@ -192,7 +228,10 @@ export function WeeklyReportSection() {
     }
     const frozenStart = startDate;
     const frozenEnd = endDate;
-    const frozenPeriod = periodMode === "fixed" ? selectedPeriod : null;
+    const frozenPeriod =
+      externalStartDate !== undefined || periodMode === "custom"
+        ? customReportPeriod(frozenStart, frozenEnd)
+        : selectedPeriod;
     setIsExporting(true);
     toast.loading("Génération du rapport officiel Excel...", {
       id: "weekly-report",
@@ -207,6 +246,10 @@ export function WeeklyReportSection() {
         const snapshot = await fetchOpenReport(supabase, {
           period: frozenPeriod,
           scope: "all",
+          operators:
+            externalOperators && externalOperators.length > 0
+              ? externalOperators
+              : undefined,
         });
         exportBets = snapshot.tests as any;
         exportTx = snapshot.transactions as any;
@@ -291,22 +334,24 @@ export function WeeklyReportSection() {
         </div>
 
         <div className="pt-2 border-t border-[#E2ECE4] space-y-4">
-          <PeriodSelector
-            year={year}
-            month={month}
-            tranche={tranche}
-            onYearChange={setYear}
-            onMonthChange={setMonth}
-            onTrancheChange={setTranche}
-            mode={periodMode}
-            onModeChange={setPeriodMode}
-            allowCustomMode
-            customStart={customStart}
-            customEnd={customEnd}
-            onCustomStartChange={setCustomStart}
-            onCustomEndChange={setCustomEnd}
-            disabled={isExporting}
-          />
+          {!hidePeriodControls && (
+            <PeriodSelector
+              year={year}
+              month={month}
+              tranche={tranche}
+              onYearChange={setYear}
+              onMonthChange={setMonth}
+              onTrancheChange={setTranche}
+              mode={periodMode}
+              onModeChange={setPeriodMode}
+              allowCustomMode
+              customStart={customStart}
+              customEnd={customEnd}
+              onCustomStartChange={setCustomStart}
+              onCustomEndChange={setCustomEnd}
+              disabled={isExporting}
+            />
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-3 rounded-xl bg-[#F5F8F5] border border-[#D8E6DB] flex flex-col justify-center">

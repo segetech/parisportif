@@ -32,7 +32,11 @@ export interface AuthState {
   user: User | null;
   loading: boolean;
   isLoggingOut: boolean;
+  mfaRequired?: boolean;
+  mfaFactorId?: string | null;
   login: (email: string, password: string) => Promise<void>;
+  verifyMfaLogin?: (code: string) => Promise<void>;
+  cancelMfaLogin?: () => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
   refreshUser: () => Promise<void>;
@@ -50,6 +54,9 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+  const mfaRequiredRef = useRef(false);
 
   // Référence synchrone immédiate sur l'utilisateur courant pour les callbacks
   const userRef = useRef<User | null>(null);
@@ -220,6 +227,9 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
     generationRef.current += 1;
     activeUserIdRef.current = null;
     userRef.current = null;
+    mfaRequiredRef.current = false;
+    setMfaRequired(false);
+    setMfaFactorId(null);
 
     // 2. Mettre l'utilisateur à null pour protéger l'interface immédiatement
     setUser(null);
@@ -257,8 +267,65 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
     }
   }, [navigate]);
 
+  const checkMfaRequirement = useCallback(async (): Promise<{
+    required: boolean;
+    factorId: string | null;
+  }> => {
+    try {
+      const mfaApi = (supabase.auth as any)?.mfa;
+      if (
+        !mfaApi ||
+        typeof mfaApi.getAuthenticatorAssuranceLevel !== "function" ||
+        typeof mfaApi.listFactors !== "function"
+      ) {
+        return { required: false, factorId: null };
+      }
+      const { data: aal } = await mfaApi.getAuthenticatorAssuranceLevel();
+      if (aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2") {
+        const { data: factors } = await mfaApi.listFactors();
+        const verifiedTotp = (factors?.totp || []).find(
+          (f: any) => f.status === "verified",
+        );
+        if (verifiedTotp?.id) {
+          return { required: true, factorId: verifiedTotp.id };
+        }
+      }
+    } catch {
+      // Ne pas bloquer la connexion si la lecture AAL échoue
+    }
+    return { required: false, factorId: null };
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
+
+    const loadAuthenticatedUser = async (
+      userId: string,
+      generation: number,
+      options: { background?: boolean } = {},
+    ) => {
+      if (mfaRequiredRef.current) {
+        if (!options.background) setLoading(false);
+        return;
+      }
+      const hasMfaApi = Boolean(
+        (supabase.auth as any)?.mfa?.getAuthenticatorAssuranceLevel,
+      );
+      if (hasMfaApi) {
+        const mfaCheck = await checkMfaRequirement();
+        if (!isMounted || generationRef.current !== generation) return;
+        if (mfaCheck.required && mfaCheck.factorId) {
+          mfaRequiredRef.current = true;
+          setMfaRequired(true);
+          setMfaFactorId(mfaCheck.factorId);
+          setUser(null);
+          userRef.current = null;
+          setLoading(false);
+          return;
+        }
+      }
+      await loadProfileForGeneration(userId, generation, options);
+    };
 
     // 1. Écouter les changements d'authentification.
     // RÈGLE ABSOLUE : Le callback onAuthStateChange doit être 100% SYNCHRONE et COURT.
@@ -273,6 +340,9 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
         generationRef.current += 1;
         activeUserIdRef.current = null;
         userRef.current = null;
+        mfaRequiredRef.current = false;
+        setMfaRequired(false);
+        setMfaFactorId(null);
         setUser(null);
         setLoading(false);
         purgeAllAppCaches();
@@ -318,7 +388,7 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
 
       setTimeout(() => {
         if (isMounted) {
-          void loadProfileForGeneration(newUserId, gen, { background: false });
+          void loadAuthenticatedUser(newUserId, gen, { background: false });
         }
       }, 0);
     });
@@ -346,7 +416,7 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
 
           setTimeout(() => {
             if (isMounted) {
-              void loadProfileForGeneration(session.user.id, gen, {
+              void loadAuthenticatedUser(session.user.id, gen, {
                 background: false,
               });
             }
@@ -366,13 +436,15 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [loadProfileForGeneration]);
+  }, [checkMfaRequirement, loadProfileForGeneration]);
 
   const value = useMemo<AuthState>(
     () => ({
       user,
       loading,
       isLoggingOut,
+      mfaRequired,
+      mfaFactorId,
       async login(email: string, password: string) {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
@@ -385,10 +457,75 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
           activeUserIdRef.current = data.user.id;
           const gen = ++generationRef.current;
           setLoading(true);
+
+          const mfaCheck = await checkMfaRequirement();
+          if (mfaCheck.required && mfaCheck.factorId) {
+            mfaRequiredRef.current = true;
+            setMfaRequired(true);
+            setMfaFactorId(mfaCheck.factorId);
+            setUser(null);
+            userRef.current = null;
+            setLoading(false);
+            return;
+          }
+
+          mfaRequiredRef.current = false;
+          setMfaRequired(false);
+          setMfaFactorId(null);
           await loadProfileForGeneration(data.user.id, gen, {
             background: false,
           });
         }
+      },
+      async verifyMfaLogin(code: string) {
+        const cleanCode = code.replace(/\D/g, "");
+        if (cleanCode.length !== 6) {
+          throw new Error("Veuillez saisir le code à 6 chiffres de votre application Authenticator.");
+        }
+        const mfaApi = (supabase.auth as any)?.mfa;
+        if (!mfaApi) {
+          throw new Error("Vérification Authenticator indisponible.");
+        }
+
+        let targetFactorId = mfaFactorId;
+        if (!targetFactorId) {
+          const { data: factors } = await mfaApi.listFactors();
+          targetFactorId =
+            (factors?.totp || []).find((f: any) => f.status === "verified")?.id ||
+            null;
+        }
+        if (!targetFactorId) {
+          throw new Error("Aucun facteur Authenticator vérifié trouvé.");
+        }
+
+        const { data: verifyData, error } = await mfaApi.challengeAndVerify({
+          factorId: targetFactorId,
+          code: cleanCode,
+        });
+        if (error) {
+          throw new Error(error.message || "Code Authenticator invalide ou expiré.");
+        }
+
+        mfaRequiredRef.current = false;
+        setMfaRequired(false);
+        setMfaFactorId(null);
+
+        const verifiedUserId =
+          verifyData?.user?.id ||
+          activeUserIdRef.current ||
+          (await supabase.auth.getSession()).data.session?.user?.id;
+
+        if (verifiedUserId) {
+          activeUserIdRef.current = verifiedUserId;
+          const gen = ++generationRef.current;
+          setLoading(true);
+          await loadProfileForGeneration(verifiedUserId, gen, {
+            background: false,
+          });
+        }
+      },
+      async cancelMfaLogin() {
+        await triggerLogout();
       },
       logout: triggerLogout,
       updateUser(updatedFields: Partial<User>) {
@@ -421,7 +558,16 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
         }
       },
     }),
-    [user, loading, isLoggingOut, loadProfileForGeneration, triggerLogout]
+    [
+      user,
+      loading,
+      isLoggingOut,
+      mfaRequired,
+      mfaFactorId,
+      checkMfaRequirement,
+      loadProfileForGeneration,
+      triggerLogout,
+    ]
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
@@ -464,7 +610,7 @@ export function useRole(): Role | null {
 }
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, loading, isLoggingOut } = useAuth();
+  const { user, loading, isLoggingOut, mfaRequired } = useAuth();
   const inRouter = useInRouterContext();
   const location = inRouter ? useLocation() : null;
   const currentPath =
@@ -490,7 +636,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!user) {
+  if (mfaRequired || !user) {
     return <Navigate to="/login" replace />;
   }
 

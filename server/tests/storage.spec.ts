@@ -103,4 +103,28 @@ describe("Cloudflare R2 Object Storage Integration", { timeout: 20000 }, () => {
     const res = await fetch(`${baseUrl}/api/storage/file/preuves/fichier_inexistant_99999.png`);
     expect(res.status).toBe(404);
   });
+
+  it("POST /api/upload - organise les fichiers dans les sous-dossiers dédiés (avatars, preuves/transactions/AAAA/MM)", async () => {
+    const fakeGifBuffer = Buffer.from("GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;");
+
+    const txForm = new FormData();
+    txForm.append("file", new Blob([fakeGifBuffer], { type: "image/gif" }), "recu.gif");
+    txForm.append("folder", "preuves/transactions");
+
+    const txRes = await fetch(`${baseUrl}/api/upload`, { method: "POST", body: txForm });
+    expect(txRes.status).toBe(200);
+    const txJson = await txRes.json();
+    expect(txJson.key).toMatch(/^preuves\/transactions\/\d{4}\/\d{2}\//);
+    uploadedKeys.push(txJson.key);
+
+    const avatarForm = new FormData();
+    avatarForm.append("file", new Blob([fakeGifBuffer], { type: "image/gif" }), "avatar.gif");
+    avatarForm.append("folder", "avatars");
+
+    const avatarRes = await fetch(`${baseUrl}/api/upload`, { method: "POST", body: avatarForm });
+    expect(avatarRes.status).toBe(200);
+    const avatarJson = await avatarRes.json();
+    expect(avatarJson.key).toMatch(/^avatars\//);
+    uploadedKeys.push(avatarJson.key);
+  });
 });

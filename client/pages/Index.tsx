@@ -1,9 +1,12 @@
 import { testStatusLabel, testCatalogLabel } from "@/lib/test-vocabulary";
 import AppLayout from "@/components/layout/AppLayout";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
 import { useDashboardData, DashboardStats } from "@/hooks/use-data-queries";
 import {
@@ -121,6 +124,9 @@ export default function IndexPage() {
 
 function Dashboard() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const filterStart = searchParams.get("start") || "";
+  const filterEnd = searchParams.get("end") || "";
   const heroRef = useRef<HTMLDivElement>(null);
 
   const role = user?.role || "AGENT";
@@ -128,7 +134,32 @@ function Dashboard() {
   const isController = role === "CONTROLEUR";
   const isAgent = role === "AGENT";
 
-  const { data: dashboardData, isLoading, isError, error, isFetching, refetch } = useDashboardData();
+  const { data: dashboardData, isLoading, isError, error, isFetching, refetch } = useDashboardData(filterStart, filterEnd);
+
+  const { data: agentRejectedCounts } = useQuery({
+    queryKey: ["agent-rejected-counts", user?.id],
+    enabled: isAgent && !!user?.id,
+    staleTime: 60_000,
+    queryFn: async () => {
+      if (!user?.id) return { bets: 0, transactions: 0 };
+      const [betsRes, txRes] = await Promise.all([
+        supabase
+          .from("bets")
+          .select("id", { count: "exact", head: true })
+          .eq("created_by", user.id)
+          .eq("validation_status", "refuse"),
+        supabase
+          .from("transactions")
+          .select("id", { count: "exact", head: true })
+          .eq("created_by", user.id)
+          .eq("validation_status", "refuse"),
+      ]);
+      return {
+        bets: betsRes.count || 0,
+        transactions: txRes.count || 0,
+      };
+    },
+  });
 
   // Animation d'entrée GSAP
   useEffect(() => {
@@ -164,7 +195,7 @@ function Dashboard() {
     );
   }
 
-  const stats: DashboardStats = dashboardData || {
+  const rawStats: DashboardStats = dashboardData || {
     totalVenues: 0,
     totalBets: 0,
     totalBetsAmount: 0,
@@ -182,6 +213,18 @@ function Dashboard() {
     venuesByOperator: [],
     illegalActivityTrend: [],
   };
+
+  const stats: DashboardStats = useMemo(() => {
+    if (!filterStart && !filterEnd) return rawStats;
+    const filteredRecent = (rawStats.recentBets || []).filter((b: any) => {
+      const d = (b.date || "").slice(0, 10);
+      return (!filterStart || d >= filterStart) && (!filterEnd || d <= filterEnd);
+    });
+    return {
+      ...rawStats,
+      recentBets: filteredRecent,
+    };
+  }, [rawStats, filterStart, filterEnd]);
 
   const venuesByOperator = stats.venuesByOperator || [];
   const illegalActivityTrend = stats.illegalActivityTrend || [];
@@ -255,7 +298,7 @@ function Dashboard() {
 
           {isAgent && (
             <Button asChild size="sm" className="min-h-[44px] sm:min-h-0 h-9 gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold shadow-xs">
-              <Link to="/tests">
+              <Link to="/tests?new=1">
                 <Plus className="h-4 w-4" />
                 <span>Créer un test</span>
               </Link>
@@ -273,7 +316,7 @@ function Dashboard() {
 
           {isAdmin && (
             <Button asChild size="sm" className="min-h-[44px] sm:min-h-0 h-9 gap-1.5 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold shadow-xs">
-              <Link to="/tests">
+              <Link to="/tests?new=1">
                 <Plus className="h-4 w-4" />
                 <span>Créer un test</span>
               </Link>
@@ -354,10 +397,92 @@ function Dashboard() {
             </motion.div>
           </motion.div>
 
+          {/* Synthèse Dépôts/Retraits & Dossiers Refusés pour l'Agent */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">
+                  Mes Dépôts &amp; Retraits Saisis
+                </div>
+                <div className="flex flex-wrap items-baseline gap-4 pt-1">
+                  <div>
+                    <span className="text-xs text-[#556B5C]">Dépôts : </span>
+                    <span className="text-lg font-black font-mono text-[#006B2D]">
+                      {new Intl.NumberFormat("fr-FR").format(Math.round(stats.totalDeposits))} FCFA
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-[#556B5C]">Retraits : </span>
+                    <span className="text-lg font-black font-mono text-[#E52329]">
+                      {new Intl.NumberFormat("fr-FR").format(Math.round(stats.totalWithdrawals))} FCFA
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <Link
+                to="/transactions"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-[#006B2D] hover:underline shrink-0"
+              >
+                <span>Voir mes transactions</span>
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            <div
+              className={`rounded-xl border p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                (agentRejectedCounts?.bets || 0) + (agentRejectedCounts?.transactions || 0) > 0
+                  ? "border-rose-300 bg-rose-50"
+                  : "border-[#D8E6DB] bg-white"
+              }`}
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#556B5C]">
+                  <AlertCircle
+                    className={`h-4 w-4 ${
+                      (agentRejectedCounts?.bets || 0) + (agentRejectedCounts?.transactions || 0) > 0
+                        ? "text-rose-600"
+                        : "text-[#006B2D]"
+                    }`}
+                  />
+                  <span>Dossiers Refusés (À corriger)</span>
+                </div>
+                <div className="text-sm font-semibold text-[#17251C] pt-1">
+                  {(agentRejectedCounts?.bets || 0) + (agentRejectedCounts?.transactions || 0) > 0 ? (
+                    <span>
+                      {agentRejectedCounts?.bets || 0} test(s) et {agentRejectedCounts?.transactions || 0} transaction(s) à corriger
+                    </span>
+                  ) : (
+                    <span className="text-[#006B2D]">Aucun dossier refusé en attente de correction</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {(agentRejectedCounts?.bets || 0) > 0 && (
+                  <Link
+                    to="/tests?validation=refuse"
+                    className="inline-flex items-center gap-1 rounded-lg bg-white border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                  >
+                    <span>Tests refusés ({agentRejectedCounts?.bets})</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+                {(agentRejectedCounts?.transactions || 0) > 0 && (
+                  <Link
+                    to="/transactions?validation=refuse"
+                    className="inline-flex items-center gap-1 rounded-lg bg-white border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                  >
+                    <span>Transactions refusées ({agentRejectedCounts?.transactions})</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Actions Rapides pour l'Agent */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Link
-              to="/tests"
+              to="/tests?new=1"
               className="p-4 rounded-xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group shadow-xs"
             >
               <div className="flex items-center gap-3">
@@ -373,7 +498,7 @@ function Dashboard() {
             </Link>
 
             <Link
-              to="/transactions"
+              to="/transactions?new=1"
               className="p-4 rounded-xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group shadow-xs"
             >
               <div className="flex items-center gap-3">

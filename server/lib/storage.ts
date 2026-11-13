@@ -9,13 +9,13 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const accountId = process.env.R2_ACCOUNT_ID || "3e3ff3f2680b861f8bc712c0ce2a9f12";
+const accountId = process.env.R2_ACCOUNT_ID || "";
 const accessKeyId = process.env.R2_ACCESS_KEY_ID || "";
 const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "";
 export const R2_BUCKET = process.env.R2_BUCKET_NAME || "parisportif";
 export const R2_ENDPOINT =
   process.env.R2_ENDPOINT ||
-  `https://${accountId}.r2.cloudflarestorage.com`;
+  (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
 
 export const r2Client = new S3Client({
   region: "auto",

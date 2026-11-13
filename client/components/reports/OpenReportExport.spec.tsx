@@ -9,7 +9,7 @@ import { reportFixture } from "@/lib/open-report-fixture";
 const state = vi.hoisted(() => ({ fail: false, calls: 0, account: "admin", allowed: true }));
 vi.mock("@/context/AuthContext", () => ({ useAuth: () => ({ user: { id: state.account, role: "ADMIN" } }) }));
 vi.mock("@/lib/settings", () => ({ useSettings: () => ({ settings: { agentCanExport: true } }) }));
-vi.mock("@/hooks/use-data-queries", () => ({ useLookups: () => ({ data: { operatorNames: ["Alpha", "Bêta / Équipe très longue pour la feuille"] } }) }));
+vi.mock("@/hooks/use-data-queries", () => ({ useLookups: () => ({ data: { operatorNames: ["Alpha", "Bêta / Équipe très longue pour la feuille", "ZeroOp"] } }) }));
 vi.mock("@/lib/supabase", async () => {
   const { reportFixture } = await import("@/lib/open-report-fixture");
   return { supabase: {
@@ -61,6 +61,8 @@ describe("real export controls and generated file", () => {
     await change("Année du rapport", "2028"); await change("Mois du rapport", "2"); await change("Période du rapport", "4");
     expect(document.body.textContent).toContain("2028-02-23 → 2028-02-29");
     await change("Année du rapport", "2026"); await change("Mois du rapport", "11"); await change("Période du rapport", "2"); await change("Opérateur du rapport", "Alpha");
+    await act(async () => { await new Promise(r => setTimeout(r, 180)); });
+    state.calls = 0;
     const button = excelButton();
     await act(async () => { button.click(); button.click(); });
     expect(element("Mois du rapport").closest("fieldset")!.disabled).toBe(true);
@@ -83,6 +85,15 @@ describe("real export controls and generated file", () => {
     expect(customBtn).toBeTruthy();
     await act(async () => { customBtn.click(); });
     expect(document.body.textContent).toContain("Période personnalisée — dates incluses");
+  });
+  it("detects only operators with data in the period and auto-selects detected illegals", async () => {
+    await change("Année du rapport", "2026");
+    await change("Mois du rapport", "11");
+    await change("Période du rapport", "2");
+    await act(async () => { await new Promise(r => setTimeout(r, 180)); });
+    expect(document.body.textContent).toContain("Détection auto");
+    expect(document.body.textContent).toContain("Alpha");
+    expect(document.body.textContent).toContain("Voir sans données (1)");
   });
 
   it("freezes parameters at launch and supports CSV export for the selected tranche", async () => {

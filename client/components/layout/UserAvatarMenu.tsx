@@ -210,13 +210,15 @@ export function UserAvatarMenu({
             </DropdownMenuItem>
           )}
 
-          <DropdownMenuItem
-            onClick={() => navigate("/cache")}
-            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#17251C] cursor-pointer hover:bg-[#F5F8F5] hover:text-[#006B2D] focus:bg-[#F5F8F5] focus:text-[#006B2D]"
-          >
-            <HardDrive className="h-4 w-4 text-amber-600 shrink-0" />
-            <span>Gestion du Cache</span>
-          </DropdownMenuItem>
+          {isAdmin && (
+            <DropdownMenuItem
+              onClick={() => navigate("/cache")}
+              className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold text-[#17251C] cursor-pointer hover:bg-[#F5F8F5] hover:text-[#006B2D] focus:bg-[#F5F8F5] focus:text-[#006B2D]"
+            >
+              <HardDrive className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>Gestion du Cache</span>
+            </DropdownMenuItem>
+          )}
 
           {isAdmin && (
             <DropdownMenuItem

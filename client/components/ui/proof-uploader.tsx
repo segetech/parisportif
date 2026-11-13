@@ -19,7 +19,14 @@ export interface ProofUploaderProps {
   onChange: (url: string | undefined) => void;
   proofStatus?: string; // "disponible" | "non_disponible" | "non_renseignee"
   onStatusChange?: (status: "disponible" | "non_disponible" | "non_renseignee") => void;
-  folder?: "preuves" | "avatars";
+  folder?:
+    | "preuves"
+    | "preuves/tests"
+    | "preuves/transactions"
+    | "preuves/activites-illegales"
+    | "avatars"
+    | "rapports"
+    | "imports";
   disabled?: boolean;
   className?: string;
   required?: boolean;
@@ -91,7 +98,7 @@ export function ProofUploader({
       if (onStatusChange) {
         onStatusChange("disponible");
       }
-      toast.success("Preuve téléversée et enregistrée avec succès sur Cloudflare R2 !");
+      toast.success("Preuve téléversée et enregistrée avec succès !");
     } catch (err: any) {
       console.error("Erreur téléversement:", err);
       const msg = err.message || "Impossible de téléverser le fichier.";
@@ -144,7 +151,7 @@ export function ProofUploader({
         {value && (
           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#006B2D] bg-[#F5F8F5] px-2 py-0.5 rounded border border-[#D8E6DB]">
             <CheckCircle2 className="h-3 w-3" />
-            Stocké sur R2
+            Fichier enregistré
           </span>
         )}
       </div>
@@ -168,7 +175,7 @@ export function ProofUploader({
         <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#006B2D] rounded-xl bg-[#F5F8F5] text-center space-y-2">
           <Loader2 className="h-8 w-8 text-[#006B2D] animate-spin" />
           <p className="text-xs font-bold text-[#17251C]">
-            Téléversement sécurisé vers Cloudflare R2...
+            Téléversement sécurisé en cours...
           </p>
           <p className="text-[11px] text-muted-foreground">
             Vérification de l'intégrité et archivage en cours

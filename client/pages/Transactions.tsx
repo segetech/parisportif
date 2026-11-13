@@ -1,4 +1,5 @@
 import { OpenReportButton } from "@/components/reports/OpenReportExport";
+import { useSearchParams } from "react-router-dom";
 import { WeeklyReportSection } from "@/components/reports/WeeklyReportSection";
 import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
 import {
@@ -21,6 +22,10 @@ import {
   INITIAL_SMART_FILTER,
   applySmartFilter,
 } from "@/components/common/SmartFilterBar";
+import {
+  TablePaginationFooter,
+  paginateItems,
+} from "@/components/common/TablePaginationFooter";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -42,7 +47,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
-import { useEffect, useMemo, useState } from "react";
+import { useOptionalSettings } from "@/lib/settings";
+import { canAgentEditRecord } from "@/lib/rbac";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -120,11 +127,55 @@ function Transactions() {
 
   const [smartFilter, setSmartFilter] =
     useState<SmartFilterState>(INITIAL_SMART_FILTER);
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const listTopRef = useRef<HTMLDivElement>(null);
   const [activeView, setActiveView] = useState<"list" | "report">("list");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const isNew = searchParams.get("new") === "1";
+    const startParam = searchParams.get("start");
+    const endParam = searchParams.get("end");
+    const refParam = searchParams.get("ref");
+    const validationParam = searchParams.get("validation");
+
+    if (startParam || endParam || refParam || validationParam) {
+      setSmartFilter((prev) => ({
+        ...prev,
+        ...(startParam || endParam
+          ? {
+              dateStart: startParam || "",
+              dateEnd: endParam || "",
+            }
+          : {}),
+        ...(refParam ? { search: refParam } : {}),
+        ...(validationParam ? { validationStatus: validationParam } : {}),
+      }));
+    }
+
+    if (isNew) {
+      setEditingTransaction(null);
+      setDialogOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("new");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const settings = useOptionalSettings();
+  const canExport = user?.role !== "AGENT" || settings.agentCanExport;
+  const editPermission = editingTransaction
+    ? canAgentEditRecord(
+        user?.role,
+        editingTransaction.validation_status,
+        editingTransaction.created_at,
+        settings.agentEditWindowMinutes,
+      )
+    : { allowed: true };
   const initialExportPeriod = useMemo(() => currentReportPeriod(), []);
   const [exportPeriodMode, setExportPeriodMode] = useState<PeriodMode>("fixed");
   const [exportYear, setExportYear] = useState(initialExportPeriod.year);
@@ -844,7 +895,10 @@ function Transactions() {
           <SmartFilterBar
             mode="transactions"
             filter={smartFilter}
-            onChange={setSmartFilter}
+            onChange={(next) => {
+              setSmartFilter(next);
+              setCurrentPage(1);
+            }}
             operators={operators}
             platformsOrSupports={platforms}
             paymentOperators={paymentOperators}
@@ -867,13 +921,15 @@ function Transactions() {
 
             <div className="flex flex-wrap items-center gap-2">
               <OpenReportButton />
-              <Button
-                onClick={() => setExportDialogOpen(true)}
-                className="h-9 text-xs font-bold bg-[#006B2D] hover:bg-[#004D20] text-white rounded-xl gap-1.5 shadow-xs"
-              >
-                <Download className="h-4 w-4 text-[#FFD000]" />
-                <span>Exporter</span>
-              </Button>
+              {canExport && (
+                <Button
+                  onClick={() => setExportDialogOpen(true)}
+                  className="h-9 text-xs font-bold bg-[#006B2D] hover:bg-[#004D20] text-white rounded-xl gap-1.5 shadow-xs"
+                >
+                  <Download className="h-4 w-4 text-[#FFD000]" />
+                  <span>Exporter</span>
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -968,9 +1024,10 @@ function Transactions() {
         </div>
 
         {/* Vue Cartes Responsive (Mobile) */}
+        <div ref={listTopRef} />
         <div className="block md:hidden space-y-3">
           {filteredTransactions.length > 0 ? (
-            filteredTransactions.map((tx) => (
+            paginateItems(filteredTransactions, currentPage, pageSize).map((tx) => (
               <div
                 key={tx.id}
                 onClick={() => openEditDialog(tx)}
@@ -1119,14 +1176,14 @@ function Transactions() {
             </TableHeader>
             <TableBody>
               {filteredTransactions.length > 0 ? (
-                filteredTransactions.map((tx, idx) => (
+                paginateItems(filteredTransactions, currentPage, pageSize).map((tx, idx) => (
                   <TableRow
                     key={tx.id}
                     className="cursor-pointer hover:bg-[#F5F8F5] transition-colors border-b border-[#E2ECE4]"
                     onClick={() => openEditDialog(tx)}
                   >
                     <TableCell className="text-xs font-mono text-center text-[#556B5C]">
-                      {idx + 1}
+                      {(pageSize <= 0 ? 0 : (currentPage - 1) * pageSize) + idx + 1}
                     </TableCell>
                     <TableCell className="text-xs font-semibold text-[#17251C] whitespace-nowrap">
                       {new Date(tx.date).toLocaleDateString("fr-FR")}
@@ -1188,7 +1245,7 @@ function Transactions() {
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#EBF7EE] text-[#006B2D] border border-[#86EFAC] hover:bg-[#D1FAE5] transition-colors"
-                          title="Consulter le fichier de preuve R2"
+                          title="Consulter le fichier de preuve"
                         >
                           <CheckCircle2 className="h-3 w-3" />
                           <span>Preuve</span>
@@ -1240,9 +1297,16 @@ function Transactions() {
           </Table>
         </div>
 
-        <div className="text-sm text-muted-foreground">
-          Affichage de {filteredTransactions.length} opérations sur{" "}
-          {transactions.length} au total
+        <div className="rounded-xl border border-[#D8E6DB] bg-white overflow-hidden">
+          <TablePaginationFooter
+            totalItems={filteredTransactions.length}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="opérations"
+            scrollAnchorRef={listTopRef}
+          />
         </div>
           </>
         )}
@@ -1277,6 +1341,8 @@ function Transactions() {
             onRestoreDraft={restoreDraft}
             onDiscardDraft={discardDraft}
             draftSaveStatus={saveStatus}
+            canEdit={editPermission.allowed}
+            editBlockedReason={editPermission.reason}
           >
             <div className="grid grid-cols-[minmax(0,1fr)] gap-4 pt-2 [&_input]:min-w-0 [&_select]:min-w-0">
               {/* 1. DATE & Opérateur de jeux */}
@@ -1446,7 +1512,7 @@ function Transactions() {
                     onStatusChange={(status) =>
                       setFormData((prev) => ({ ...prev, proof_status: status }))
                     }
-                    folder="preuves"
+                    folder="preuves/transactions"
                   />
                 )}
               </div>

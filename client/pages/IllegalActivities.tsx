@@ -388,7 +388,7 @@ function IllegalActivitiesContent() {
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-[#EBF7EE] text-[#006B2D] border border-[#86EFAC] hover:bg-[#D1FAE5] transition-colors"
-                            title="Consulter la preuve R2"
+                            title="Consulter la preuve"
                           >
                             <span>Preuve</span>
                             <ExternalLink className="h-3 w-3" />
@@ -474,7 +474,7 @@ function IllegalActivitiesContent() {
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-[#EBF7EE] text-[#006B2D] border border-[#86EFAC] hover:bg-[#D1FAE5] transition-colors"
-                            title="Consulter la preuve R2"
+                            title="Consulter la preuve"
                           >
                             <span>Preuve</span>
                             <ExternalLink className="h-3 w-3" />
@@ -613,7 +613,7 @@ function IllegalActivitiesContent() {
                         proof: Boolean(url),
                       })
                     }
-                    folder="preuves"
+                    folder="preuves/activites-illegales"
                   />
                 </div>
               )}
@@ -760,7 +760,7 @@ function IllegalActivitiesContent() {
                         proof: Boolean(url),
                       })
                     }
-                    folder="preuves"
+                    folder="preuves/activites-illegales"
                   />
                 </div>
               )}

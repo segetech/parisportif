@@ -13,25 +13,28 @@ import {
   AlertCircle,
   Loader2,
   ArrowRight,
+  ArrowLeft,
   Shield,
+  Smartphone,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
 export default function Login() {
-  const { user, login } = useAuth();
+  const { user, login, mfaRequired, verifyMfaLogin, cancelMfaLogin } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   // Redirection automatique si l'utilisateur est déjà connecté
   useEffect(() => {
-    if (user) {
+    if (user && !mfaRequired) {
       navigate("/");
     }
-  }, [user, navigate]);
+  }, [user, mfaRequired, navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,8 +43,7 @@ export default function Login() {
 
     try {
       await login(email.trim(), password);
-      // Redirection après succès de connexion
-      navigate("/");
+      setLoading(false);
     } catch (err: any) {
       console.error("Erreur de connexion:", err);
       const msg = err?.message || "";
@@ -57,6 +59,24 @@ export default function Login() {
       } else {
         setError(msg || "Une erreur est survenue lors de la connexion. Veuillez réessayer.");
       }
+      setLoading(false);
+    }
+  }
+
+  async function handleMfaSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!verifyMfaLogin) return;
+    setError(null);
+    setLoading(true);
+
+    try {
+      await verifyMfaLogin(mfaCode);
+      navigate("/");
+    } catch (err: any) {
+      setError(
+        err?.message ||
+          "Code Authenticator invalide. Vérifiez le code affiché dans Google ou Microsoft Authenticator.",
+      );
       setLoading(false);
     }
   }
@@ -213,14 +233,24 @@ export default function Login() {
             {/* Titre et accueil */}
             <div className="mb-6">
               <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#006B2D] mb-1.5">
-                <Shield className="h-3.5 w-3.5 text-[#006B2D]" />
-                <span>Espace d'Authentification</span>
+                {mfaRequired ? (
+                  <Smartphone className="h-3.5 w-3.5 text-[#006B2D]" />
+                ) : (
+                  <Shield className="h-3.5 w-3.5 text-[#006B2D]" />
+                )}
+                <span>
+                  {mfaRequired
+                    ? "Double authentification (A2F)"
+                    : "Espace d'Authentification"}
+                </span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#17251C]">
-                Connexion
+                {mfaRequired ? "Code Authenticator" : "Connexion"}
               </h2>
               <p className="text-xs sm:text-sm text-[#556B5C] mt-1">
-                Saisissez vos identifiants pour accéder à votre espace de contrôle.
+                {mfaRequired
+                  ? "Ouvrez Google Authenticator ou Microsoft Authenticator et saisissez le code à 6 chiffres."
+                  : "Saisissez vos identifiants pour accéder à votre espace de contrôle."}
               </p>
             </div>
 
@@ -236,7 +266,68 @@ export default function Login() {
               </div>
             )}
 
-            {/* Formulaire */}
+            {mfaRequired ? (
+              <form onSubmit={handleMfaSubmit} noValidate className="space-y-5">
+                <div>
+                  <label
+                    htmlFor="mfa-code-input"
+                    className="block text-xs font-bold uppercase tracking-wider text-[#17251C] mb-1.5"
+                  >
+                    Code de vérification (6 chiffres)
+                  </label>
+                  <Input
+                    id="mfa-code-input"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    autoFocus
+                    value={mfaCode}
+                    onChange={(e) =>
+                      setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    placeholder="123456"
+                    disabled={loading}
+                    className="h-12 bg-white border-[#D8E6DB] text-[#17251C] font-mono text-xl tracking-[0.35em] text-center focus-visible:ring-2 focus-visible:ring-[#006B2D] focus-visible:border-[#006B2D] rounded-lg"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={loading || mfaCode.length !== 6}
+                  className="w-full min-h-11 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold text-sm rounded-lg flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-white" />
+                      <span>Vérification…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Vérifier le code et se connecter</span>
+                      <ArrowRight className="h-4 w-4 text-[#FFD000]" />
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={loading}
+                  onClick={async () => {
+                    setError(null);
+                    setMfaCode("");
+                    if (cancelMfaLogin) await cancelMfaLogin();
+                  }}
+                  className="w-full min-h-11 text-xs font-bold border-[#D8E6DB] bg-[#F5F8F5] text-[#17251C] hover:bg-white gap-1.5"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <span>Retour à la connexion</span>
+                </Button>
+              </form>
+            ) : (
+            /* Formulaire */
             <form onSubmit={handleSubmit} noValidate className="space-y-4 sm:space-y-5">
               {/* Champ E-mail */}
               <div>
@@ -347,6 +438,7 @@ export default function Login() {
                 </p>
               </div>
             </form>
+            )}
           </div>
         </div>
       </main>

@@ -1,7 +1,7 @@
 import dayjs from "@/lib/dayjs";
 import { DATE_FORMAT } from "@/lib/dayjs";
 
-export type PeriodKind = "today" | "week" | "month" | "range";
+export type PeriodKind = "all" | "today" | "week" | "month" | "range";
 
 export interface PeriodState {
   kind: PeriodKind;
@@ -10,11 +10,10 @@ export interface PeriodState {
 }
 
 export function getDefaultPeriod(): PeriodState {
-  const d = dayjs();
   return {
-    kind: "today",
-    start: d.format(DATE_FORMAT),
-    end: d.format(DATE_FORMAT),
+    kind: "all",
+    start: "",
+    end: "",
   };
 }
 
@@ -23,6 +22,9 @@ export function computePeriod(
   start?: string,
   end?: string,
 ): PeriodState {
+  if (kind === "all") {
+    return { kind: "all", start: "", end: "" };
+  }
   const d = dayjs();
   if (kind === "today") {
     const s = d.format(DATE_FORMAT);

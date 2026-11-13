@@ -132,3 +132,8 @@ export function useSettings() {
   if (!ctx) throw new Error("useSettings must be used within SettingsProvider");
   return ctx;
 }
+
+export function useOptionalSettings(): AppSettings {
+  const ctx = useContext(SettingsCtx);
+  return ctx?.settings ?? DEFAULT_SETTINGS;
+}

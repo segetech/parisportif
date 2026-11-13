@@ -31,8 +31,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
+import { useSettings } from "@/lib/settings";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { computePeriod, getDefaultPeriod, PeriodState } from "@/lib/period";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
 import { UserAvatarMenu } from "./UserAvatarMenu";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +49,7 @@ interface NavItem {
   badge?: string;
   adminOnly?: boolean;
   controllerOrAdmin?: boolean;
+  requiresExportPermission?: boolean;
 }
 
 interface NavSection {
@@ -63,7 +70,17 @@ export default function AppLayout({
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState("");
-  const [period, setPeriod] = useState<PeriodState>(getDefaultPeriod());
+  const [period, setPeriod] = useState<PeriodState>(() => {
+    const params = new URLSearchParams(location.search);
+    const s = params.get("start") || "";
+    const e = params.get("end") || "";
+    if (!s && !e) return getDefaultPeriod();
+    for (const k of ["today", "week", "month"] as const) {
+      const candidate = computePeriod(k);
+      if (candidate.start === s && candidate.end === e) return candidate;
+    }
+    return { kind: "range", start: s, end: e };
+  });
 
   // État du sidebar rétractable
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -87,6 +104,8 @@ export default function AppLayout({
 
   const isAdmin = user?.role === "ADMIN";
   const isController = user?.role === "CONTROLEUR";
+  const { settings } = useSettings();
+  const canExport = isAdmin || isController || settings.agentCanExport;
 
   const navigationSections: NavSection[] = useMemo(() => {
     const rawSections: NavSection[] = [
@@ -122,6 +141,7 @@ export default function AppLayout({
             to: "/rapport",
             label: "Rapport",
             icon: <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-300" />,
+            requiresExportPermission: true,
           },
         ],
       },
@@ -167,7 +187,7 @@ export default function AppLayout({
             to: "/matching",
             label: "Rapprochement",
             icon: <Link2 className="h-4 w-4 shrink-0" />,
-            adminOnly: true,
+            controllerOrAdmin: true,
           },
           {
             to: "/exports",
@@ -179,6 +199,7 @@ export default function AppLayout({
             to: "/cache",
             label: "Gestion du Cache",
             icon: <HardDrive className="h-4 w-4 shrink-0" />,
+            adminOnly: true,
           },
           {
             to: "/parametres",
@@ -196,11 +217,12 @@ export default function AppLayout({
         items: section.items.filter((item) => {
           if (item.adminOnly && !isAdmin) return false;
           if (item.controllerOrAdmin && !isAdmin && !isController) return false;
+          if (item.requiresExportPermission && !canExport) return false;
           return true;
         }),
       }))
       .filter((section) => section.items.length > 0);
-  }, [isAdmin, isController]);
+  }, [isAdmin, isController, canExport]);
 
   // Titre dynamique de la page courante
   const currentPageTitle = useMemo(() => {
@@ -220,13 +242,47 @@ export default function AppLayout({
     navigate(`/transactions?${params.toString()}`);
   }
 
-  function handlePeriodChange(v: string) {
-    const p = computePeriod(v as any);
+  const [rangePopoverOpen, setRangePopoverOpen] = useState(false);
+  const [rangeStart, setRangeStart] = useState(() => period.start || computePeriod("month").start);
+  const [rangeEnd, setRangeEnd] = useState(() => period.end || computePeriod("today").end);
+
+  const supportsHeaderPeriod = [
+    "/",
+    "/tests",
+    "/transactions",
+    "/depot-retrait",
+    "/audit",
+    "/journal",
+  ].includes(location.pathname);
+
+  function applyPeriodToRoute(p: PeriodState) {
     setPeriod(p);
-    const params = new URLSearchParams({ start: p.start, end: p.end });
-    if (location.pathname === "/") {
-      navigate({ pathname: "/", search: params.toString() });
+    if (!supportsHeaderPeriod) return;
+    const params = new URLSearchParams(location.search);
+    if (p.start) params.set("start", p.start);
+    else params.delete("start");
+    if (p.end) params.set("end", p.end);
+    else params.delete("end");
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+  }
+
+  function handlePeriodChange(v: string) {
+    if (v === "range") {
+      setRangeStart(period.start || computePeriod("month").start);
+      setRangeEnd(period.end || computePeriod("today").end);
+      setRangePopoverOpen(true);
+      return;
     }
+    setRangePopoverOpen(false);
+    const p = computePeriod(v as any);
+    applyPeriodToRoute(p);
+  }
+
+  function handleApplyCustomRange() {
+    if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) return;
+    const p = computePeriod("range", rangeStart, rangeEnd);
+    setRangePopoverOpen(false);
+    applyPeriodToRoute(p);
   }
 
   return (
@@ -389,17 +445,60 @@ export default function AppLayout({
             <NotificationBell />
 
             {/* Sélecteur temporel */}
-            <Select value={period.kind} onValueChange={handlePeriodChange}>
-              <SelectTrigger className="h-9 w-[120px] sm:w-[140px] text-xs bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] rounded-xl font-medium">
-                <SelectValue placeholder="Période" />
-              </SelectTrigger>
-              <SelectContent className="bg-white border-[#D8E6DB] text-[#17251C]">
-                <SelectItem value="today">Aujourd’hui</SelectItem>
-                <SelectItem value="week">Semaine</SelectItem>
-                <SelectItem value="month">Mois</SelectItem>
-                <SelectItem value="range">Intervalle</SelectItem>
-              </SelectContent>
-            </Select>
+            {supportsHeaderPeriod && (
+              <Popover open={rangePopoverOpen} onOpenChange={setRangePopoverOpen}>
+                <PopoverAnchor asChild>
+                  <div className="flex items-center">
+                    <Select value={period.kind} onValueChange={handlePeriodChange}>
+                      <SelectTrigger className="h-9 w-[135px] sm:w-[155px] text-xs bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] rounded-xl font-medium">
+                        <SelectValue placeholder="Période" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white border-[#D8E6DB] text-[#17251C]">
+                        <SelectItem value="all">Toutes périodes</SelectItem>
+                        <SelectItem value="today">Aujourd’hui</SelectItem>
+                        <SelectItem value="week">Semaine</SelectItem>
+                        <SelectItem value="month">Mois</SelectItem>
+                        <SelectItem value="range">Intervalle…</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </PopoverAnchor>
+                <PopoverContent className="w-72 p-3 bg-white border-[#D8E6DB] space-y-3" align="end">
+                  <div className="text-xs font-bold text-[#17251C]">
+                    Intervalle personnalisé
+                  </div>
+                  <div className="grid gap-2">
+                    <label className="grid gap-1 text-[11px] font-semibold text-[#556B5C]">
+                      <span>Du</span>
+                      <Input
+                        type="date"
+                        value={rangeStart}
+                        onChange={(e) => setRangeStart(e.target.value)}
+                        className="h-9 text-xs bg-[#F5F8F5] border-[#D8E6DB]"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-[11px] font-semibold text-[#556B5C]">
+                      <span>Au</span>
+                      <Input
+                        type="date"
+                        value={rangeEnd}
+                        onChange={(e) => setRangeEnd(e.target.value)}
+                        className="h-9 text-xs bg-[#F5F8F5] border-[#D8E6DB]"
+                      />
+                    </label>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleApplyCustomRange}
+                    disabled={!rangeStart || !rangeEnd || rangeStart > rangeEnd}
+                    className="w-full h-9 bg-[#006B2D] hover:bg-[#004D20] text-white text-xs font-bold"
+                  >
+                    Appliquer la période
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            )}
 
             {/* Action principale CTA si fournie par la page */}
             {onNew && (
