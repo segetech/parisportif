@@ -1,4 +1,5 @@
 import { OpenReportButton } from "@/components/reports/OpenReportExport";
+import { formatPhoneNumber, formatAmountInput, parseAmountInput } from "@/lib/utils";
 import { useSearchParams } from "react-router-dom";
 import { WeeklyReportSection } from "@/components/reports/WeeklyReportSection";
 import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
@@ -64,6 +65,7 @@ import {
   Sparkles,
   CheckCircle2,
   ExternalLink,
+  AlertTriangle,
 } from "lucide-react";
 import { CreatableSelect } from "@/components/ui/creatable-select";
 import {
@@ -80,6 +82,7 @@ import {
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
+import { dispatchAppNotification } from "@/lib/notification-navigation";
 
 import { Badge } from "@/components/ui/badge";
 
@@ -135,26 +138,39 @@ function Transactions() {
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const prevUrlDatesRef = useRef<{ start: string; end: string }>({
+    start: "",
+    end: "",
+  });
 
   useEffect(() => {
     const isNew = searchParams.get("new") === "1";
-    const startParam = searchParams.get("start");
-    const endParam = searchParams.get("end");
+    const startParam = searchParams.get("start") || "";
+    const endParam = searchParams.get("end") || "";
     const refParam = searchParams.get("ref");
     const validationParam = searchParams.get("validation");
+    const urlDatesChanged =
+      startParam !== prevUrlDatesRef.current.start ||
+      endParam !== prevUrlDatesRef.current.end;
 
-    if (startParam || endParam || refParam || validationParam) {
+    if (urlDatesChanged) {
+      prevUrlDatesRef.current = { start: startParam, end: endParam };
+    }
+
+    if (urlDatesChanged || refParam || validationParam) {
       setSmartFilter((prev) => ({
         ...prev,
-        ...(startParam || endParam
+        ...(urlDatesChanged
           ? {
-              dateStart: startParam || "",
-              dateEnd: endParam || "",
+              datePreset: startParam || endParam ? "custom" : "all",
+              startDate: startParam,
+              endDate: endParam,
             }
           : {}),
         ...(refParam ? { search: refParam } : {}),
         ...(validationParam ? { validationStatus: validationParam } : {}),
       }));
+      setCurrentPage(1);
     }
 
     if (isNew) {
@@ -230,6 +246,18 @@ function Transactions() {
   const [ticketRef, setTicketRef] = useState<string>("");
   const [parsedRef, setParsedRef] = useState<ParsedPaymentRef | null>(null);
   const [selectedVenueId, setSelectedVenueId] = useState<string>("");
+
+  const existingMatchingTx = useMemo(() => {
+    const trimmed = ticketRef.trim().toLowerCase();
+    if (!trimmed) return null;
+    return (
+      transactions.find((tx) => {
+        if (editingTransaction && tx.id === editingTransaction.id) return false;
+        const ref = readRecordReference(tx).reference.trim().toLowerCase();
+        return ref === trimmed;
+      }) || null
+    );
+  }, [transactions, ticketRef, editingTransaction]);
 
   // Formulaire
   const [formData, setFormData] = useState({
@@ -418,15 +446,16 @@ function Transactions() {
     }
 
     try {
+      const fallbackTime = formData.time || new Date().toTimeString().slice(0, 5);
       const transactionData = {
         date: formData.date,
-        time: formData.time || null,
+        time: fallbackTime,
         type: formData.type,
         operator: formData.operator,
-        platform: formData.platform || formData.support || null,
+        platform: formData.platform || formData.support || "App mobile",
         amount_fcfa: formData.amount_fcfa,
         phone: formData.phone.trim() || null,
-        payment_operator: formData.payment_operator || null,
+        payment_operator: formData.payment_operator || "Non spécifié",
         proof_status: formData.proof_status,
         proof_attachment_url: formData.proof_attachment_url || null,
         ...writeRecordReference(ticketRef, formData.notes),
@@ -452,11 +481,26 @@ function Transactions() {
           validation_status: isAdmin ? "valide" : "en_attente",
         };
 
-        const { error } = await supabase
+        const insertQuery = supabase
           .from("transactions")
           .insert([newTransactionData]);
+        const { data: insertedTx, error } =
+          typeof (insertQuery as any)?.select === "function"
+            ? await (insertQuery as any).select("id").single()
+            : await insertQuery;
 
         if (error) throw error;
+
+        void dispatchAppNotification({
+          eventType: "operation_created",
+          operationType: "transactions",
+          operationId: insertedTx?.id,
+          status: newTransactionData.validation_status as any,
+          operator: formData.operator,
+          amountFcfa: Number(formData.amount_fcfa) || 0,
+          reference: newTransactionData.reference || undefined,
+          authorId: user?.id,
+        });
 
         toast.success(
           !isAdmin
@@ -470,8 +514,34 @@ function Transactions() {
       setEditingTransaction(null);
       await refetch();
     } catch (error: any) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors de l'enregistrement");
+      const code = String(error?.code || "");
+      const rawMsg =
+        error?.message ||
+        error?.details ||
+        error?.hint ||
+        "Une erreur inattendue est survenue";
+      console.error("Erreur lors de l'enregistrement de la transaction:", {
+        code,
+        message: rawMsg,
+        details: error?.details,
+        hint: error?.hint,
+      });
+
+      let friendly = "Erreur lors de l'enregistrement de la transaction";
+      if (code === "23505") {
+        friendly = `Cette référence de transaction (${ticketRef.trim()}) existe déjà en base.`;
+      } else if (
+        code === "42501" ||
+        rawMsg.toLowerCase().includes("row-level security")
+      ) {
+        friendly =
+          "Droits insuffisants ou session expirée. Reconnectez-vous puis réessayez.";
+      } else if (code === "23514" || code === "23502") {
+        friendly = `Valeur invalide ou champ obligatoire manquant (${rawMsg}).`;
+      } else if (rawMsg && rawMsg !== "Une erreur inattendue est survenue") {
+        friendly = `Erreur lors de l'enregistrement : ${rawMsg}`;
+      }
+      toast.error(friendly);
     }
   }
 
@@ -1413,16 +1483,17 @@ function Transactions() {
                     Montant F CFA *
                   </label>
                   <Input
-                    type="number"
-                    value={formData.amount_fcfa || ""}
+                    type="text"
+                    inputMode="numeric"
+                    value={formatAmountInput(formData.amount_fcfa)}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        amount_fcfa: parseFloat(e.target.value) || 0,
+                        amount_fcfa: parseAmountInput(e.target.value),
                       })
                     }
                     placeholder="0"
-                    className="bg-white border-[#D8E6DB] font-semibold"
+                    className="bg-white border-[#D8E6DB] font-semibold tabular-nums"
                   />
                 </div>
               </div>
@@ -1442,9 +1513,12 @@ function Transactions() {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
+                      setFormData({
+                        ...formData,
+                        phone: formatPhoneNumber(e.target.value),
+                      })
                     }
-                    placeholder="Ex: 70123456"
+                    placeholder="Ex: 70 00 00 00"
                     className="bg-white border-[#D8E6DB]"
                   />
                 </div>
@@ -1471,6 +1545,29 @@ function Transactions() {
                   <div className="flex items-center gap-2 text-xs text-[#006B2D] font-bold bg-[#006B2D]/10 p-2 rounded-lg border border-[#006B2D]/20">
                     <CheckCircle2 className="h-4 w-4 shrink-0 text-[#006B2D]" />
                     <span>{parsedRef.message}</span>
+                  </div>
+                )}
+                {existingMatchingTx && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#7A5B00] font-semibold bg-[#FFF8DF] p-2.5 rounded-lg border border-[#EFE0A8]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-[#9A7400]" />
+                      <span>
+                        Cette référence existe déjà sur une opération du{" "}
+                        {new Date(`${existingMatchingTx.date}T00:00:00`).toLocaleDateString("fr-FR")}{" "}
+                        ({existingMatchingTx.operator}).
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[11px] bg-white border-[#EFE0A8] text-[#7A5B00] hover:bg-[#FFFBEB]"
+                      onClick={() =>
+                        handleTicketRefChange(`${ticketRef.trim()} (#2)`)
+                      }
+                    >
+                      Différencier (#2)
+                    </Button>
                   </div>
                 )}
               </div>

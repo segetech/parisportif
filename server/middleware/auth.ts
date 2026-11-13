@@ -47,7 +47,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     if (
       mustChangePassword &&
       !allowedPath.includes("/change-password") &&
+      !allowedPath.includes("/set-initial-password") &&
       !allowedPath.includes("/finalize-password-change") &&
+      !allowedPath.includes("/keep-current-password") &&
       !allowedPath.includes("/logout")
     ) {
       return res.status(403).json({

@@ -8,6 +8,7 @@ import {
   invalidateRelatedQueries,
 } from "@/lib/queryClient";
 import { auditService, type AuditEntry } from "@/lib/audit";
+import { dispatchAppNotification } from "@/lib/notification-navigation";
 import {
   computeDashboardStats,
   computeWeeklyAnomalyTrend,
@@ -449,8 +450,18 @@ export function useCreateBet() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       invalidateRelatedQueries("bets");
+      if (data?.id) {
+        dispatchAppNotification({
+          eventType: "operation_created",
+          operationType: "bets",
+          operationId: data.id,
+          operator: data.operator,
+          amountFcfa: data.amount_fcfa,
+          reference: data.reference,
+        });
+      }
     },
   });
 }
@@ -539,8 +550,18 @@ export function useCreateTransaction() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       invalidateRelatedQueries("transactions");
+      if (data?.id) {
+        dispatchAppNotification({
+          eventType: "operation_created",
+          operationType: "transactions",
+          operationId: data.id,
+          operator: data.operator,
+          amountFcfa: data.amount_fcfa,
+          reference: data.reference,
+        });
+      }
     },
   });
 }
@@ -613,8 +634,17 @@ export function useCreateVenue() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       invalidateRelatedQueries("venues");
+      if (data?.id) {
+        dispatchAppNotification({
+          eventType: "operation_created",
+          operationType: "venues",
+          operationId: data.id,
+          operator: data.operator || data.quartier || "Site",
+          notes: data.address,
+        });
+      }
     },
   });
 }
@@ -762,7 +792,7 @@ export function useDeleteLookupItem() {
 // ============================================================================
 // 6. VALIDATION DES OPÉRATIONS
 // ============================================================================
-export function useValidationOperations(tab: "bets" | "transactions", filterStatus: string) {
+export function useValidationOperations(tab: "bets" | "transactions" | "venues", filterStatus: string) {
   const { user } = useAuth();
   const userId = user?.id;
 
@@ -771,8 +801,18 @@ export function useValidationOperations(tab: "bets" | "transactions", filterStat
     queryFn: async () => {
       let query = supabase.from(tab).select("*").order("created_at", { ascending: false });
 
-      if (filterStatus !== "all") {
+      if (filterStatus !== "all" && tab !== "venues") {
         query = query.eq("validation_status", filterStatus);
+      } else if (filterStatus !== "all" && tab === "venues") {
+        // venues may also have validation_status; filter safely in JS if column absent
+        const { data, error } = await query;
+        if (error) {
+          if (isAuthError(error)) throw error;
+          throw error;
+        }
+        return (data || []).filter((item: any) =>
+          item.validation_status ? item.validation_status === filterStatus : filterStatus === "en_attente"
+        );
       }
 
       const { data, error } = await query;
@@ -797,7 +837,7 @@ export function useValidateOperation() {
       notes,
       userId,
     }: {
-      type: "bets" | "transactions";
+      type: "bets" | "transactions" | "venues";
       id: string;
       status: "valide" | "refuse";
       notes?: string;
@@ -819,15 +859,29 @@ export function useValidateOperation() {
           operation_type: type,
           operation_id: id,
           action: status === "valide" ? "validé" : "refusé",
-          created_by: userId,
+          modified_by: userId,
+          new_status: status,
           comment: notes,
         });
       } catch {}
 
-      return data;
+      return { data, type, status, notes };
     },
-    onSuccess: () => {
+    onSuccess: ({ data, type, status, notes }) => {
       invalidateRelatedQueries("validation");
+      if (data?.id) {
+        dispatchAppNotification({
+          eventType: "operation_reviewed",
+          operationType: type,
+          operationId: data.id,
+          status,
+          operator: data.operator || data.quartier || "Opérateur",
+          amountFcfa: data.amount_fcfa,
+          reference: data.reference,
+          authorId: data.created_by,
+          notes,
+        });
+      }
     },
   });
 }
@@ -972,8 +1026,18 @@ export function useCreateIllegalBet() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       invalidateRelatedQueries("illegal");
+      if (data?.id) {
+        dispatchAppNotification({
+          eventType: "illegal_reported",
+          operationType: "illegal_bets",
+          operationId: data.id,
+          operator: data.operator,
+          amountFcfa: data.amount_fcfa,
+          reference: data.reference,
+        });
+      }
     },
   });
 }
@@ -985,8 +1049,18 @@ export function useCreateIllegalTransaction() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       invalidateRelatedQueries("illegal");
+      if (data?.id) {
+        dispatchAppNotification({
+          eventType: "illegal_reported",
+          operationType: "illegal_tx",
+          operationId: data.id,
+          operator: data.operator,
+          amountFcfa: data.amount_fcfa,
+          reference: data.reference,
+        });
+      }
     },
   });
 }

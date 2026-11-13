@@ -1,6 +1,12 @@
-import { useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Pencil, Clock, AlertTriangle, Check } from "lucide-react";
+
+const RecordFormReadOnlyContext = createContext(false);
+
+export function useRecordFormReadOnly() {
+  return useContext(RecordFormReadOnlyContext);
+}
 
 /** Shared explicit consultation/editing flow for existing record dialogs with draft protection. */
 export function RecordForm({
@@ -155,10 +161,12 @@ export function RecordForm({
           }
         }}
       >
-        {children}
+        <RecordFormReadOnlyContext.Provider value={readOnly}>
+          {children}
+        </RecordFormReadOnlyContext.Provider>
       </fieldset>
 
-      <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+      <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-2 border-t bg-background pt-3 pb-1">
         <Button
           type="button"
           variant="outline"

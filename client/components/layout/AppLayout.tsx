@@ -1,4 +1,4 @@
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useMemo, useState, useEffect } from "react";
 import {
   LayoutDashboard,
@@ -22,6 +22,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DatePickerCustom } from "@/components/ui/date-picker-custom";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -35,10 +36,12 @@ import { useSettings } from "@/lib/settings";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { computePeriod, getDefaultPeriod, PeriodState } from "@/lib/period";
 import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from "@/components/ui/popover";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { UserAvatarMenu } from "./UserAvatarMenu";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +53,7 @@ interface NavItem {
   adminOnly?: boolean;
   controllerOrAdmin?: boolean;
   requiresExportPermission?: boolean;
+  requiresVenuePermission?: boolean;
 }
 
 interface NavSection {
@@ -69,11 +73,11 @@ export default function AppLayout({
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<PeriodState>(() => {
-    const params = new URLSearchParams(location.search);
-    const s = params.get("start") || "";
-    const e = params.get("end") || "";
+    const s = searchParams.get("start") || "";
+    const e = searchParams.get("end") || "";
     if (!s && !e) return getDefaultPeriod();
     for (const k of ["today", "week", "month"] as const) {
       const candidate = computePeriod(k);
@@ -81,6 +85,23 @@ export default function AppLayout({
     }
     return { kind: "range", start: s, end: e };
   });
+
+  useEffect(() => {
+    const s = searchParams.get("start") || "";
+    const e = searchParams.get("end") || "";
+    if (!s && !e) {
+      setPeriod(getDefaultPeriod());
+      return;
+    }
+    for (const k of ["today", "week", "month"] as const) {
+      const candidate = computePeriod(k);
+      if (candidate.start === s && candidate.end === e) {
+        setPeriod(candidate);
+        return;
+      }
+    }
+    setPeriod({ kind: "range", start: s, end: e });
+  }, [searchParams]);
 
   // État du sidebar rétractable
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -106,6 +127,7 @@ export default function AppLayout({
   const isController = user?.role === "CONTROLEUR";
   const { settings } = useSettings();
   const canExport = isAdmin || isController || settings.agentCanExport;
+  const canManageVenues = isAdmin || isController || settings.agentCanManageVenues;
 
   const navigationSections: NavSection[] = useMemo(() => {
     const rawSections: NavSection[] = [
@@ -131,6 +153,7 @@ export default function AppLayout({
             to: "/venues",
             label: "Sites de test",
             icon: <Building2 className="h-4 w-4 shrink-0" />,
+            requiresVenuePermission: true,
           },
           {
             to: "/import-excel",
@@ -218,11 +241,12 @@ export default function AppLayout({
           if (item.adminOnly && !isAdmin) return false;
           if (item.controllerOrAdmin && !isAdmin && !isController) return false;
           if (item.requiresExportPermission && !canExport) return false;
+          if (item.requiresVenuePermission && !canManageVenues) return false;
           return true;
         }),
       }))
       .filter((section) => section.items.length > 0);
-  }, [isAdmin, isController, canExport]);
+  }, [isAdmin, isController, canExport, canManageVenues]);
 
   // Titre dynamique de la page courante
   const currentPageTitle = useMemo(() => {
@@ -258,12 +282,12 @@ export default function AppLayout({
   function applyPeriodToRoute(p: PeriodState) {
     setPeriod(p);
     if (!supportsHeaderPeriod) return;
-    const params = new URLSearchParams(location.search);
+    const params = new URLSearchParams(searchParams);
     if (p.start) params.set("start", p.start);
     else params.delete("start");
     if (p.end) params.set("end", p.end);
     else params.delete("end");
-    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+    setSearchParams(params, { replace: true });
   }
 
   function handlePeriodChange(v: string) {
@@ -446,58 +470,80 @@ export default function AppLayout({
 
             {/* Sélecteur temporel */}
             {supportsHeaderPeriod && (
-              <Popover open={rangePopoverOpen} onOpenChange={setRangePopoverOpen}>
-                <PopoverAnchor asChild>
-                  <div className="flex items-center">
-                    <Select value={period.kind} onValueChange={handlePeriodChange}>
-                      <SelectTrigger className="h-9 w-[135px] sm:w-[155px] text-xs bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] rounded-xl font-medium">
-                        <SelectValue placeholder="Période" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white border-[#D8E6DB] text-[#17251C]">
-                        <SelectItem value="all">Toutes périodes</SelectItem>
-                        <SelectItem value="today">Aujourd’hui</SelectItem>
-                        <SelectItem value="week">Semaine</SelectItem>
-                        <SelectItem value="month">Mois</SelectItem>
-                        <SelectItem value="range">Intervalle…</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </PopoverAnchor>
-                <PopoverContent className="w-72 p-3 bg-white border-[#D8E6DB] space-y-3" align="end">
-                  <div className="text-xs font-bold text-[#17251C]">
-                    Intervalle personnalisé
-                  </div>
-                  <div className="grid gap-2">
-                    <label className="grid gap-1 text-[11px] font-semibold text-[#556B5C]">
-                      <span>Du</span>
-                      <Input
-                        type="date"
-                        value={rangeStart}
-                        onChange={(e) => setRangeStart(e.target.value)}
-                        className="h-9 text-xs bg-[#F5F8F5] border-[#D8E6DB]"
-                      />
-                    </label>
-                    <label className="grid gap-1 text-[11px] font-semibold text-[#556B5C]">
-                      <span>Au</span>
-                      <Input
-                        type="date"
-                        value={rangeEnd}
-                        onChange={(e) => setRangeEnd(e.target.value)}
-                        className="h-9 text-xs bg-[#F5F8F5] border-[#D8E6DB]"
-                      />
-                    </label>
-                  </div>
+              <div className="flex items-center gap-1.5">
+                <Select value={period.kind} onValueChange={handlePeriodChange}>
+                  <SelectTrigger className="h-9 w-[135px] sm:w-[155px] text-xs bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] rounded-xl font-medium">
+                    <SelectValue placeholder="Période" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-[#D8E6DB] text-[#17251C]">
+                    <SelectItem value="all">Toutes périodes</SelectItem>
+                    <SelectItem value="today">Aujourd’hui</SelectItem>
+                    <SelectItem value="week">Semaine</SelectItem>
+                    <SelectItem value="month">Mois</SelectItem>
+                    <SelectItem value="range">Intervalle…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {period.kind === "range" && period.start && period.end && (
                   <Button
                     type="button"
+                    variant="outline"
                     size="sm"
-                    onClick={handleApplyCustomRange}
-                    disabled={!rangeStart || !rangeEnd || rangeStart > rangeEnd}
-                    className="w-full h-9 bg-[#006B2D] hover:bg-[#004D20] text-white text-xs font-bold"
+                    onClick={() => {
+                      setRangeStart(period.start);
+                      setRangeEnd(period.end);
+                      setRangePopoverOpen(true);
+                    }}
+                    className="hidden lg:inline-flex h-9 px-2.5 text-[11px] font-semibold border-[#D8E6DB] bg-[#F5F8F5] text-[#006B2D] rounded-xl"
                   >
-                    Appliquer la période
+                    {period.start} → {period.end}
                   </Button>
-                </PopoverContent>
-              </Popover>
+                )}
+
+                <Dialog open={rangePopoverOpen} onOpenChange={setRangePopoverOpen}>
+                  <DialogContent className="sm:max-w-sm bg-white border-[#D8E6DB]">
+                    <DialogHeader>
+                      <DialogTitle className="text-base font-bold text-[#17251C]">
+                        Intervalle personnalisé
+                      </DialogTitle>
+                      <DialogDescription className="text-xs text-[#556B5C]">
+                        Choisissez la date de début et la date de fin pour filtrer la page.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-3 py-2">
+                      <DatePickerCustom
+                        label="Du"
+                        value={rangeStart}
+                        onChange={(val) => setRangeStart(val)}
+                        showPresets={false}
+                      />
+                      <DatePickerCustom
+                        label="Au"
+                        value={rangeEnd}
+                        onChange={(val) => setRangeEnd(val)}
+                        showPresets={false}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setRangePopoverOpen(false)}
+                        className="h-9 text-xs"
+                      >
+                        Annuler
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={handleApplyCustomRange}
+                        disabled={!rangeStart || !rangeEnd || rangeStart > rangeEnd}
+                        className="h-9 bg-[#006B2D] hover:bg-[#004D20] text-white text-xs font-bold"
+                      >
+                        Appliquer la période
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             )}
 
             {/* Action principale CTA si fournie par la page */}
@@ -530,66 +576,84 @@ export default function AppLayout({
         {/* ========================================================================= */}
         <nav
           aria-label="Navigation mobile principale"
-          className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#D8E6DB] md:hidden px-2 py-1.5 flex items-center justify-around safe-area-pb"
+          className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-[#D8E6DB] md:hidden px-2 py-1.5 flex items-center justify-around safe-area-pb"
         >
           <NavLink
             to="/"
             className={({ isActive }) =>
               cn(
-                "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
+                "flex flex-col items-center justify-center flex-1 min-w-0 min-h-[48px] px-1.5 py-1 rounded-xl text-[10px] leading-tight font-bold transition-colors text-center",
                 isActive
-                  ? "text-[#006B2D] scale-105"
+                  ? "text-[#006B2D]"
                   : "text-[#556B5C] hover:text-[#17251C]"
               )
             }
           >
-            <LayoutDashboard className="h-5 w-5 mb-0.5" />
-            <span>Accueil</span>
+            {({ isActive }) => (
+              <>
+                <span
+                  className={cn(
+                    "flex items-center justify-center h-7 w-11 rounded-full mb-0.5 transition-colors",
+                    isActive ? "bg-[#EBF7EE] text-[#006B2D]" : "bg-transparent"
+                  )}
+                >
+                  <LayoutDashboard className="h-4.5 w-4.5" />
+                </span>
+                <span className="truncate w-full">Tableau de bord</span>
+              </>
+            )}
           </NavLink>
 
           <NavLink
             to="/transactions"
             className={({ isActive }) =>
               cn(
-                "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
+                "flex flex-col items-center justify-center flex-1 min-w-0 min-h-[48px] px-1.5 py-1 rounded-xl text-[10px] leading-tight font-bold transition-colors text-center",
                 isActive
-                  ? "text-[#006B2D] scale-105"
+                  ? "text-[#006B2D]"
                   : "text-[#556B5C] hover:text-[#17251C]"
               )
             }
           >
-            <CreditCard className="h-5 w-5 mb-0.5" />
-            <span>Flux</span>
+            {({ isActive }) => (
+              <>
+                <span
+                  className={cn(
+                    "flex items-center justify-center h-7 w-11 rounded-full mb-0.5 transition-colors",
+                    isActive ? "bg-[#EBF7EE] text-[#006B2D]" : "bg-transparent"
+                  )}
+                >
+                  <CreditCard className="h-4.5 w-4.5" />
+                </span>
+                <span className="truncate w-full">Dépôts &amp; Retraits</span>
+              </>
+            )}
           </NavLink>
 
           <NavLink
             to="/tests"
             className={({ isActive }) =>
               cn(
-                "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
+                "flex flex-col items-center justify-center flex-1 min-w-0 min-h-[48px] px-1.5 py-1 rounded-xl text-[10px] leading-tight font-bold transition-colors text-center",
                 isActive
-                  ? "text-[#006B2D] scale-105"
+                  ? "text-[#006B2D]"
                   : "text-[#556B5C] hover:text-[#17251C]"
               )
             }
           >
-            <ClipboardCheck className="h-5 w-5 mb-0.5" />
-            <span>Tests</span>
-          </NavLink>
-
-          <NavLink
-            to="/venues"
-            className={({ isActive }) =>
-              cn(
-                "flex flex-col items-center justify-center min-w-[56px] min-h-[44px] rounded-xl text-[10px] font-bold transition-all",
-                isActive
-                  ? "text-[#006B2D] scale-105"
-                  : "text-[#556B5C] hover:text-[#17251C]"
-              )
-            }
-          >
-            <Building2 className="h-5 w-5 mb-0.5" />
-            <span>Sites</span>
+            {({ isActive }) => (
+              <>
+                <span
+                  className={cn(
+                    "flex items-center justify-center h-7 w-11 rounded-full mb-0.5 transition-colors",
+                    isActive ? "bg-[#EBF7EE] text-[#006B2D]" : "bg-transparent"
+                  )}
+                >
+                  <ClipboardCheck className="h-4.5 w-4.5" />
+                </span>
+                <span className="truncate w-full">Tests</span>
+              </>
+            )}
           </NavLink>
 
           <button

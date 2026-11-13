@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import { RequireAuth, RequireRole, useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { DatePickerCustom } from "@/components/ui/date-picker-custom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -632,35 +633,25 @@ function MatchingContent() {
           {(period === "range" || startDate || endDate || operatorFilter || minScore > 0 || searchQuery) && (
             <div className="flex flex-wrap items-end justify-between gap-3 pt-2 border-t border-[#EEF4EF]">
               {period === "range" ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full sm:w-auto">
-                  <div>
-                    <label className="text-xs font-semibold text-[#556B5C] block mb-1">
-                      Du
-                    </label>
-                    <Input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => {
-                        setStartDate(e.target.value);
-                        setPage(1);
-                      }}
-                      className="min-h-11 bg-white border-[#D8E6DB]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-[#556B5C] block mb-1">
-                      Au
-                    </label>
-                    <Input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => {
-                        setEndDate(e.target.value);
-                        setPage(1);
-                      }}
-                      className="min-h-11 bg-white border-[#D8E6DB]"
-                    />
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full sm:w-auto sm:min-w-[440px]">
+                  <DatePickerCustom
+                    label="Du"
+                    value={startDate}
+                    onChange={(val) => {
+                      setStartDate(val);
+                      setPage(1);
+                    }}
+                    showPresets={false}
+                  />
+                  <DatePickerCustom
+                    label="Au"
+                    value={endDate}
+                    onChange={(val) => {
+                      setEndDate(val);
+                      setPage(1);
+                    }}
+                    showPresets={false}
+                  />
                 </div>
               ) : (
                 <div className="text-xs text-[#556B5C]">

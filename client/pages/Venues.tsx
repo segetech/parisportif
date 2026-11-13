@@ -1,4 +1,5 @@
 import { testCatalogLabel } from "@/lib/test-vocabulary";
+import { formatPhoneNumber } from "@/lib/utils";
 import { RecordForm } from "@/components/common/RecordForm";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
@@ -45,6 +46,7 @@ import {
   useDeleteVenue,
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
+import { dispatchAppNotification } from "@/lib/notification-navigation";
 
 interface Venue {
   id: string;
@@ -263,8 +265,8 @@ function Venues() {
     }
 
     try {
-      const isAgent = user?.role === "AGENT";
-      const venueData = {
+      const isAdmin = user?.role === "ADMIN";
+      const baseVenueData = {
         ...formData,
         bet_type: primaryGame,
         games: selectedGames.length > 0 ? selectedGames : [primaryGame],
@@ -273,24 +275,27 @@ function Venues() {
         gps_lat: formData.gps_lat || null,
         gps_lng: formData.gps_lng || null,
         notes: formData.notes || null,
-        created_by: user?.id,
-        validation_status: isAgent ? "en_attente" : "valide",
       };
 
       if (editing) {
         const { error } = await supabase
           .from("venues")
-          .update(venueData)
+          .update(baseVenueData)
           .eq("id", editing.id)
           .select("id")
           .single();
 
         if (error) throw error;
-        toast.success("Site mise à jour avec succès");
+        toast.success("Site mis à jour avec succès");
       } else {
+        const newVenueData = {
+          ...baseVenueData,
+          created_by: user?.id,
+          validation_status: isAdmin ? "valide" : "en_attente",
+        };
         const { data: newV, error } = await supabase
           .from("venues")
-          .insert([venueData])
+          .insert([newVenueData])
           .select("id")
           .single();
 
@@ -306,10 +311,20 @@ function Venues() {
           await supabase.from("venue_games").insert(gameRecords);
         }
 
+        void dispatchAppNotification({
+          eventType: "operation_created",
+          operationType: "venues",
+          operationId: newV?.id,
+          status: newVenueData.validation_status as any,
+          operator: formData.operator,
+          notes: `${formData.quartier} - ${formData.address}`,
+          authorId: user?.id,
+        });
+
         toast.success(
-          isAgent
-            ? "Site créée avec succès. En attente de validation par le contrôleur."
-            : "Site créée avec succès",
+          !isAdmin
+            ? "Site créé avec succès. En attente de validation par le contrôleur."
+            : "Site créé avec succès",
         );
       }
 
@@ -317,8 +332,14 @@ function Venues() {
       setDialogOpen(false);
       await refetch();
     } catch (error: any) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors de l'enregistrement");
+      const rawMsg =
+        error?.message || error?.details || error?.hint || "Erreur lors de l'enregistrement";
+      console.error("Erreur lors de l'enregistrement du site:", error);
+      toast.error(
+        rawMsg && rawMsg !== "Erreur lors de l'enregistrement"
+          ? `Erreur lors de l'enregistrement : ${rawMsg}`
+          : "Erreur lors de l'enregistrement",
+      );
     }
   }
 
@@ -797,9 +818,12 @@ function Venues() {
                   type="tel"
                   value={formData.contact_phone}
                   onChange={(e) =>
-                    setFormData({ ...formData, contact_phone: e.target.value })
+                    setFormData({
+                      ...formData,
+                      contact_phone: formatPhoneNumber(e.target.value),
+                    })
                   }
-                  placeholder="Ex: 0701020304"
+                  placeholder="Ex: 70 00 00 00"
                   className="bg-white border-[#D8E6DB]"
                 />
               </div>

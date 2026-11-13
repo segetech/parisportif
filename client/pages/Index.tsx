@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
+import { useOptionalSettings } from "@/lib/settings";
 import { useDashboardData, DashboardStats } from "@/hooks/use-data-queries";
 import {
   TrendingUp,
@@ -133,6 +134,8 @@ function Dashboard() {
   const isAdmin = role === "ADMIN";
   const isController = role === "CONTROLEUR";
   const isAgent = role === "AGENT";
+  const settings = useOptionalSettings();
+  const canSeeVenues = isAdmin || isController || settings.agentCanManageVenues;
 
   const { data: dashboardData, isLoading, isError, error, isFetching, refetch } = useDashboardData(filterStart, filterEnd);
 
@@ -480,13 +483,13 @@ function Dashboard() {
           </div>
 
           {/* Actions Rapides pour l'Agent */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className={`grid grid-cols-1 gap-3 ${canSeeVenues ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
             <Link
               to="/tests?new=1"
-              className="p-4 rounded-xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group shadow-xs"
+              className="p-4 rounded-2xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group"
             >
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-[#006B2D] text-white flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="h-11 w-11 rounded-xl bg-[#006B2D] text-white flex items-center justify-center shrink-0">
                   <Plus className="h-5 w-5" />
                 </div>
                 <div>
@@ -494,15 +497,15 @@ function Dashboard() {
                   <div className="text-xs text-[#556B5C]">Saisie avec contrôle des justificatifs</div>
                 </div>
               </div>
-              <ArrowRight className="h-4 w-4 text-[#006B2D] group-hover:translate-x-1 transition-transform" />
+              <ArrowRight className="h-4 w-4 text-[#006B2D] group-hover:translate-x-1 transition-transform shrink-0" />
             </Link>
 
             <Link
               to="/transactions?new=1"
-              className="p-4 rounded-xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group shadow-xs"
+              className="p-4 rounded-2xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group"
             >
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-[#004D20] text-white flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="h-11 w-11 rounded-xl bg-[#004D20] text-white flex items-center justify-center shrink-0">
                   <Coins className="h-5 w-5" />
                 </div>
                 <div>
@@ -510,24 +513,26 @@ function Dashboard() {
                   <div className="text-xs text-[#556B5C]">Flux de dépôts et retraits caisse</div>
                 </div>
               </div>
-              <ArrowRight className="h-4 w-4 text-[#006B2D] group-hover:translate-x-1 transition-transform" />
+              <ArrowRight className="h-4 w-4 text-[#006B2D] group-hover:translate-x-1 transition-transform shrink-0" />
             </Link>
 
-            <Link
-              to="/venues"
-              className="p-4 rounded-xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group shadow-xs"
-            >
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-[#FFD000] text-[#17251C] flex items-center justify-center shrink-0">
-                  <Building2 className="h-5 w-5" />
+            {canSeeVenues && (
+              <Link
+                to="/venues"
+                className="p-4 rounded-2xl border border-[#D8E6DB] bg-white hover:border-[#006B2D] transition-all flex items-center justify-between group"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="h-11 w-11 rounded-xl bg-[#FFD000] text-[#17251C] flex items-center justify-center shrink-0">
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-[#17251C]">Consulter les Sites</div>
+                    <div className="text-xs text-[#556B5C]">Points de vente et opérateurs agréés</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-sm font-bold text-[#17251C]">Consulter les Sites</div>
-                  <div className="text-xs text-[#556B5C]">Points de vente et opérateurs agréés</div>
-                </div>
-              </div>
-              <ArrowRight className="h-4 w-4 text-[#006B2D] group-hover:translate-x-1 transition-transform" />
-            </Link>
+                <ArrowRight className="h-4 w-4 text-[#006B2D] group-hover:translate-x-1 transition-transform shrink-0" />
+              </Link>
+            )}
           </div>
         </div>
       )}

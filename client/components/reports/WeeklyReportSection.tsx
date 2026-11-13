@@ -38,6 +38,7 @@ import {
   resolveReportOperators,
   buildDailyBetMatrix,
   buildDailyTxMatrix,
+  groupOperationsByOperator,
   exportWeeklyOfficialReport,
 } from "@/lib/weekly-report-export";
 
@@ -152,6 +153,48 @@ export function WeeklyReportSection({
     () => buildDailyTxMatrix(filteredTx, startDate, endDate, reportOperators),
     [filteredTx, startDate, endDate, reportOperators],
   );
+
+  const betGroups = useMemo(
+    () => groupOperationsByOperator(filteredBets, reportOperators),
+    [filteredBets, reportOperators],
+  );
+
+  const txGroups = useMemo(
+    () => groupOperationsByOperator(filteredTx, reportOperators),
+    [filteredTx, reportOperators],
+  );
+
+  const operatorBlockSummaries = useMemo(() => {
+    const betMap = new Map(betGroups.map((g) => [g.meta.key, g]));
+    const txMap = new Map(txGroups.map((g) => [g.meta.key, g]));
+    return reportOperators.map((op) => {
+      const bItems = betMap.get(op.key)?.items ?? [];
+      const tItems = txMap.get(op.key)?.items ?? [];
+      const betTotalFcfa = bItems.reduce(
+        (sum, b: any) => sum + (Number(b.amount_fcfa) || 0),
+        0,
+      );
+      let depotTotalFcfa = 0;
+      let retraitTotalFcfa = 0;
+      for (const tx of tItems) {
+        const amt = Number((tx as any).amount_fcfa) || 0;
+        const typeStr = String((tx as any).type || "").toLowerCase();
+        if (typeStr.includes("retrait")) {
+          retraitTotalFcfa += amt;
+        } else {
+          depotTotalFcfa += amt;
+        }
+      }
+      return {
+        meta: op,
+        betCount: bItems.length,
+        betTotalFcfa,
+        txCount: tItems.length,
+        depotTotalFcfa,
+        retraitTotalFcfa,
+      };
+    });
+  }, [betGroups, txGroups, reportOperators]);
 
   const betTotals = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -371,6 +414,82 @@ export function WeeklyReportSection({
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Aperçu du classement par blocs d'opérateurs */}
+      <div className="bg-white rounded-2xl border border-[#D8E6DB] shadow-sm overflow-hidden">
+        <div className="px-5 py-3.5 bg-[#F5F8F5] border-b border-[#D8E6DB] flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h4 className="text-sm font-bold text-[#17251C]">
+              Aperçu du classement par blocs d&apos;opérateurs (feuilles PARI &amp; DEPOT-RETRAIT)
+            </h4>
+            <p className="text-xs text-[#556B5C]">
+              Chaque opérateur dispose de son bloc trié chronologiquement (N° 1 → N) avec ses sous-totaux dédiés dans le fichier Excel.
+            </p>
+          </div>
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#006B2D] text-white">
+            {operatorBlockSummaries.length} opérateur(s)
+          </span>
+        </div>
+
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {operatorBlockSummaries.map((block) => (
+            <div
+              key={block.meta.key}
+              className="rounded-xl border border-[#D8E6DB] bg-[#FAFBF9] p-3.5 flex flex-col gap-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-3 h-3 rounded-sm shrink-0 border border-black/15"
+                    style={{ backgroundColor: block.meta.chartColor }}
+                  />
+                  <span className="font-extrabold text-sm text-[#17251C] truncate">
+                    {block.meta.displayName}
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-[#556B5C] bg-white px-2 py-0.5 rounded-md border border-[#D8E6DB]">
+                  {block.betCount > 0 ? `PARI N° 1 → ${block.betCount}` : "0 pari"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg bg-white border border-[#E6EEE8] p-2">
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-[#556B5C]">
+                    TOTAL PARI
+                  </span>
+                  <span className="font-extrabold text-[#17251C] tabular-nums">
+                    {block.betTotalFcfa.toLocaleString("fr-FR")} F
+                  </span>
+                </div>
+                <div className="rounded-lg bg-white border border-[#E6EEE8] p-2">
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-[#556B5C]">
+                    OPÉRATIONS D/R
+                  </span>
+                  <span className="font-extrabold text-[#17251C] tabular-nums">
+                    {block.txCount > 0 ? `N° 1 → ${block.txCount}` : "0 op."}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-[#EAF4ED] border border-[#CFE4D5] p-2">
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-[#004D20]">
+                    TOTAL DÉPÔT
+                  </span>
+                  <span className="font-extrabold text-[#006B2D] tabular-nums">
+                    {block.depotTotalFcfa.toLocaleString("fr-FR")} F
+                  </span>
+                </div>
+                <div className="rounded-lg bg-[#FFF8DF] border border-[#EFE0A8] p-2">
+                  <span className="block text-[10px] font-semibold uppercase tracking-wide text-[#7A5B00]">
+                    TOTAL RETRAIT
+                  </span>
+                  <span className="font-extrabold text-[#7A5B00] tabular-nums">
+                    {block.retraitTotalFcfa.toLocaleString("fr-FR")} F
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

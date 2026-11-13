@@ -11,7 +11,9 @@ import {
 import {
   handleUpdateProfile,
   handleChangePassword,
+  handleSetInitialPassword,
   handleFinalizePasswordChange,
+  handleKeepCurrentPassword,
 } from "./routes/profile";
 import {
   handleCreateUserWithPassword,
@@ -32,6 +34,10 @@ import {
   handleDeleteFile,
 } from "./routes/storage";
 import { handleAiAnalyze, handleAiChat } from "./routes/ai";
+import {
+  handleDispatchNotification,
+  handleSendTestNotificationEmail,
+} from "./routes/notifications";
 import { requireAuth, requireRole } from "./middleware/auth";
 
 export function createServer() {
@@ -63,7 +69,9 @@ export function createServer() {
   // Auth routes (protected)
   app.post("/api/auth/update-profile", requireAuth, handleUpdateProfile);
   app.post("/api/auth/change-password", requireAuth, handleChangePassword);
+  app.post("/api/auth/set-initial-password", requireAuth, handleSetInitialPassword);
   app.post("/api/auth/finalize-password-change", requireAuth, handleFinalizePasswordChange);
+  app.post("/api/auth/keep-current-password", requireAuth, handleKeepCurrentPassword);
 
   // Admin user management routes (strictly restricted to active ADMINs)
   app.post(
@@ -124,6 +132,10 @@ export function createServer() {
     handleListAuditLogs
   );
   app.post("/api/audit", requireAuth, handleCreateAuditLog);
+
+  // Notification dispatch & Resend test email routes
+  app.post("/api/notifications/dispatch", requireAuth, handleDispatchNotification);
+  app.post("/api/notifications/test-email", requireAuth, handleSendTestNotificationEmail);
 
   // Cloudflare R2 Object Storage routes
   app.post("/api/upload", handleUploadWithMulter, handleUploadFile);

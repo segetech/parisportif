@@ -203,3 +203,135 @@ export const handleFinalizePasswordChange: RequestHandler = async (req, res) => 
     res.status(500).json({ error: "Erreur interne lors de la finalisation du mot de passe" });
   }
 };
+
+/**
+ * Permet à l'utilisateur de choisir explicitement de conserver son mot de passe actuel
+ * lors de sa première connexion et de débloquer ses accès métier.
+ */
+export const handleKeepCurrentPassword: RequestHandler = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: "Authentification requise" });
+    }
+
+    const admin = getSupabaseAdmin();
+    const nowIso = new Date().toISOString();
+
+    const { error: authError } = await admin.auth.admin.updateUserById(user.id, {
+      user_metadata: {
+        must_change_password: false,
+        password_confirmed_at: nowIso,
+      },
+    });
+
+    if (authError) {
+      return res.status(400).json({ error: authError.message });
+    }
+
+    const { error: dbError } = await admin
+      .from("users")
+      .update({
+        must_change_password: false,
+        mis_a_jour_le: nowIso,
+      })
+      .eq("id", user.id);
+
+    if (dbError) {
+      console.error("Erreur confirmation mot de passe actuel:", dbError);
+      return res.status(500).json({
+        error: "Impossible de mettre à jour votre profil. Veuillez réessayer.",
+      });
+    }
+
+    await recordAuditLog({
+      action: "edite",
+      entityType: "Profil",
+      entityId: user.id,
+      userId: user.id,
+      details: {
+        action: "confirmation_mot_de_passe_conserve",
+        email: user.email,
+      },
+    });
+
+    res.json({ message: "Mot de passe actuel conservé. Vos accès sont débloqués." });
+  } catch (error: any) {
+    console.error("Keep current password error:", error);
+    res.status(500).json({ error: "Erreur interne lors de la confirmation du mot de passe" });
+  }
+};
+
+/**
+ * Définit le mot de passe personnel lors de la première connexion (must_change_password === true)
+ * sans exiger la saisie du mot de passe temporaire actuel.
+ */
+export const handleSetInitialPassword: RequestHandler = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: "Authentification requise" });
+    }
+
+    if (!user.must_change_password) {
+      return res.status(403).json({
+        error: "Cette action est réservée à la première connexion.",
+      });
+    }
+
+    const { newPassword } = req.body;
+    if (!newPassword || typeof newPassword !== "string" || newPassword.length < 8) {
+      return res.status(400).json({
+        error: "Le nouveau mot de passe doit contenir au moins 8 caractères",
+      });
+    }
+
+    const admin = getSupabaseAdmin();
+    const renewalTimestamp = new Date().toISOString();
+
+    const { error: updateAuthError } = await admin.auth.admin.updateUserById(user.id, {
+      password: newPassword,
+      user_metadata: {
+        must_change_password: false,
+        password_renewed_at: renewalTimestamp,
+      },
+    });
+
+    if (updateAuthError) {
+      return res.status(400).json({ error: updateAuthError.message });
+    }
+
+    const { error: dbError } = await admin
+      .from("users")
+      .update({
+        must_change_password: false,
+        password_changed_at: renewalTimestamp,
+        mis_a_jour_le: renewalTimestamp,
+      })
+      .eq("id", user.id);
+
+    if (dbError) {
+      console.error("Erreur mise à jour must_change_password après définition initiale:", dbError);
+      return res.status(409).json({
+        error: "Votre nouveau mot de passe a été enregistré, mais la validation de votre profil a échoué. Cliquez sur Finaliser sans re-saisir vos mots de passe.",
+        pendingFinalization: true,
+      });
+    }
+
+    await recordAuditLog({
+      action: "edite",
+      entityType: "Profil",
+      entityId: user.id,
+      userId: user.id,
+      details: {
+        action: "changement_mot_de_passe_initial",
+        email: user.email,
+      },
+    });
+
+    res.json({ message: "Mot de passe défini avec succès" });
+  } catch (error: any) {
+    console.error("Set initial password error:", error);
+    res.status(500).json({ error: "Erreur interne lors de la définition du mot de passe" });
+  }
+};

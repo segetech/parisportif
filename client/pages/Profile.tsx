@@ -182,6 +182,8 @@ function ProfileForm() {
   const [showChangePassword, setShowChangePassword] = useState(Boolean(user?.must_change_password));
   const [pendingFinalization, setPendingFinalization] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isKeepingPassword, setIsKeepingPassword] = useState(false);
+  const securitySectionRef = useRef<HTMLDivElement>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -247,13 +249,15 @@ function ProfileForm() {
   async function handlePasswordChange(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!currentPassword || !newPassword || !confirmPassword) {
+    const isInitialSetup = Boolean(user?.must_change_password);
+
+    if ((!isInitialSetup && !currentPassword) || !newPassword || !confirmPassword) {
       toast.error("Tous les champs sont requis");
       return;
     }
 
-    if (newPassword === currentPassword) {
-      toast.error("Le nouveau mot de passe doit être différent du mot de passe temporaire actuel");
+    if (!isInitialSetup && newPassword === currentPassword) {
+      toast.error("Le nouveau mot de passe doit être différent du mot de passe actuel");
       return;
     }
 
@@ -275,16 +279,19 @@ function ProfileForm() {
         throw new Error("Session expirée. Veuillez vous reconnecter.");
       }
 
-      const response = await fetch("/api/auth/change-password", {
+      const endpoint = isInitialSetup
+        ? "/api/auth/set-initial-password"
+        : "/api/auth/change-password";
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          currentPassword,
-          newPassword,
-        }),
+        body: JSON.stringify(
+          isInitialSetup ? { newPassword } : { currentPassword, newPassword }
+        ),
       });
 
       const data = await response.json();
@@ -346,6 +353,48 @@ function ProfileForm() {
     }
   }
 
+  async function handleKeepCurrentPassword() {
+    setIsKeepingPassword(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Session expirée. Veuillez vous reconnecter.");
+
+      const response = await fetch("/api/auth/keep-current-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Impossible de conserver le mot de passe actuel");
+      }
+
+      toast.success("Mot de passe actuel conservé. Vos accès sont débloqués.");
+      updateUser({ must_change_password: false });
+      await refreshUser();
+      setPendingFinalization(false);
+      setShowChangePassword(false);
+      navigate("/", { replace: true });
+    } catch (err: any) {
+      toast.error(err?.message || "Erreur lors de la confirmation du mot de passe");
+    } finally {
+      setIsKeepingPassword(false);
+    }
+  }
+
+  function handleScrollToPasswordForm() {
+    setShowChangePassword(true);
+    setTimeout(() => {
+      securitySectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 60);
+  }
+
   if (!user) {
     return (
       <div className="w-full flex items-center justify-center p-12">
@@ -375,17 +424,46 @@ function ProfileForm() {
         </div>
       </div>
 
-      {/* Alerte renouvellement obligatoire & reprise de finalisation */}
+      {/* Alerte première connexion : choix concret (changer ou conserver) */}
       {user?.must_change_password && !pendingFinalization && (
-        <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 flex items-start gap-3">
-          <Lock className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
-          <div className="text-xs space-y-1">
-            <p className="font-bold text-amber-950 text-sm">
-              Renouvellement obligatoire de votre mot de passe
-            </p>
-            <p className="text-amber-800 leading-relaxed">
-              Pour des raisons de sécurité, votre mot de passe temporaire doit être renouvelé dès votre première connexion. L'accès aux opérations de la plateforme est restreint tant que ce nouveau mot de passe n'a pas été enregistré.
-            </p>
+        <div className="p-4 sm:p-5 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="h-9 w-9 rounded-xl bg-amber-100 border border-amber-200 text-amber-800 flex items-center justify-center shrink-0">
+              <Lock className="h-4.5 w-4.5" />
+            </div>
+            <div className="text-xs space-y-1">
+              <p className="font-bold text-amber-950 text-sm">
+                Première connexion — Choisissez votre mot de passe
+              </p>
+              <p className="text-amber-800 leading-relaxed">
+                Vous pouvez définir un nouveau mot de passe personnel ou conserver votre mot de passe actuel pour accéder immédiatement à la plateforme.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <Button
+              type="button"
+              onClick={handleScrollToPasswordForm}
+              disabled={isKeepingPassword}
+              className="min-h-11 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold text-xs px-4 rounded-xl"
+            >
+              <KeyRound className="h-4 w-4 mr-1.5" />
+              Changer mon mot de passe
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleKeepCurrentPassword}
+              disabled={isKeepingPassword}
+              className="min-h-11 border-amber-300 bg-white hover:bg-amber-100 text-amber-950 font-bold text-xs px-4 rounded-xl"
+            >
+              {isKeepingPassword ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-1.5 text-[#006B2D]" />
+              )}
+              {isKeepingPassword ? "Validation..." : "Garder mon mot de passe actuel"}
+            </Button>
           </div>
         </div>
       )}
@@ -724,7 +802,10 @@ function ProfileForm() {
           </div>
 
           {/* Carte 2 : Sécurité et Mot de passe */}
-          <div className="rounded-2xl border border-[#D8E6DB] bg-white p-6 space-y-5 shadow-xs">
+          <div
+            ref={securitySectionRef}
+            className="rounded-2xl border border-[#D8E6DB] bg-white p-6 space-y-5 shadow-xs scroll-mt-24"
+          >
             <div className="flex items-center justify-between pb-3 border-b border-[#D8E6DB]">
               <div className="flex items-center gap-2.5">
                 <div className="h-8 w-8 rounded-lg bg-[#006B2D]/10 border border-[#006B2D]/20 text-[#006B2D] flex items-center justify-center">
@@ -733,7 +814,9 @@ function ProfileForm() {
                 <div>
                   <h2 className="text-sm font-bold text-[#17251C]">Sécurité du compte</h2>
                   <p className="text-xs text-[#556B5C]">
-                    Changez votre mot de passe pour maintenir la sécurité de vos accès
+                    {user?.must_change_password
+                      ? "Définissez votre nouveau mot de passe personnel (première connexion)"
+                      : "Changez votre mot de passe pour maintenir la sécurité de vos accès"}
                   </p>
                 </div>
               </div>
@@ -768,31 +851,33 @@ function ProfileForm() {
               </div>
             ) : (
               <form onSubmit={handlePasswordChange} className="space-y-4 pt-1">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C]">
-                    Mot de passe actuel *
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type={showCurrentPassword ? "text" : "password"}
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Entrez votre mot de passe actuel"
-                      required
-                      disabled={loading}
-                      className="h-10 bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] placeholder:text-[#556B5C] rounded-xl pr-10 focus:border-[#006B2D]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#556B5C] hover:text-[#17251C] transition-colors"
-                      tabIndex={-1}
-                      disabled={loading}
-                    >
-                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                {!user?.must_change_password && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C]">
+                      Mot de passe actuel *
+                    </label>
+                    <div className="relative">
+                      <Input
+                        type={showCurrentPassword ? "text" : "password"}
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        placeholder="Entrez votre mot de passe actuel"
+                        required
+                        disabled={loading}
+                        className="h-10 bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] placeholder:text-[#556B5C] rounded-xl pr-10 focus:border-[#006B2D]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#556B5C] hover:text-[#17251C] transition-colors"
+                        tabIndex={-1}
+                        disabled={loading}
+                      >
+                        {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -804,7 +889,7 @@ function ProfileForm() {
                         type={showNewPassword ? "text" : "password"}
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="Au moins 6 caractères"
+                        placeholder="Au moins 8 caractères"
                         required
                         disabled={loading}
                         className="h-10 bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C] placeholder:text-[#556B5C] rounded-xl pr-10 focus:border-[#006B2D]"

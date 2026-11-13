@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -23,9 +24,12 @@ import {
   Filter,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useValidationOperations, useValidateOperation } from "@/hooks/use-data-queries";
 import { supabase } from "@/lib/supabase";
+import { dispatchAppNotification } from "@/lib/notification-navigation";
+import { cn } from "@/lib/utils";
 import dayjs from "dayjs";
 
 interface Operation {
@@ -71,8 +75,45 @@ interface Comment {
 
 export default function ValidationPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("bets");
-  const [filterStatus, setFilterStatus] = useState("en_attente");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const initialTab = searchParams.get("tab");
+  const initialStatus = searchParams.get("status");
+  const highlightedId = searchParams.get("id");
+
+  const [activeTab, setActiveTab] = useState(
+    initialTab === "transactions" || initialTab === "venues" || initialTab === "bets"
+      ? initialTab
+      : "bets"
+  );
+  const [filterStatus, setFilterStatus] = useState(
+    initialStatus === "valide" ||
+      initialStatus === "refuse" ||
+      initialStatus === "en_attente" ||
+      initialStatus === "all"
+      ? initialStatus
+      : "en_attente"
+  );
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    const statusParam = searchParams.get("status");
+    if (
+      tabParam === "bets" ||
+      tabParam === "transactions" ||
+      tabParam === "venues"
+    ) {
+      setActiveTab(tabParam);
+    }
+    if (
+      statusParam === "en_attente" ||
+      statusParam === "valide" ||
+      statusParam === "refuse" ||
+      statusParam === "all"
+    ) {
+      setFilterStatus(statusParam);
+    }
+  }, [searchParams]);
 
   const [validationDialog, setValidationDialog] = useState<{
     operation: Operation;
@@ -93,10 +134,18 @@ export default function ValidationPage() {
 
   // Centralisation TanStack React Query pour navigation instantanée
   const { data: operations = [], isLoading, isFetching, refetch } = useValidationOperations(
-    activeTab as "bets" | "transactions",
+    activeTab as "bets" | "transactions" | "venues",
     filterStatus
   );
   const validateMutation = useValidateOperation();
+
+  useEffect(() => {
+    if (!highlightedId || operations.length === 0) return;
+    const el = document.getElementById(`validation-op-${highlightedId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightedId, operations]);
 
   async function loadHistory(operationId: string, type: string) {
     try {
@@ -182,6 +231,38 @@ export default function ValidationPage() {
 
       if (error) throw error;
 
+      // Journal d'historique
+      try {
+        await supabase.from("operation_history").insert({
+          operation_type: type,
+          operation_id: operation.id,
+          action:
+            validationAction === "valide"
+              ? "validé"
+              : validationAction === "refuse"
+                ? "refusé"
+                : "modifié",
+          previous_status: operation.validation_status || null,
+          new_status: updateData.validation_status,
+          modified_by: user.id,
+          comment: validationNotes || null,
+        });
+      } catch {
+        // non-blocking history write
+      }
+
+      // Notification in-app + email Resend pour l'auteur
+      dispatchAppNotification({
+        eventType: "operation_reviewed",
+        operationType: type as "bets" | "transactions" | "venues",
+        operationId: operation.id,
+        status: validationAction,
+        operator: operation.operator || operation.quartier || "Opérateur",
+        amountFcfa: operation.amount_fcfa,
+        authorId: operation.created_by,
+        notes: validationNotes || undefined,
+      });
+
       toast.success(
         validationAction === "valide"
           ? "Opération validée"
@@ -201,16 +282,29 @@ export default function ValidationPage() {
   async function addComment() {
     if (!historyDialog || !user || !newComment.trim()) return;
 
+    const commentText = newComment.trim();
     try {
       const { error } = await supabase.from("operation_comments").insert({
         operation_type: historyDialog.type,
         operation_id: historyDialog.operationId,
         user_id: user.id,
-        comment: newComment.trim(),
+        comment: commentText,
         is_internal: false,
       });
 
       if (error) throw error;
+
+      const targetOp = operations.find((op: Operation) => op.id === historyDialog.operationId);
+      dispatchAppNotification({
+        eventType: "operation_reviewed",
+        operationType: historyDialog.type as "bets" | "transactions" | "venues",
+        operationId: historyDialog.operationId,
+        status: "comment",
+        operator: targetOp?.operator || targetOp?.quartier || "Opérateur",
+        amountFcfa: targetOp?.amount_fcfa,
+        authorId: targetOp?.created_by,
+        notes: commentText,
+      });
 
       setNewComment("");
       loadComments(historyDialog.operationId, historyDialog.type);
@@ -346,18 +440,42 @@ export default function ValidationPage() {
                       </div>
                     ) : (
                       <div className="divide-y">
-                        {operations.map((operation) => (
+                        {operations.map((operation) => {
+                          const isTargeted = Boolean(highlightedId && operation.id === highlightedId);
+                          return (
                           <div
                             key={operation.id}
-                            className="p-4 hover:bg-slate-50 transition-colors"
+                            id={`validation-op-${operation.id}`}
+                            className={cn(
+                              "p-4 hover:bg-slate-50 transition-colors",
+                              isTargeted && "bg-emerald-50 border-l-4 border-[#006B2D]"
+                            )}
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
+                                <div className="flex flex-wrap items-center gap-2 mb-2">
                                   {getStatusBadge(operation.validation_status)}
+                                  {isTargeted && (
+                                    <Badge className="bg-[#006B2D] text-white hover:bg-[#004D20]">
+                                      Ciblé depuis vos notifications
+                                    </Badge>
+                                  )}
                                   <span className="text-sm text-muted-foreground">
                                     {dayjs(operation.created_at).format("DD/MM/YYYY HH:mm")}
                                   </span>
+                                  {isTargeted && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const next = new URLSearchParams(searchParams);
+                                        next.delete("id");
+                                        setSearchParams(next, { replace: true });
+                                      }}
+                                      className="text-xs text-[#006B2D] underline ml-1"
+                                    >
+                                      Effacer le ciblage
+                                    </button>
+                                  )}
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
                                   {operation.operator && (
@@ -422,7 +540,8 @@ export default function ValidationPage() {
                               </div>
                             </div>
                           </div>
-                        ))}
+                        );
+                        })}
                       </div>
                     )}
                   </CardContent>
@@ -440,6 +559,9 @@ export default function ValidationPage() {
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Traiter l'opération</DialogTitle>
+                  <DialogDescription>
+                    Validez, refusez ou corrigez les détails de cette opération avant d'enregistrer votre décision.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   {/* Actions */}
@@ -559,6 +681,9 @@ export default function ValidationPage() {
               <DialogContent className="max-w-3xl max-h-[80vh]">
                 <DialogHeader>
                   <DialogTitle>Historique et commentaires</DialogTitle>
+                  <DialogDescription>
+                    Consultez les changements de statut et échangez des commentaires avec l'équipe.
+                  </DialogDescription>
                 </DialogHeader>
                 <Tabs defaultValue="history" className="w-full">
                   <TabsList className="w-full">

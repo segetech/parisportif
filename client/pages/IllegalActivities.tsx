@@ -1,10 +1,12 @@
 import AppLayout from "@/components/layout/AppLayout";
+import { formatPhoneNumber, formatAmountInput, parseAmountInput } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CreatableSelect } from "@/components/ui/creatable-select";
 import { RequireAuth, RequireRole, useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useIllegalActivities, useLookups, useCreateIllegalBet, useCreateIllegalTransaction } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
@@ -77,7 +79,18 @@ interface IllegalTransaction {
 
 function IllegalActivitiesContent() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<"bets" | "transactions">("bets");
+  const [searchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<"bets" | "transactions">(
+    tabFromUrl === "transactions" ? "transactions" : "bets"
+  );
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "bets" || t === "transactions") {
+      setActiveTab(t);
+    }
+  }, [searchParams]);
 
   // Cache TanStack React Query pour fluidité instantanée
   const { illegalBets = [], illegalTransactions = [], isLoading, isFetching, refetch } = useIllegalActivities();
@@ -558,20 +571,25 @@ function IllegalActivitiesContent() {
             <div>
               <label className="text-xs font-medium">Montant (FCFA) *</label>
               <Input
-                type="number"
-                value={newBet.amount_fcfa || ""}
+                type="text"
+                inputMode="numeric"
+                value={formatAmountInput(newBet.amount_fcfa)}
                 onChange={(e) =>
-                  setNewBet({ ...newBet, amount_fcfa: Number(e.target.value) })
+                  setNewBet({ ...newBet, amount_fcfa: parseAmountInput(e.target.value) })
                 }
                 placeholder="0"
+                className="tabular-nums"
               />
             </div>
             <div>
               <label className="text-xs font-medium">Numéro de téléphone</label>
               <Input
+                type="tel"
                 value={newBet.phone}
-                onChange={(e) => setNewBet({ ...newBet, phone: e.target.value })}
-                placeholder="Ex: +223..."
+                onChange={(e) =>
+                  setNewBet({ ...newBet, phone: formatPhoneNumber(e.target.value) })
+                }
+                placeholder="Ex: 70 00 00 00"
               />
             </div>
             <div>
@@ -698,25 +716,31 @@ function IllegalActivitiesContent() {
             <div>
               <label className="text-xs font-medium">Montant (FCFA) *</label>
               <Input
-                type="number"
-                value={newTransaction.amount_fcfa || ""}
+                type="text"
+                inputMode="numeric"
+                value={formatAmountInput(newTransaction.amount_fcfa)}
                 onChange={(e) =>
                   setNewTransaction({
                     ...newTransaction,
-                    amount_fcfa: Number(e.target.value),
+                    amount_fcfa: parseAmountInput(e.target.value),
                   })
                 }
                 placeholder="0"
+                className="tabular-nums"
               />
             </div>
             <div>
               <label className="text-xs font-medium">Téléphone</label>
               <Input
+                type="tel"
                 value={newTransaction.phone}
                 onChange={(e) =>
-                  setNewTransaction({ ...newTransaction, phone: e.target.value })
+                  setNewTransaction({
+                    ...newTransaction,
+                    phone: formatPhoneNumber(e.target.value),
+                  })
                 }
-                placeholder="Ex: +223..."
+                placeholder="Ex: 70 00 00 00"
               />
             </div>
             <div>

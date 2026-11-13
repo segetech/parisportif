@@ -29,7 +29,7 @@ import {
 } from "@/components/common/TablePaginationFooter";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
-import { cn } from "@/lib/utils";
+import { cn, formatPhoneNumber, formatAmountInput, parseAmountInput } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -88,7 +88,8 @@ import {
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
-import { Sparkles, Building, Zap } from "lucide-react";
+import { dispatchAppNotification } from "@/lib/notification-navigation";
+import { Sparkles, Building, Zap, AlertTriangle } from "lucide-react";
 import { CreatableSelect } from "@/components/ui/creatable-select";
 import { DateTimeRow, DatePickerCustom } from "@/components/ui/date-picker-custom";
 import { ProofUploader } from "@/components/ui/proof-uploader";
@@ -151,26 +152,39 @@ function Tests() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingBet, setEditingBet] = useState<Bet | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const prevUrlDatesRef = useRef<{ start: string; end: string }>({
+    start: "",
+    end: "",
+  });
 
   useEffect(() => {
     const isNew = searchParams.get("new") === "1";
-    const startParam = searchParams.get("start");
-    const endParam = searchParams.get("end");
+    const startParam = searchParams.get("start") || "";
+    const endParam = searchParams.get("end") || "";
     const refParam = searchParams.get("ref");
     const validationParam = searchParams.get("validation");
+    const urlDatesChanged =
+      startParam !== prevUrlDatesRef.current.start ||
+      endParam !== prevUrlDatesRef.current.end;
 
-    if (startParam || endParam || refParam || validationParam) {
+    if (urlDatesChanged) {
+      prevUrlDatesRef.current = { start: startParam, end: endParam };
+    }
+
+    if (urlDatesChanged || refParam || validationParam) {
       setSmartFilter((prev) => ({
         ...prev,
-        ...(startParam || endParam
+        ...(urlDatesChanged
           ? {
-              dateStart: startParam || "",
-              dateEnd: endParam || "",
+              datePreset: startParam || endParam ? "custom" : "all",
+              startDate: startParam,
+              endDate: endParam,
             }
           : {}),
         ...(refParam ? { search: refParam } : {}),
         ...(validationParam ? { validationStatus: validationParam } : {}),
       }));
+      setCurrentPage(1);
     }
 
     if (isNew) {
@@ -227,6 +241,18 @@ function Tests() {
   const [parsedRef, setParsedRef] = useState<ParsedPaymentRef | null>(null);
   const [selectedVenueId, setSelectedVenueId] = useState<string>("");
   const [autoCreateTransaction, setAutoCreateTransaction] = useState(true);
+
+  const existingMatchingBet = useMemo(() => {
+    const trimmed = ticketRef.trim().toLowerCase();
+    if (!trimmed) return null;
+    return (
+      bets.find((b) => {
+        if (editingBet && b.id === editingBet.id) return false;
+        const ref = readRecordReference(b).reference.trim().toLowerCase();
+        return ref === trimmed;
+      }) || null
+    );
+  }, [bets, ticketRef, editingBet]);
 
   // Formulaire
   const [formData, setFormData] = useState({
@@ -394,8 +420,11 @@ function Tests() {
     }
 
     try {
+      const fallbackTime = formData.time || new Date().toTimeString().slice(0, 5);
       const betData = {
         ...formData,
+        time: fallbackTime,
+        support: formData.support || "App mobile",
         amount_won_fcfa: formData.amount_won_fcfa || null,
         ticket_url: formData.ticket_url || null,
         proof_attachment_url: formData.ticket_url || null,
@@ -420,8 +449,23 @@ function Tests() {
           validation_status: isAdmin ? "valide" : "en_attente",
         };
 
-        const { error } = await supabase.from("bets").insert([newBetData]);
+        const insertQuery = supabase.from("bets").insert([newBetData]);
+        const { data: insertedBet, error } =
+          typeof (insertQuery as any)?.select === "function"
+            ? await (insertQuery as any).select("id").single()
+            : await insertQuery;
         if (error) throw error;
+
+        void dispatchAppNotification({
+          eventType: "operation_created",
+          operationType: "bets",
+          operationId: insertedBet?.id,
+          status: newBetData.validation_status as any,
+          operator: formData.operator,
+          amountFcfa: Number(formData.amount_fcfa) || 0,
+          reference: newBetData.reference || undefined,
+          authorId: user?.id,
+        });
 
         // AUTOMATISATION ANTI-DOUBLE SAISIE : Génération automatique du flux financier lié
         if (autoCreateTransaction && formData.amount_fcfa > 0) {
@@ -434,7 +478,7 @@ function Tests() {
 
             const newTransaction = {
               date: formData.date,
-              time: formData.time || null,
+              time: fallbackTime,
               type: transType,
               operator: formData.operator,
               platform: formData.support || "App mobile",
@@ -467,8 +511,35 @@ function Tests() {
       setEditingBet(null);
       await refetch();
     } catch (error: any) {
-      console.error("Erreur:", error);
-      toast.error("Erreur lors de l'enregistrement");
+      const code = String(error?.code || "");
+      const rawMsg =
+        error?.message ||
+        error?.details ||
+        error?.hint ||
+        "Une erreur inattendue est survenue";
+      console.error("Erreur lors de l'enregistrement du test:", {
+        code,
+        message: rawMsg,
+        details: error?.details,
+        hint: error?.hint,
+      });
+
+      let friendly = "Erreur lors de l'enregistrement du test";
+      if (code === "23505") {
+        friendly =
+          "Cette référence est déjà utilisée par un autre enregistrement. Modifiez-la ou utilisez Différencier (#2).";
+      } else if (
+        code === "42501" ||
+        rawMsg.toLowerCase().includes("row-level security")
+      ) {
+        friendly =
+          "Droits insuffisants ou session expirée. Reconnectez-vous puis réessayez.";
+      } else if (code === "23514" || code === "23502") {
+        friendly = `Valeur invalide ou champ obligatoire manquant (${rawMsg}).`;
+      } else if (rawMsg && rawMsg !== "Une erreur inattendue est survenue") {
+        friendly = `Erreur lors de l'enregistrement : ${rawMsg}`;
+      }
+      toast.error(friendly);
     }
   }
 
@@ -486,6 +557,11 @@ function Tests() {
     });
   }, [bets, smartFilter, statusFilter]);
 
+  const visibleBets = useMemo(
+    () => filteredBets.filter((b) => !hiddenOperators.has(b.operator)),
+    [filteredBets, hiddenOperators],
+  );
+
   // Compute High-Density KPI Metrics
   const statsSummary = useMemo(() => {
     let totalMise = 0;
@@ -494,7 +570,7 @@ function Tests() {
     let lostCount = 0;
     let pendingCount = 0;
 
-    filteredBets.forEach((b) => {
+    visibleBets.forEach((b) => {
       totalMise += Number(b.amount_fcfa) || 0;
       const st = (b.status || "").toLowerCase();
       if (st.includes("gagn") || st === "won") {
@@ -509,11 +585,11 @@ function Tests() {
 
     const netPlatformMargin = totalMise - totalGains;
     const winRate =
-      filteredBets.length > 0
-        ? Math.round((wonCount / filteredBets.length) * 100)
+      visibleBets.length > 0
+        ? Math.round((wonCount / visibleBets.length) * 100)
         : 0;
     const avgBet =
-      filteredBets.length > 0 ? Math.round(totalMise / filteredBets.length) : 0;
+      visibleBets.length > 0 ? Math.round(totalMise / visibleBets.length) : 0;
 
     return {
       totalMise,
@@ -525,7 +601,7 @@ function Tests() {
       winRate,
       avgBet,
     };
-  }, [filteredBets]);
+  }, [visibleBets]);
 
   // Grouper les paris par opérateur
   const groupedBets = useMemo(() => {
@@ -556,8 +632,12 @@ function Tests() {
       newHidden.delete(operator);
     } else {
       newHidden.add(operator);
+      if (activeOperator === operator) {
+        setActiveOperator("all");
+      }
     }
     setHiddenOperators(newHidden);
+    setCurrentPage(1);
   };
 
   const activeExportBounds = useMemo(() => {
@@ -993,7 +1073,7 @@ function Tests() {
 
   // Pagination helper for the current active tab
   const currentTabBets =
-    activeOperator === "all" ? filteredBets : groupedBets[activeOperator] || [];
+    activeOperator === "all" ? visibleBets : groupedBets[activeOperator] || [];
   const paginatedBets = paginateItems(
     currentTabBets as Bet[],
     currentPage,
@@ -1426,7 +1506,7 @@ function Tests() {
                 variant="secondary"
                 className="text-[10px] px-1.5 py-0 h-4 bg-[#F5F8F5] text-[#17251C]"
               >
-                {filteredBets.length}
+                {visibleBets.length}
               </Badge>
             </TabsTrigger>
             {Object.keys(groupedBets)
@@ -1774,6 +1854,29 @@ function Tests() {
                     <span>{parsedRef.message}</span>
                   </div>
                 )}
+                {existingMatchingBet && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#7A5B00] font-semibold bg-[#FFF8DF] p-2.5 rounded-lg border border-[#EFE0A8]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-[#9A7400]" />
+                      <span>
+                        Référence déjà présente sur un test du{" "}
+                        {new Date(`${existingMatchingBet.date}T00:00:00`).toLocaleDateString("fr-FR")}{" "}
+                        ({existingMatchingBet.operator}).
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[11px] bg-white border-[#EFE0A8] text-[#7A5B00] hover:bg-[#FFFBEB]"
+                      onClick={() =>
+                        handleTicketRefChange(`${ticketRef.trim()} (#2)`)
+                      }
+                    >
+                      Différencier (#2)
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <DateTimeRow
@@ -1843,22 +1946,23 @@ function Tests() {
                 onCreateNew={createBetType}
               />
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
                     Montant misé (FCFA) *
                   </label>
                   <Input
-                    type="number"
-                    value={formData.amount_fcfa || ""}
+                    type="text"
+                    inputMode="numeric"
+                    value={formatAmountInput(formData.amount_fcfa)}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        amount_fcfa: parseFloat(e.target.value) || 0,
+                        amount_fcfa: parseAmountInput(e.target.value),
                       })
                     }
                     placeholder="0"
-                    className="bg-white border-[#D8E6DB]"
+                    className="bg-white border-[#D8E6DB] tabular-nums"
                   />
                 </div>
                 <div>
@@ -1887,21 +1991,22 @@ function Tests() {
                     Montant retourné (FCFA)
                   </label>
                   <Input
-                    type="number"
-                    value={formData.amount_won_fcfa || ""}
+                    type="text"
+                    inputMode="numeric"
+                    value={formatAmountInput(formData.amount_won_fcfa)}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        amount_won_fcfa: parseFloat(e.target.value) || 0,
+                        amount_won_fcfa: parseAmountInput(e.target.value),
                       })
                     }
                     placeholder="0"
-                    className="bg-white border-[#D8E6DB]"
+                    className="bg-white border-[#D8E6DB] tabular-nums"
                   />
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
 
@@ -1911,9 +2016,12 @@ function Tests() {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
+                      setFormData({
+                        ...formData,
+                        phone: formatPhoneNumber(e.target.value),
+                      })
                     }
-                    placeholder="Ex: 0701020304"
+                    placeholder="Ex: 70 00 00 00"
                     className="bg-white border-[#D8E6DB]"
                   />
                 </div>
