@@ -99,6 +99,10 @@ describe("production Test page: terminology and writes", () => {
   it("creates a Test using the existing API contract and owner", async () => {
     await act(async () => root.render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><TestsPage /></MemoryRouter>));
     await click(button("Créer un test"));
+    const dialogEl = document.querySelector('[role="dialog"]') as HTMLElement;
+    expect(dialogEl?.className).not.toContain("caret-transparent");
+    expect(reference().className).toContain("caret-[#17251C]");
+    expect(reference().closest("fieldset")?.className).not.toContain("caret-transparent");
     await input(reference(), "NEW-001");
     const amount = document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
     await input(amount, "1500");

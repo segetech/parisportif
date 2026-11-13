@@ -411,6 +411,7 @@ export function useBets(filters?: any) {
       let query = supabase
         .from("bets")
         .select("*")
+        .is("archived_at", null)
         .order("date", { ascending: false })
         .order("time", { ascending: false });
 
@@ -510,6 +511,7 @@ export function useTransactions(filters?: any) {
       let query = supabase
         .from("transactions")
         .select("*")
+        .is("archived_at", null)
         .order("date", { ascending: false })
         .order("time", { ascending: false })
         .limit(filters?.limit || 5000);
@@ -607,7 +609,11 @@ export function useVenues(filters?: any) {
   return useQuery({
     queryKey: queryKeys.venues(userId, filters),
     queryFn: async () => {
-      let query = supabase.from("venues").select("*").order("quartier");
+      let query = supabase
+        .from("venues")
+        .select("*")
+        .is("archived_at", null)
+        .order("quartier");
 
       if (filters?.operator && filters.operator !== "all") {
         query = query.eq("operator", filters.operator);
@@ -801,18 +807,23 @@ export function useValidationOperations(tab: "bets" | "transactions" | "venues",
     queryFn: async () => {
       let query = supabase.from(tab).select("*").order("created_at", { ascending: false });
 
-      if (filterStatus !== "all" && tab !== "venues") {
-        query = query.eq("validation_status", filterStatus);
-      } else if (filterStatus !== "all" && tab === "venues") {
-        // venues may also have validation_status; filter safely in JS if column absent
-        const { data, error } = await query;
-        if (error) {
-          if (isAuthError(error)) throw error;
-          throw error;
+      if (filterStatus === "archived") {
+        query = query.not("archived_at", "is", null);
+      } else {
+        query = query.is("archived_at", null);
+        if (filterStatus !== "all" && tab !== "venues") {
+          query = query.eq("validation_status", filterStatus);
+        } else if (filterStatus !== "all" && tab === "venues") {
+          // venues may also have validation_status; filter safely in JS if column absent
+          const { data, error } = await query;
+          if (error) {
+            if (isAuthError(error)) throw error;
+            throw error;
+          }
+          return (data || []).filter((item: any) =>
+            item.validation_status ? item.validation_status === filterStatus : filterStatus === "en_attente"
+          );
         }
-        return (data || []).filter((item: any) =>
-          item.validation_status ? item.validation_status === filterStatus : filterStatus === "en_attente"
-        );
       }
 
       const { data, error } = await query;
@@ -822,6 +833,47 @@ export function useValidationOperations(tab: "bets" | "transactions" | "venues",
       }
 
       return data || [];
+    },
+    staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+    gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
+  });
+}
+
+export function usePendingValidationCounts(enabled = true) {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: ["validation", "pending-counts", userId || "anon"],
+    enabled,
+    queryFn: async () => {
+      const [betsRes, txRes, venuesRes] = await Promise.all([
+        supabase
+          .from("bets")
+          .select("id", { count: "exact", head: true })
+          .is("archived_at", null)
+          .eq("validation_status", "en_attente"),
+        supabase
+          .from("transactions")
+          .select("id", { count: "exact", head: true })
+          .is("archived_at", null)
+          .eq("validation_status", "en_attente"),
+        supabase
+          .from("venues")
+          .select("id", { count: "exact", head: true })
+          .is("archived_at", null)
+          .eq("validation_status", "en_attente"),
+      ]);
+
+      const bets = betsRes.count ?? 0;
+      const transactions = txRes.count ?? 0;
+      const venues = venuesRes.count ?? 0;
+      return {
+        bets,
+        transactions,
+        venues,
+        total: bets + transactions + venues,
+      };
     },
     staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
     gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
@@ -852,18 +904,6 @@ export function useValidateOperation() {
 
       const { data, error } = await supabase.from(type).update(updateData).eq("id", id).select().single();
       if (error) throw error;
-
-      // Historique
-      try {
-        await supabase.from("operation_history").insert({
-          operation_type: type,
-          operation_id: id,
-          action: status === "valide" ? "validé" : "refusé",
-          modified_by: userId,
-          new_status: status,
-          comment: notes,
-        });
-      } catch {}
 
       return { data, type, status, notes };
     },

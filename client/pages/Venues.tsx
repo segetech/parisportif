@@ -46,6 +46,10 @@ import {
   useDeleteVenue,
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
+import {
+  archiveOperationRecord,
+  hardDeleteOperationRecord,
+} from "@/lib/operation-archive";
 import { dispatchAppNotification } from "@/lib/notification-navigation";
 
 interface Venue {
@@ -700,6 +704,30 @@ function Venues() {
             draftSaveStatus={saveStatus}
             canEdit={venueEdit.allowed}
             editBlockedReason={venueEdit.reason}
+            onArchive={
+              editing &&
+              (user?.role === "ADMIN" || user?.role === "CONTROLEUR")
+                ? async (reason) => {
+                    const ok = await archiveOperationRecord(
+                      "venues",
+                      editing.id,
+                      reason,
+                    );
+                    if (ok) setDialogOpen(false);
+                  }
+                : undefined
+            }
+            onHardDelete={
+              editing && user?.role === "ADMIN"
+                ? async () => {
+                    const ok = await hardDeleteOperationRecord(
+                      "venues",
+                      editing.id,
+                    );
+                    if (ok) setDialogOpen(false);
+                  }
+                : undefined
+            }
           >
             <div className="grid gap-4 pt-2">
               <div className="grid grid-cols-2 gap-3">

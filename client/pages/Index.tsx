@@ -9,7 +9,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
 import { useOptionalSettings } from "@/lib/settings";
-import { useDashboardData, DashboardStats } from "@/hooks/use-data-queries";
+import {
+  useDashboardData,
+  usePendingValidationCounts,
+  DashboardStats,
+} from "@/hooks/use-data-queries";
 import {
   TrendingUp,
   Building2,
@@ -138,6 +142,7 @@ function Dashboard() {
   const canSeeVenues = isAdmin || isController || settings.agentCanManageVenues;
 
   const { data: dashboardData, isLoading, isError, error, isFetching, refetch } = useDashboardData(filterStart, filterEnd);
+  const { data: pendingCounts } = usePendingValidationCounts(isController || isAdmin);
 
   const { data: agentRejectedCounts } = useQuery({
     queryKey: ["agent-rejected-counts", user?.id],
@@ -232,6 +237,15 @@ function Dashboard() {
   const venuesByOperator = stats.venuesByOperator || [];
   const illegalActivityTrend = stats.illegalActivityTrend || [];
   const totalAnomalies = stats.totalIllegalBets + stats.totalIllegalTransactions;
+  const realPendingCount = pendingCounts ? pendingCounts.total : stats.pendingValidationsCount;
+  const defaultValidationPath =
+    pendingCounts && pendingCounts.bets === 0
+      ? pendingCounts.transactions > 0
+        ? "/validation?tab=transactions"
+        : pendingCounts.venues > 0
+          ? "/validation?tab=venues"
+          : "/validation"
+      : "/validation";
   const CHART_COLORS = ["#006B2D", "#004D20", "#FFD000", "#E52329", "#008739", "#3b82f6"];
 
   if (isLoading && !dashboardData) {
@@ -310,9 +324,9 @@ function Dashboard() {
 
           {isController && (
             <Button asChild size="sm" className="min-h-[44px] sm:min-h-0 h-9 gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs">
-              <Link to="/validation">
+              <Link to={defaultValidationPath}>
                 <FileCheck className="h-4 w-4" />
-                <span>File de validation ({stats.pendingValidationsCount})</span>
+                <span>File de validation ({realPendingCount})</span>
               </Link>
             </Button>
           )}
@@ -542,24 +556,33 @@ function Dashboard() {
         <div className="space-y-6">
           <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Opérations en Attente de Contrôle */}
-            <motion.div variants={fadeUpItem} className="rounded-xl border border-amber-300 bg-amber-50/60 p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">File de Validation</span>
-                <div className="h-9 w-9 rounded-lg bg-amber-600 text-white flex items-center justify-center">
-                  <Clock className="h-4 w-4" />
+            <motion.div variants={fadeUpItem}>
+              <Link
+                to={defaultValidationPath}
+                className="block rounded-xl border border-amber-300 bg-amber-50/60 p-5 shadow-xs hover:border-amber-500 hover:bg-amber-50 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">File de Validation</span>
+                  <div className="h-9 w-9 rounded-lg bg-amber-600 text-white flex items-center justify-center">
+                    <Clock className="h-4 w-4" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-3">
-                <div className="text-2xl font-black text-amber-950 font-mono">
-                  <AnimatedNumber value={stats.pendingValidationsCount} />
+                <div className="mt-3">
+                  <div className="text-2xl font-black text-amber-950 font-mono">
+                    <AnimatedNumber value={realPendingCount} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                    <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-[11px] font-bold">
+                      Action requise
+                    </Badge>
+                    <span className="text-xs text-amber-800">
+                      {pendingCounts
+                        ? `${pendingCounts.bets} test(s) • ${pendingCounts.transactions} trans. • ${pendingCounts.venues} site(s)`
+                        : "dossiers à examiner"}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-[11px] font-bold">
-                    Action requise
-                  </Badge>
-                  <span className="text-xs text-amber-800">dossiers à examiner</span>
-                </div>
-              </div>
+              </Link>
             </motion.div>
 
             {/* Vigilance Fraudes */}
@@ -626,12 +649,15 @@ function Dashboard() {
                   File d'attente prioritaire de validation
                 </p>
                 <p className="text-xs text-amber-800">
-                  {stats.pendingValidationsCount} dossier(s) en attente d'approbation ou de rejet motivé
+                  {realPendingCount} dossier(s) en attente d'approbation ou de rejet motivé
+                  {pendingCounts
+                    ? ` (${pendingCounts.bets} test(s), ${pendingCounts.transactions} transaction(s), ${pendingCounts.venues} site(s))`
+                    : ""}
                 </p>
               </div>
             </div>
             <Button asChild className="min-h-[44px] bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs">
-              <Link to="/validation">
+              <Link to={defaultValidationPath}>
                 Accéder à la validation
                 <ArrowRight className="h-4 w-4 ml-1.5" />
               </Link>

@@ -18,6 +18,8 @@ const migrationFiles = [
   "08_secure_dashboard_and_password_policy.sql",
   "09_restore_lookup_tables_rls.sql",
   "10_storage_proofs_and_avatars.sql",
+  "11_fix_triggers_and_bets_constraints.sql",
+  "12_comments_history_realtime_hardening.sql",
 ];
 
 async function main() {

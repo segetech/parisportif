@@ -100,6 +100,11 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  input:not(:disabled):not([readonly]),
+  textarea:not(:disabled):not([readonly]) {
+    caret-color: #17251c;
+  }
 }
 
 @layer utilities {

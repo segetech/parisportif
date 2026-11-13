@@ -16,7 +16,7 @@ import {
   readRecordReference,
   writeRecordReference,
 } from "@/lib/record-reference";
-import { RecordForm } from "@/components/common/RecordForm";
+import { RecordForm, RecordConsultationSwitch } from "@/components/common/RecordForm";
 import {
   SmartFilterBar,
   SmartFilterState,
@@ -30,6 +30,8 @@ import {
 import { useFormDraft } from "@/hooks/use-form-draft";
 import AppLayout from "@/components/layout/AppLayout";
 import { cn, formatPhoneNumber, formatAmountInput, parseAmountInput } from "@/lib/utils";
+import { OperationCommentsPanel } from "@/components/common/OperationCommentsPanel";
+import { ProofPreview } from "@/components/common/ProofPreview";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -52,7 +54,7 @@ import {
 import { RequireAuth, useAuth } from "@/context/AuthContext";
 import { useOptionalSettings } from "@/lib/settings";
 import { canAgentEditRecord } from "@/lib/rbac";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
@@ -87,6 +89,10 @@ import {
   useVenues,
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
+import {
+  archiveOperationRecord,
+  hardDeleteOperationRecord,
+} from "@/lib/operation-archive";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
 import { dispatchAppNotification } from "@/lib/notification-navigation";
 import { Sparkles, Building, Zap, AlertTriangle } from "lucide-react";
@@ -120,6 +126,9 @@ interface Bet {
   notes?: string;
   created_by?: string;
   validation_status?: string;
+  validation_notes?: string | null;
+  edit_unlocked_until?: string | null;
+  refusal_fields?: string[] | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -195,6 +204,18 @@ function Tests() {
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const idParam = searchParams.get("id");
+    if (!idParam || bets.length === 0) return;
+    const match = bets.find((b) => b.id === idParam);
+    if (match) {
+      openEditDialog(match);
+      const next = new URLSearchParams(searchParams);
+      next.delete("id");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, bets, setSearchParams]);
   const [activeOperator, setActiveOperator] = useState<string>("all");
   const [hiddenOperators, setHiddenOperators] = useState<Set<string>>(
     new Set(),
@@ -202,14 +223,37 @@ function Tests() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const settings = useOptionalSettings();
   const canExport = user?.role !== "AGENT" || settings.agentCanExport;
+  const [unlockRequestSent, setUnlockRequestSent] = useState(false);
+  useEffect(() => {
+    setUnlockRequestSent(false);
+  }, [editingBet?.id, dialogOpen]);
+
   const editPermission = editingBet
     ? canAgentEditRecord(
         user?.role,
         editingBet.validation_status,
         editingBet.created_at,
         settings.agentEditWindowMinutes,
+        editingBet.edit_unlocked_until,
       )
     : { allowed: true };
+
+  async function handleRequestUnlock() {
+    if (!editingBet) return;
+    setUnlockRequestSent(true);
+    await dispatchAppNotification({
+      eventType: "operation_created",
+      operationType: "bets",
+      operationId: editingBet.id,
+      status: "modify",
+      operator: editingBet.operator,
+      amountFcfa: editingBet.amount_fcfa,
+      reference: editingBet.reference || undefined,
+      authorId: user?.id,
+      notes: "Demande de prolongation du délai de modification par l'agent",
+    });
+    toast.success("Demande de prolongation envoyée aux contrôleurs");
+  }
   const initialExportPeriod = useMemo(() => currentReportPeriod(), []);
   const [exportPeriodMode, setExportPeriodMode] = useState<PeriodMode>("fixed");
   const [exportYear, setExportYear] = useState(initialExportPeriod.year);
@@ -432,15 +476,33 @@ function Tests() {
       };
 
       if (editingBet) {
+        const isResubmission = editingBet.validation_status === "refuse";
+        const updatePayload = isResubmission
+          ? { ...betData, validation_status: "en_attente" }
+          : betData;
         const { error } = await supabase
           .from("bets")
-          .update(betData)
+          .update(updatePayload)
           .eq("id", editingBet.id)
           .select("id")
           .single();
 
         if (error) throw error;
-        toast.success("Test modifié avec succès");
+        if (isResubmission) {
+          void dispatchAppNotification({
+            eventType: "operation_created",
+            operationType: "bets",
+            operationId: editingBet.id,
+            status: "en_attente",
+            operator: formData.operator,
+            amountFcfa: Number(formData.amount_fcfa) || 0,
+            reference: betData.reference || undefined,
+            authorId: user?.id,
+          });
+          toast.success("Test corrigé et resoumis pour validation");
+        } else {
+          toast.success("Test modifié avec succès");
+        }
       } else {
         const isAdmin = user?.role === "ADMIN";
         const newBetData = {
@@ -1806,308 +1868,520 @@ function Tests() {
           DIALOG DE CRÉATION / MODIFICATION DU PARI
           ========================================================================= */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold">
-              {editingBet ? "Consulter le test" : "Créer un test"}
-            </DialogTitle>
-            <DialogDescription>{HISTORICAL_RESULT_NOTICE}</DialogDescription>
-          </DialogHeader>
-          <RecordForm
-            key={`${dialogOpen}-${editingBet?.id || "new"}`}
-            existing={!!editingBet}
-            onSave={handleSubmit}
-            onClose={() => setDialogOpen(false)}
-            onRestore={() => openEditDialog(editingBet!)}
-            createLabel="Créer le test"
-            hasDraft={hasDraft}
-            draftTime={savedAtFormatted}
-            hasConflict={hasConflict}
-            onRestoreDraft={restoreDraft}
-            onDiscardDraft={discardDraft}
-            draftSaveStatus={saveStatus}
-            canEdit={editPermission.allowed}
-            editBlockedReason={editPermission.reason}
-          >
-            <div className="grid gap-4 pt-2">
-              {/* ASSISTANCE INTELLIGENTE DE SAISIE PAR ANALYSE AUTOMATIQUE DE RÉFÉRENCE */}
-              <div className="p-3 rounded-xl border border-[#D8E6DB] bg-[#F5F8F5] space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#17251C] flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-[#006B2D]" />
-
-                    Référence du test
-                  </span>
-                  <span className="text-[10px] text-[#556B5C]">
-                    Orange Money / Wave / Moov
-                  </span>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="shrink-0 border-b border-[#E3ECE5] bg-[#F8FBF9] px-5 pt-5 pb-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 pr-8">
+              <DialogTitle className="text-lg font-bold text-[#17251C]">
+                {editingBet ? "Consulter le test" : "Nouveau test"}
+              </DialogTitle>
+              {editingBet && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-white border-[#D8E6DB] text-[#17251C] font-semibold">
+                    {editingBet.operator}
+                  </Badge>
+                  <Badge className="bg-[#006B2D] text-white hover:bg-[#005925] tabular-nums">
+                    {Number(editingBet.amount_fcfa || 0).toLocaleString("fr-FR")} FCFA
+                  </Badge>
                 </div>
-                <Input
-                  placeholder="Ex: MP250326.0415.A49647 ou CI250326.0438.B13742"
-                  value={ticketRef}
-                  onChange={(e) => handleTicketRefChange(e.target.value)}
-                  className="h-9 text-xs bg-white border-[#D8E6DB] text-[#17251C]"
-                />
-                {parsedRef?.isValid && (
-                  <div className="flex items-center gap-2 text-xs text-[#006B2D] font-bold bg-[#006B2D]/10 p-2 rounded-lg border border-[#006B2D]/20">
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#006B2D]" />
-                    <span>{parsedRef.message}</span>
+              )}
+            </div>
+            <DialogDescription className="text-xs text-[#556B5C]">
+              {HISTORICAL_RESULT_NOTICE}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-4 space-y-6">
+            {editingBet?.validation_status === "refuse" && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 space-y-1.5">
+                <p className="font-semibold">
+                  Opération refusée — veuillez corriger puis resoumettre pour validation
+                </p>
+                {editingBet.validation_notes && (
+                  <p className="text-rose-800 whitespace-pre-wrap">
+                    Motif : {editingBet.validation_notes}
+                  </p>
+                )}
+                {Array.isArray(editingBet.refusal_fields) && editingBet.refusal_fields.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="font-medium text-rose-800">Éléments signalés :</span>
+                    {editingBet.refusal_fields.map((field) => (
+                      <Badge
+                        key={field}
+                        variant="outline"
+                        className="border-rose-300 bg-white text-rose-800 text-[11px]"
+                      >
+                        {field}
+                      </Badge>
+                    ))}
                   </div>
                 )}
-                {existingMatchingBet && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#7A5B00] font-semibold bg-[#FFF8DF] p-2.5 rounded-lg border border-[#EFE0A8]">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-[#9A7400]" />
-                      <span>
-                        Référence déjà présente sur un test du{" "}
-                        {new Date(`${existingMatchingBet.date}T00:00:00`).toLocaleDateString("fr-FR")}{" "}
-                        ({existingMatchingBet.operator}).
+              </div>
+            )}
+            <RecordForm
+              key={`${dialogOpen}-${editingBet?.id || "new"}`}
+              existing={!!editingBet}
+              onSave={handleSubmit}
+              onClose={() => setDialogOpen(false)}
+              onRestore={() => openEditDialog(editingBet!)}
+              createLabel="Créer le test"
+              saveLabel={
+                editingBet?.validation_status === "refuse"
+                  ? "Corriger et resoumettre"
+                  : undefined
+              }
+              unlockedUntil={editPermission.unlockedUntil}
+              onRequestUnlock={
+                editingBet &&
+                editingBet.validation_status !== "valide" &&
+                !editPermission.allowed
+                  ? handleRequestUnlock
+                  : undefined
+              }
+              unlockRequestSent={unlockRequestSent}
+              hasDraft={hasDraft}
+              draftTime={savedAtFormatted}
+              hasConflict={hasConflict}
+              onRestoreDraft={restoreDraft}
+              onDiscardDraft={discardDraft}
+              draftSaveStatus={saveStatus}
+              canEdit={editPermission.allowed}
+              editBlockedReason={editPermission.reason}
+              onArchive={
+                editingBet &&
+                (user?.role === "ADMIN" || user?.role === "CONTROLEUR")
+                  ? async (reason) => {
+                      const ok = await archiveOperationRecord(
+                        "bets",
+                        editingBet.id,
+                        reason,
+                      );
+                      if (ok) setDialogOpen(false);
+                    }
+                  : undefined
+              }
+              onHardDelete={
+                editingBet && user?.role === "ADMIN"
+                  ? async () => {
+                      const ok = await hardDeleteOperationRecord(
+                        "bets",
+                        editingBet.id,
+                      );
+                      if (ok) setDialogOpen(false);
+                    }
+                  : undefined
+              }
+              footerClassName="-mx-5 -mb-4 px-5"
+            >
+              <RecordConsultationSwitch
+                summary={
+                  <div className="space-y-3 min-w-0">
+                    {/* Champ masqué pour accessibilité/tests de cohérence en lecture seule */}
+                    <div className="sr-only">
+                      <Input
+                        placeholder="Ex: MP250326.0415.A49647 ou CI250326.0438.B13742"
+                        value={ticketRef}
+                        readOnly
+                      />
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3.5 space-y-2.5 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={
+                              editingBet?.validation_status === "valide"
+                                ? "default"
+                                : editingBet?.validation_status === "refuse"
+                                  ? "destructive"
+                                  : "secondary"
+                            }
+                            className="gap-1"
+                          >
+                            {editingBet?.validation_status === "valide"
+                              ? "Validé"
+                              : editingBet?.validation_status === "refuse"
+                                ? "Refusé"
+                                : "En attente"}
+                          </Badge>
+                          <span className="font-semibold text-slate-900">
+                            {formData.operator || editingBet?.operator || "Opérateur"}
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          {formData.date
+                            ? new Date(`${formData.date}T00:00:00`).toLocaleDateString("fr-FR")
+                            : ""}
+                          {formData.time ? ` à ${formData.time.slice(0, 5)}` : ""}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 text-xs">
+                        <div>
+                          <span className="text-slate-500 block">Support / Plateforme</span>
+                          <span className="font-semibold text-slate-900">
+                            {formData.support || "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Type</span>
+                          <span className="font-semibold text-slate-900">
+                            {formData.bet_type || "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Montant</span>
+                          <span className="font-semibold text-slate-900 tabular-nums">
+                            {Number(formData.amount_fcfa || 0).toLocaleString("fr-FR")} FCFA
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Résultat / Statut</span>
+                          <span className="font-semibold text-slate-900">
+                            {testStatusLabel(formData.status)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Téléphone</span>
+                          <span className="font-semibold text-slate-900 tabular-nums">
+                            {formData.phone || "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Référence</span>
+                          <span className="font-semibold text-slate-900 break-all">
+                            {ticketRef || "—"}
+                          </span>
+                        </div>
+                        {Number(formData.amount_won_fcfa || 0) > 0 && (
+                          <div>
+                            <span className="text-slate-500 block">Montant retourné</span>
+                            <span className="font-semibold text-emerald-700 tabular-nums">
+                              {Number(formData.amount_won_fcfa).toLocaleString("fr-FR")} FCFA
+                            </span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-slate-500 block">Preuve</span>
+                          <span className="font-semibold text-slate-900">
+                            {formData.proof_status === "disponible"
+                              ? "disponible"
+                              : formData.proof_status === "non_disponible"
+                                ? "absente"
+                                : "non renseignée"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {formData.notes && (
+                        <div className="pt-1.5 border-t border-slate-200 text-xs">
+                          <span className="text-slate-500 block">Notes / Observations</span>
+                          <p className="text-slate-800 whitespace-pre-wrap">{formData.notes}</p>
+                        </div>
+                      )}
+
+                      {formData.ticket_url && (
+                        <ProofPreview url={formData.ticket_url} title="Pièce justificative" />
+                      )}
+                    </div>
+                  </div>
+                }
+              >
+              <div className="grid min-w-0 [&>*]:min-w-0 gap-4">
+                {/* Bandeau Référence & Horodatage */}
+                <div className="rounded-xl border border-[#E3ECE5] bg-[#F5F8F5] p-3.5 space-y-3 min-w-0">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="text-[11px] font-bold text-[#17251C] uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-[#006B2D]" />
+                        Référence du test
+                      </label>
+                      <span className="text-[11px] font-medium text-[#556B5C]">
+                        Orange Money • Wave • Moov
                       </span>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2 text-[11px] bg-white border-[#EFE0A8] text-[#7A5B00] hover:bg-[#FFFBEB]"
-                      onClick={() =>
-                        handleTicketRefChange(`${ticketRef.trim()} (#2)`)
+                    <Input
+                      placeholder="Ex: MP250326.0415.A49647 ou CI250326.0438.B13742"
+                      value={ticketRef}
+                      onChange={(e) => handleTicketRefChange(e.target.value)}
+                      className="h-10 text-sm bg-white border-[#D8E6DB] text-[#17251C]"
+                    />
+                    {parsedRef?.isValid && (
+                      <div className="flex items-center gap-2 text-xs text-[#006B2D] font-semibold bg-white p-2 rounded-lg border border-[#B8DEC6]">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-[#006B2D]" />
+                        <span>{parsedRef.message}</span>
+                      </div>
+                    )}
+                    {existingMatchingBet && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#7A5B00] font-semibold bg-[#FFF8DF] p-2.5 rounded-lg border border-[#EFE0A8]">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <AlertTriangle className="h-4 w-4 shrink-0 text-[#9A7400]" />
+                          <span>
+                            Référence déjà présente sur un test du{" "}
+                            {new Date(`${existingMatchingBet.date}T00:00:00`).toLocaleDateString("fr-FR")}{" "}
+                            ({existingMatchingBet.operator}).
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-[11px] bg-white border-[#EFE0A8] text-[#7A5B00] hover:bg-[#FFFBEB]"
+                          onClick={() =>
+                            handleTicketRefChange(`${ticketRef.trim()} (#2)`)
+                          }
+                        >
+                          Différencier (#2)
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  <DateTimeRow
+                    date={formData.date}
+                    time={formData.time}
+                    onDateChange={(val) => setFormData({ ...formData, date: val })}
+                    onTimeChange={(val) => setFormData({ ...formData, time: val })}
+                  />
+                </div>
+
+                {/* Champs principaux en grille aérée 2 colonnes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5 [&>*]:min-w-0">
+                  <CreatableSelect
+                    label="Opérateur"
+                    required
+                    value={formData.operator}
+                    onChange={(value) =>
+                      setFormData({ ...formData, operator: value })
+                    }
+                    options={operators}
+                    placeholder="Sélectionner ou saisir un opérateur..."
+                    onCreateNew={createOperator}
+                  />
+
+                  <CreatableSelect
+                    label="Support"
+                    required
+                    value={formData.support}
+                    onChange={(value) =>
+                      setFormData({ ...formData, support: value })
+                    }
+                    options={supports}
+                    placeholder="Sélectionner ou saisir un support..."
+                    onCreateNew={createSupport}
+                  />
+
+                  {["Salle de jeux", "Site de test"].includes(formData.support) && venues.length > 0 && (
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                        Point de vente physique
+                      </label>
+                      <select
+                        className="w-full h-10 border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
+                        value={selectedVenueId}
+                        onChange={(e) => handleVenueSelect(e.target.value)}
+                      >
+                        <option value="">
+                          -- Choisir un site de test enregistré --
+                        </option>
+                        {venues.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.quartier} • {v.operator} • {v.address}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="sm:col-span-2">
+                    <CreatableSelect
+                      label="Type de test"
+                      required
+                      value={formData.bet_type}
+                      onChange={(value) =>
+                        setFormData({ ...formData, bet_type: value })
+                      }
+                      options={betTypes}
+                      placeholder="Sélectionner ou saisir un type..."
+                      onCreateNew={createBetType}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                      Montant misé (FCFA) *
+                    </label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={formatAmountInput(formData.amount_fcfa)}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          amount_fcfa: parseAmountInput(e.target.value),
+                        })
+                      }
+                      placeholder="0"
+                      className="h-10 bg-[#F8FBF9] border-[#D8E6DB] font-semibold text-[#17251C] tabular-nums"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                      Issue du test
+                    </label>
+                    <select
+                      className="w-full h-10 border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
+                      value={formData.status}
+                      onChange={(e) =>
+                        setFormData({ ...formData, status: e.target.value })
                       }
                     >
-                      Différencier (#2)
-                    </Button>
+                      <option value="en attente">En attente</option>
+                      <option value="gagné">Issue favorable</option>
+                      <option value="perdu">Issue défavorable</option>
+                      <option value="annulé">Annulé</option>
+                    </select>
+                  </div>
+
+                  {formData.status === "gagné" && (
+                    <div className="sm:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                      <label className="text-xs font-bold text-emerald-900 uppercase tracking-wider block mb-1">
+                        Montant retourné (FCFA)
+                      </label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={formatAmountInput(formData.amount_won_fcfa)}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            amount_won_fcfa: parseAmountInput(e.target.value),
+                          })
+                        }
+                        placeholder="0"
+                        className="h-10 bg-white border-emerald-200 font-semibold text-emerald-900 tabular-nums"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                      Téléphone du participant
+                    </label>
+                    <Input
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          phone: formatPhoneNumber(e.target.value),
+                        })
+                      }
+                      placeholder="Ex: 70 00 00 00"
+                      className="h-10 bg-white border-[#D8E6DB] tabular-nums"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
+                      Disponibilité de la preuve
+                    </label>
+                    <select
+                      className="w-full h-10 border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
+                      value={formData.proof_status}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          proof_status: e.target.value as
+                            | "disponible"
+                            | "non_disponible"
+                            | "non_renseignee",
+                        })
+                      }
+                    >
+                      <option value="non_renseignee">Non renseignée</option>
+                      <option value="disponible">Preuve disponible</option>
+                      <option value="non_disponible">Preuve absente</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Justificatif & Observations */}
+                {formData.ticket_url && (
+                  <ProofPreview
+                    url={formData.ticket_url}
+                    title="Aperçu du justificatif"
+                  />
+                )}
+
+                {(formData.proof_status === "disponible" || formData.ticket_url) && (
+                  <ProofUploader
+                    label="Justificatif ou Reçu du test"
+                    value={formData.ticket_url}
+                    onChange={(url) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        ticket_url: url || "",
+                        proof_status: url ? "disponible" : prev.proof_status,
+                      }))
+                    }
+                    proofStatus={formData.proof_status}
+                    onStatusChange={(status) =>
+                      setFormData((prev) => ({ ...prev, proof_status: status }))
+                    }
+                    folder="preuves/tests"
+                  />
+                )}
+
+                {!editingBet && (
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl border border-[#E3ECE5] bg-[#F5F8F5]">
+                    <Checkbox
+                      id="auto-trans"
+                      checked={autoCreateTransaction}
+                      onCheckedChange={(checked) =>
+                        setAutoCreateTransaction(Boolean(checked))
+                      }
+                    />
+                    <label
+                      htmlFor="auto-trans"
+                      className="text-xs font-semibold text-[#17251C] cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Zap className="h-4 w-4 shrink-0 text-[#006B2D]" />
+                      <span>
+                        Enregistrer automatiquement le flux financier
+                        correspondant dans Transactions (Anti-double saisie)
+                      </span>
+                    </label>
                   </div>
                 )}
-              </div>
 
-              <DateTimeRow
-                date={formData.date}
-                time={formData.time}
-                onDateChange={(val) => setFormData({ ...formData, date: val })}
-                onTimeChange={(val) => setFormData({ ...formData, time: val })}
-              />
-
-              <CreatableSelect
-                label="Opérateur"
-                required
-                value={formData.operator}
-                onChange={(value) =>
-                  setFormData({ ...formData, operator: value })
-                }
-                options={operators}
-                placeholder="Sélectionner ou saisir un nouvel opérateur..."
-                onCreateNew={createOperator}
-              />
-
-              <CreatableSelect
-                label="Support"
-                required
-                value={formData.support}
-                onChange={(value) =>
-                  setFormData({ ...formData, support: value })
-                }
-                options={supports}
-                placeholder="Sélectionner ou saisir un support..."
-                onCreateNew={createSupport}
-              />
-
-              {/* SÉLECTEUR EN CASCADE DES SALLES DE JEUX PHYSIQUES */}
-              {["Salle de jeux", "Site de test"].includes(formData.support) && venues.length > 0 && (
                 <div>
                   <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Point de vente physique
+                    Observations et références complémentaires
                   </label>
-                  <select
-                    className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-xs text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
-                    value={selectedVenueId}
-                    onChange={(e) => handleVenueSelect(e.target.value)}
-                  >
-                    <option value="">
-
-                      -- Choisir un site de test enregistrée --
-                    </option>
-                    {venues.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.quartier} • {v.operator} • {v.address}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <CreatableSelect
-                label="Type de test"
-                required
-                value={formData.bet_type}
-                onChange={(value) =>
-                  setFormData({ ...formData, bet_type: value })
-                }
-                options={betTypes}
-                placeholder="Sélectionner ou saisir un type..."
-                onCreateNew={createBetType}
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Montant misé (FCFA) *
-                  </label>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    value={formatAmountInput(formData.amount_fcfa)}
+                  <Textarea
+                    value={formData.notes}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        amount_fcfa: parseAmountInput(e.target.value),
-                      })
+                      setFormData({ ...formData, notes: e.target.value })
                     }
-                    placeholder="0"
-                    className="bg-white border-[#D8E6DB] tabular-nums"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-
-                    Issue du test
-                  </label>
-                  <select
-                    className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
-                    value={formData.status}
-                    onChange={(e) =>
-                      setFormData({ ...formData, status: e.target.value })
-                    }
-                  >
-                    <option value="en attente">En attente</option>
-                    <option value="gagné">Issue favorable</option>
-                    <option value="perdu">Issue défavorable</option>
-                    <option value="annulé">Annulé</option>
-                  </select>
-                </div>
-              </div>
-
-              {formData.status === "gagné" && (
-                <div>
-                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Montant retourné (FCFA)
-                  </label>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    value={formatAmountInput(formData.amount_won_fcfa)}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        amount_won_fcfa: parseAmountInput(e.target.value),
-                      })
-                    }
-                    placeholder="0"
-                    className="bg-white border-[#D8E6DB] tabular-nums"
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-
-                    Téléphone du participant
-                  </label>
-                  <Input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        phone: formatPhoneNumber(e.target.value),
-                      })
-                    }
-                    placeholder="Ex: 70 00 00 00"
+                    placeholder="Détails du justificatif, identifiant externe, match..."
+                    rows={2}
                     className="bg-white border-[#D8E6DB]"
                   />
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-                    Disponibilité de la preuve
-                  </label>
-                  <select
-                    className="w-full border border-[#D8E6DB] bg-white rounded-lg px-3 py-2 text-sm text-[#17251C] focus:outline-none focus:ring-2 focus:ring-[#006B2D]"
-                    value={formData.proof_status}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        proof_status: e.target.value as
-                          | "disponible"
-                          | "non_disponible"
-                          | "non_renseignee",
-                      })
-                    }
-                  >
-                    <option value="non_renseignee">Non renseignée</option>
-                    <option value="disponible">Preuve disponible</option>
-                    <option value="non_disponible">Preuve absente</option>
-                  </select>
-                </div>
               </div>
-
-              {(formData.proof_status === "disponible" || formData.ticket_url) && (
-                <ProofUploader
-                  label="Justificatif ou Reçu du test"
-                  value={formData.ticket_url}
-                  onChange={(url) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      ticket_url: url || "",
-                      proof_status: url ? "disponible" : prev.proof_status,
-                    }))
-                  }
-                  proofStatus={formData.proof_status}
-                  onStatusChange={(status) =>
-                    setFormData((prev) => ({ ...prev, proof_status: status }))
-                  }
-                  folder="preuves/tests"
-                />
-              )}
-
-              {/* AUTOMATISATION ANTI-DOUBLE SAISIE */}
-              {!editingBet && (
-                <div className="flex items-center gap-2.5 p-3 rounded-lg border border-[#D8E6DB] bg-[#F5F8F5]">
-                  <Checkbox
-                    id="auto-trans"
-                    checked={autoCreateTransaction}
-                    onCheckedChange={(checked) =>
-                      setAutoCreateTransaction(Boolean(checked))
-                    }
-                  />
-                  <label
-                    htmlFor="auto-trans"
-                    className="text-xs font-bold text-[#17251C] cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Zap className="h-4 w-4 text-[#006B2D]" />
-                    <span>
-                      Enregistrer automatiquement le flux financier
-                      correspondant dans Transactions (Anti-double saisie)
-                    </span>
-                  </label>
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block mb-1">
-
-                  Observations et références complémentaires
-                </label>
-                <Textarea
-                  value={formData.notes}
-                  onChange={(e) =>
-                    setFormData({ ...formData, notes: e.target.value })
-                  }
-                  placeholder="Détails du justificatif, identifiant externe, match..."
-                  rows={2}
-                  className="bg-white border-[#D8E6DB]"
-                />
-              </div>
-            </div>
-          </RecordForm>
+              </RecordConsultationSwitch>
+            </RecordForm>
+            {editingBet && (
+              <OperationCommentsPanel
+                operationType="bets"
+                operationId={editingBet.id}
+                operator={editingBet.operator}
+                amountFcfa={editingBet.amount_fcfa}
+                reference={editingBet.reference}
+                authorId={editingBet.created_by}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

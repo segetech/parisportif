@@ -39,7 +39,8 @@ export function canAgentEditRecord(
   validationStatus: string | undefined,
   createdAt?: string | null,
   editWindowMinutes?: number,
-): { allowed: boolean; reason?: string } {
+  editUnlockedUntil?: string | null,
+): { allowed: boolean; reason?: string; unlockedUntil?: string } {
   const normalizedRole = (role || "").toUpperCase();
   if (normalizedRole !== "AGENT") {
     return { allowed: true };
@@ -56,6 +57,14 @@ export function canAgentEditRecord(
   // Un dossier refusé peut être corrigé et resoumis par l'agent
   if (validationStatus === "refuse") {
     return { allowed: true };
+  }
+
+  // Prolongation temporaire accordée par un contrôleur ou administrateur
+  if (editUnlockedUntil) {
+    const unlockMs = new Date(editUnlockedUntil).getTime();
+    if (Number.isFinite(unlockMs) && unlockMs > Date.now()) {
+      return { allowed: true, unlockedUntil: editUnlockedUntil };
+    }
   }
 
   if (editWindowMinutes && editWindowMinutes > 0 && createdAt) {

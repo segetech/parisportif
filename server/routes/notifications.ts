@@ -200,6 +200,15 @@ export const handleDispatchNotification: RequestHandler = async (
         : `${opLabel} soumis par ${actorDisplay} sur ${operatorName}${formattedAmount !== "-" ? ` (${formattedAmount})` : ""}.`;
 
       if (targets.length > 0) {
+        if (body.operationId) {
+          await admin
+            .from("notifications")
+            .delete()
+            .eq("operation_id", body.operationId)
+            .eq("type", "new_operation")
+            .eq("message", "Une nouvelle opération nécessite votre validation");
+        }
+
         const rowsToInsert = targets.map((recipient) => ({
           user_id: recipient.id,
           type: "new_operation",
@@ -323,6 +332,41 @@ export const handleDispatchNotification: RequestHandler = async (
     const messageText = body.notes
       ? `${intro} Motif / Note : ${body.notes}`
       : intro;
+
+    // Si l'auteur de l'opération lui-même ajoute un commentaire, notifier les contrôleurs/admins
+    if (reviewStatus === "comment" && targetUserId === actor.id) {
+      const { data: reviewers } = await admin
+        .from("users")
+        .select("id, email, nom, prenom, role, statut")
+        .in("role", ["ADMIN", "CONTROLEUR"])
+        .eq("statut", "actif");
+
+      const reviewerTargets = (reviewers || []).filter((r) => r.id !== actor.id);
+      if (reviewerTargets.length > 0) {
+        const rows = reviewerTargets.map((r) => ({
+          user_id: r.id,
+          type: notifType,
+          title: title.slice(0, 250),
+          message: messageText,
+          operation_type: opType.slice(0, 20),
+          operation_id: body.operationId || null,
+          read: false,
+        }));
+        const { error: revInsertErr } = await admin
+          .from("notifications")
+          .insert(rows);
+        if (!revInsertErr) {
+          notificationsCreated = rows.length;
+        }
+      }
+
+      return res.json({
+        success: true,
+        notificationsCreated,
+        emailsProcessed: 0,
+        emailResults: [],
+      });
+    }
 
     const { error: insertErr } = await admin.from("notifications").insert({
       user_id: targetUserId,

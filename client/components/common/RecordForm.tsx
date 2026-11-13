@@ -1,11 +1,23 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Pencil, Clock, AlertTriangle, Check } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Loader2, Pencil, Clock, AlertTriangle, Check, Archive, Trash2 } from "lucide-react";
 
 const RecordFormReadOnlyContext = createContext(false);
 
 export function useRecordFormReadOnly() {
   return useContext(RecordFormReadOnlyContext);
+}
+
+export function RecordConsultationSwitch({
+  summary,
+  children,
+}: {
+  summary: ReactNode;
+  children: ReactNode;
+}) {
+  const readOnly = useRecordFormReadOnly();
+  return <>{readOnly ? summary : children}</>;
 }
 
 /** Shared explicit consultation/editing flow for existing record dialogs with draft protection. */
@@ -25,6 +37,13 @@ export function RecordForm({
   draftSaveStatus = "idle",
   canEdit = true,
   editBlockedReason,
+  footerClassName,
+  saveLabel,
+  unlockedUntil,
+  onRequestUnlock,
+  unlockRequestSent = false,
+  onArchive,
+  onHardDelete,
 }: {
   existing: boolean;
   children: ReactNode;
@@ -41,12 +60,40 @@ export function RecordForm({
   draftSaveStatus?: "idle" | "saving" | "saved";
   canEdit?: boolean;
   editBlockedReason?: string;
+  footerClassName?: string;
+  saveLabel?: string;
+  unlockedUntil?: string | null;
+  onRequestUnlock?: () => Promise<void> | void;
+  unlockRequestSent?: boolean;
+  onArchive?: (reason?: string) => Promise<void> | void;
+  onHardDelete?: () => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<"archive" | "hard_delete" | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
   const lock = useRef(false);
   const readOnly = existing && (!editing || !canEdit);
-  const pending = busy || saving;
+  const pending = busy || saving || actionBusy;
+
+  async function runDangerAction(kind: "archive" | "hard_delete") {
+    if (pending || lock.current) return;
+    lock.current = true;
+    setActionBusy(true);
+    try {
+      if (kind === "archive" && onArchive) {
+        await onArchive(archiveReason.trim() || undefined);
+      } else if (kind === "hard_delete" && onHardDelete) {
+        await onHardDelete();
+      }
+      setConfirmAction(null);
+      setArchiveReason("");
+    } finally {
+      lock.current = false;
+      setActionBusy(false);
+    }
+  }
 
   async function save() {
     if (readOnly || (existing && !canEdit) || pending || lock.current) return;
@@ -62,7 +109,7 @@ export function RecordForm({
 
   return (
     <form
-      className="min-w-0 space-y-4"
+      className="w-full max-w-full min-w-0 space-y-4 overflow-x-clip"
       onSubmit={(event) => {
         event.preventDefault();
         void save();
@@ -143,10 +190,10 @@ export function RecordForm({
       <fieldset
         key={readOnly ? "consultation" : "editing"}
         disabled={readOnly || pending}
-        className={`min-w-0 [&_input:disabled]:opacity-100 [&_textarea:disabled]:opacity-100 [&_select:disabled]:opacity-100 ${
+        className={`w-full min-w-0 max-w-full [&>*]:min-w-0 [&_input:disabled]:opacity-100 [&_textarea:disabled]:opacity-100 [&_select:disabled]:opacity-100 ${
           readOnly || pending
             ? "caret-transparent select-none cursor-default [&_input]:caret-transparent [&_textarea]:caret-transparent [&_input]:pointer-events-none [&_textarea]:pointer-events-none [&_select]:pointer-events-none"
-            : ""
+            : "[&_input:not(:disabled)]:caret-[#17251C] [&_textarea:not(:disabled)]:caret-[#17251C]"
         }`}
         onClickCapture={(event) => {
           if (readOnly || pending) {
@@ -166,62 +213,193 @@ export function RecordForm({
         </RecordFormReadOnlyContext.Provider>
       </fieldset>
 
-      <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-2 border-t bg-background pt-3 pb-1">
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11"
-          disabled={pending}
-          onClick={() => {
-            if (existing && editing) {
-              onRestore();
-              setEditing(false);
-            } else onClose();
-          }}
-        >
-          {existing && editing
-            ? "Annuler les modifications"
-            : readOnly
-              ? "Fermer"
-              : "Annuler"}
-        </Button>
-        {readOnly ? (
-          canEdit ? (
-            <Button
-              key="start-editing"
-              type="button"
-              className="min-h-11"
-              onClick={(event) => {
-                event.preventDefault();
-                setEditing(true);
-              }}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Modifier
-            </Button>
-          ) : (
-            editBlockedReason && (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                {editBlockedReason}
-              </span>
-            )
-          )
-        ) : (
+      <div
+        className={`sticky bottom-0 z-20 flex flex-col gap-2 border-t border-slate-200 bg-white pt-3 pb-3 shadow-[0_-4px_12px_rgba(15,23,42,0.05)] ${footerClassName || ""}`}
+      >
+        {existing && readOnly && confirmAction === "archive" && onArchive && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs">
+            <Input
+              value={archiveReason}
+              onChange={(e) => setArchiveReason(e.target.value)}
+              placeholder="Motif d'archivage (optionnel)..."
+              className="h-8 flex-1 min-w-[180px] bg-white text-xs"
+              disabled={pending}
+            />
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs bg-white"
+                disabled={pending}
+                onClick={() => setConfirmAction(null)}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 text-xs bg-amber-700 hover:bg-amber-800 text-white"
+                disabled={pending}
+                onClick={() => void runDangerAction("archive")}
+              >
+                {actionBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                Confirmer l&apos;archivage
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {existing && readOnly && confirmAction === "hard_delete" && onHardDelete && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-300 bg-rose-50 p-2.5 text-xs text-rose-900">
+            <span className="font-semibold">
+              Suppression définitive (irréversible) : confirmer ?
+            </span>
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs bg-white"
+                disabled={pending}
+                onClick={() => setConfirmAction(null)}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={pending}
+                onClick={() => void runDangerAction("hard_delete")}
+              >
+                {actionBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                Oui, supprimer définitivement
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {unlockedUntil && (
+            <span className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-900">
+              <Clock className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+              Modification autorisée jusqu&apos;à{" "}
+              {new Date(unlockedUntil).toLocaleTimeString("fr-FR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          )}
+          {existing && readOnly && (onArchive || onHardDelete) && (
+            <div className="mr-auto flex flex-wrap items-center gap-2">
+              {onArchive && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 border-amber-200 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+                  disabled={pending}
+                  onClick={() =>
+                    setConfirmAction(confirmAction === "archive" ? null : "archive")
+                  }
+                >
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archiver
+                </Button>
+              )}
+              {onHardDelete && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                  disabled={pending}
+                  onClick={() =>
+                    setConfirmAction(
+                      confirmAction === "hard_delete" ? null : "hard_delete",
+                    )
+                  }
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Supprimer
+                </Button>
+              )}
+            </div>
+          )}
           <Button
-            key="save-record"
-            type="submit"
+            type="button"
+            variant="outline"
             className="min-h-11"
             disabled={pending}
+            onClick={() => {
+              if (existing && editing) {
+                onRestore();
+                setEditing(false);
+              } else onClose();
+            }}
           >
-            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {pending
-              ? "Enregistrement…"
-              : existing
-                ? "Enregistrer les modifications"
-                : createLabel}
+            {existing && editing
+              ? "Annuler les modifications"
+              : readOnly
+                ? "Fermer"
+                : "Annuler"}
           </Button>
-        )}
+          {readOnly ? (
+            canEdit ? (
+              <Button
+                key="start-editing"
+                type="button"
+                className="min-h-11"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setConfirmAction(null);
+                  setEditing(true);
+                }}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Modifier
+              </Button>
+            ) : (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {editBlockedReason && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    {editBlockedReason}
+                  </span>
+                )}
+                {onRequestUnlock && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={unlockRequestSent}
+                    onClick={() => void onRequestUnlock()}
+                    className="min-h-10 border-[#B8DEC6] bg-[#E8F5EC] text-[#006B2D] hover:bg-[#D8EFE0]"
+                  >
+                    <Clock className="mr-1.5 h-3.5 w-3.5" />
+                    {unlockRequestSent
+                      ? "Demande envoyée"
+                      : "Demander une prolongation"}
+                  </Button>
+                )}
+              </div>
+            )
+          ) : (
+            <Button
+              key="save-record"
+              type="submit"
+              className="min-h-11"
+              disabled={pending}
+            >
+              {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {pending
+                ? "Enregistrement…"
+                : existing
+                  ? saveLabel || "Enregistrer les modifications"
+                  : createLabel}
+            </Button>
+          )}
+        </div>
       </div>
     </form>
   );

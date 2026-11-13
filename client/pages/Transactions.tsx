@@ -1,5 +1,7 @@
 import { OpenReportButton } from "@/components/reports/OpenReportExport";
 import { formatPhoneNumber, formatAmountInput, parseAmountInput } from "@/lib/utils";
+import { OperationCommentsPanel } from "@/components/common/OperationCommentsPanel";
+import { ProofPreview } from "@/components/common/ProofPreview";
 import { useSearchParams } from "react-router-dom";
 import { WeeklyReportSection } from "@/components/reports/WeeklyReportSection";
 import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
@@ -16,7 +18,7 @@ import {
   readRecordReference,
   writeRecordReference,
 } from "@/lib/record-reference";
-import { RecordForm } from "@/components/common/RecordForm";
+import { RecordForm, RecordConsultationSwitch } from "@/components/common/RecordForm";
 import {
   SmartFilterBar,
   SmartFilterState,
@@ -81,6 +83,10 @@ import {
   useVenues,
 } from "@/hooks/use-data-queries";
 import { invalidateRelatedQueries } from "@/lib/queryClient";
+import {
+  archiveOperationRecord,
+  hardDeleteOperationRecord,
+} from "@/lib/operation-archive";
 import { parsePaymentReference, ParsedPaymentRef } from "@/lib/smart-parser";
 import { dispatchAppNotification } from "@/lib/notification-navigation";
 
@@ -104,6 +110,9 @@ interface Transaction {
   notes?: string;
   created_by?: string;
   validation_status?: string;
+  validation_notes?: string | null;
+  edit_unlocked_until?: string | null;
+  refusal_fields?: string[] | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -181,17 +190,52 @@ function Transactions() {
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const idParam = searchParams.get("id");
+    if (!idParam || transactions.length === 0) return;
+    const match = transactions.find((t) => t.id === idParam);
+    if (match) {
+      openEditDialog(match);
+      const next = new URLSearchParams(searchParams);
+      next.delete("id");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, transactions, setSearchParams]);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const settings = useOptionalSettings();
   const canExport = user?.role !== "AGENT" || settings.agentCanExport;
+  const [unlockRequestSent, setUnlockRequestSent] = useState(false);
+  useEffect(() => {
+    setUnlockRequestSent(false);
+  }, [editingTransaction?.id, dialogOpen]);
+
   const editPermission = editingTransaction
     ? canAgentEditRecord(
         user?.role,
         editingTransaction.validation_status,
         editingTransaction.created_at,
         settings.agentEditWindowMinutes,
+        editingTransaction.edit_unlocked_until,
       )
     : { allowed: true };
+
+  async function handleRequestUnlock() {
+    if (!editingTransaction) return;
+    setUnlockRequestSent(true);
+    await dispatchAppNotification({
+      eventType: "operation_created",
+      operationType: "transactions",
+      operationId: editingTransaction.id,
+      status: "modify",
+      operator: editingTransaction.operator,
+      amountFcfa: editingTransaction.amount_fcfa,
+      reference: editingTransaction.reference || undefined,
+      authorId: user?.id,
+      notes: "Demande de prolongation du délai de modification par l'agent",
+    });
+    toast.success("Demande de prolongation envoyée aux contrôleurs");
+  }
   const initialExportPeriod = useMemo(() => currentReportPeriod(), []);
   const [exportPeriodMode, setExportPeriodMode] = useState<PeriodMode>("fixed");
   const [exportYear, setExportYear] = useState(initialExportPeriod.year);
@@ -462,16 +506,33 @@ function Transactions() {
       };
 
       if (editingTransaction) {
-        // Mode édition
+        const isResubmission = editingTransaction.validation_status === "refuse";
+        const updatePayload = isResubmission
+          ? { ...transactionData, validation_status: "en_attente" }
+          : transactionData;
         const { error } = await supabase
           .from("transactions")
-          .update(transactionData)
+          .update(updatePayload)
           .eq("id", editingTransaction.id)
           .select("id")
           .single();
 
         if (error) throw error;
-        toast.success("Transaction modifiée avec succès");
+        if (isResubmission) {
+          void dispatchAppNotification({
+            eventType: "operation_created",
+            operationType: "transactions",
+            operationId: editingTransaction.id,
+            status: "en_attente",
+            operator: formData.operator,
+            amountFcfa: Number(formData.amount_fcfa) || 0,
+            reference: transactionData.reference || undefined,
+            authorId: user?.id,
+          });
+          toast.success("Transaction corrigée et resoumise pour validation");
+        } else {
+          toast.success("Transaction modifiée avec succès");
+        }
       } else {
         // Mode création
         const isAdmin = user?.role === "ADMIN";
@@ -1384,20 +1445,60 @@ function Transactions() {
 
       {/* Dialog de création */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-[#17251C]">
-              {editingTransaction
-                ? "Consulter le dépôt / retrait"
-                : "Nouveau dépôt ou retrait"}
-            </DialogTitle>
-            <DialogDescription className="text-sm text-[#5C7363]">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="shrink-0 border-b border-[#E3ECE5] bg-[#F8FBF9] px-5 pt-5 pb-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 pr-8">
+              <DialogTitle className="text-lg font-bold text-[#17251C]">
+                {editingTransaction
+                  ? "Consulter le dépôt / retrait"
+                  : "Nouveau dépôt ou retrait"}
+              </DialogTitle>
+              {editingTransaction && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-white border-[#D8E6DB] text-[#17251C] font-semibold">
+                    {editingTransaction.operator}
+                  </Badge>
+                  <Badge className="bg-[#006B2D] text-white hover:bg-[#005925] tabular-nums">
+                    {Number(editingTransaction.amount_fcfa || 0).toLocaleString("fr-FR")} FCFA
+                  </Badge>
+                </div>
+              )}
+            </div>
+            <DialogDescription className="text-xs text-[#5C7363]">
               {editingTransaction
                 ? "Détails et modifications de l'opération financière enregistrée."
                 : "Saisie d'une nouvelle opération de dépôt ou de retrait."}
             </DialogDescription>
           </DialogHeader>
 
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-4 space-y-6">
+          {editingTransaction?.validation_status === "refuse" && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 space-y-1.5">
+              <p className="font-semibold">
+                Opération refusée — veuillez corriger puis resoumettre pour validation
+              </p>
+              {editingTransaction.validation_notes && (
+                <p className="text-rose-800 whitespace-pre-wrap">
+                  Motif : {editingTransaction.validation_notes}
+                </p>
+              )}
+              {Array.isArray(editingTransaction.refusal_fields) &&
+                editingTransaction.refusal_fields.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="font-medium text-rose-800">Éléments signalés :</span>
+                    {editingTransaction.refusal_fields.map((field) => (
+                      <Badge
+                        key={field}
+                        variant="outline"
+                        className="border-rose-300 bg-white text-rose-800 text-[11px]"
+                      >
+                        {field}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+            </div>
+          )}
           <RecordForm
             key={`${dialogOpen}-${editingTransaction?.id || "new"}`}
             existing={!!editingTransaction}
@@ -1405,6 +1506,20 @@ function Transactions() {
             onClose={() => setDialogOpen(false)}
             onRestore={() => openEditDialog(editingTransaction!)}
             createLabel="Enregistrer l'opération"
+            saveLabel={
+              editingTransaction?.validation_status === "refuse"
+                ? "Corriger et resoumettre"
+                : undefined
+            }
+            unlockedUntil={editPermission.unlockedUntil}
+            onRequestUnlock={
+              editingTransaction &&
+              editingTransaction.validation_status !== "valide" &&
+              !editPermission.allowed
+                ? handleRequestUnlock
+                : undefined
+            }
+            unlockRequestSent={unlockRequestSent}
             hasDraft={hasDraft}
             draftTime={savedAtFormatted}
             hasConflict={hasConflict}
@@ -1413,7 +1528,132 @@ function Transactions() {
             draftSaveStatus={saveStatus}
             canEdit={editPermission.allowed}
             editBlockedReason={editPermission.reason}
+            onArchive={
+              editingTransaction &&
+              (user?.role === "ADMIN" || user?.role === "CONTROLEUR")
+                ? async (reason) => {
+                    const ok = await archiveOperationRecord(
+                      "transactions",
+                      editingTransaction.id,
+                      reason,
+                    );
+                    if (ok) setDialogOpen(false);
+                  }
+                : undefined
+            }
+            onHardDelete={
+              editingTransaction && user?.role === "ADMIN"
+                ? async () => {
+                    const ok = await hardDeleteOperationRecord(
+                      "transactions",
+                      editingTransaction.id,
+                    );
+                    if (ok) setDialogOpen(false);
+                  }
+                : undefined
+            }
+            footerClassName="-mx-5 -mb-4 px-5"
           >
+            <RecordConsultationSwitch
+              summary={
+                <div className="space-y-3 min-w-0">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3.5 space-y-2.5 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            editingTransaction?.validation_status === "valide"
+                              ? "default"
+                              : editingTransaction?.validation_status === "refuse"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                          className="gap-1"
+                        >
+                          {editingTransaction?.validation_status === "valide"
+                            ? "Validé"
+                            : editingTransaction?.validation_status === "refuse"
+                              ? "Refusé"
+                              : "En attente"}
+                        </Badge>
+                        <span className="font-semibold text-slate-900">
+                          {formData.operator || editingTransaction?.operator || "Opérateur"}
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-500">
+                        {formData.date
+                          ? new Date(`${formData.date}T00:00:00`).toLocaleDateString("fr-FR")
+                          : ""}
+                        {formData.time ? ` à ${formData.time.slice(0, 5)}` : ""}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 text-xs">
+                      <div>
+                        <span className="text-slate-500 block">Type</span>
+                        <span className="font-semibold text-slate-900">
+                          {formData.type || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Montant</span>
+                        <span className="font-semibold text-slate-900 tabular-nums">
+                          {Number(formData.amount_fcfa || 0).toLocaleString("fr-FR")} FCFA
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Plateforme</span>
+                        <span className="font-semibold text-slate-900">
+                          {formData.platform || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Moyen de paiement</span>
+                        <span className="font-semibold text-slate-900">
+                          {formData.payment_operator || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Téléphone</span>
+                        <span className="font-semibold text-slate-900 tabular-nums">
+                          {formData.phone || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Référence</span>
+                        <span className="font-semibold text-slate-900 break-all">
+                          {ticketRef || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Preuve</span>
+                        <span className="font-semibold text-slate-900">
+                          {formData.proof_status === "disponible"
+                            ? "disponible"
+                            : formData.proof_status === "non_disponible"
+                              ? "non disponible"
+                              : "non renseignée"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {formData.notes && (
+                      <div className="pt-1.5 border-t border-slate-200 text-xs">
+                        <span className="text-slate-500 block">Notes / Observations</span>
+                        <p className="text-slate-800 whitespace-pre-wrap">{formData.notes}</p>
+                      </div>
+                    )}
+
+                    {formData.proof_attachment_url && (
+                      <ProofPreview
+                        url={formData.proof_attachment_url}
+                        title="Pièce justificative"
+                      />
+                    )}
+                  </div>
+                </div>
+              }
+            >
             <div className="grid grid-cols-[minmax(0,1fr)] gap-4 pt-2 [&_input]:min-w-0 [&_select]:min-w-0">
               {/* 1. DATE & Opérateur de jeux */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1654,7 +1894,19 @@ function Transactions() {
                 />
               </div>
             </div>
+            </RecordConsultationSwitch>
           </RecordForm>
+          {editingTransaction && (
+            <OperationCommentsPanel
+              operationType="transactions"
+              operationId={editingTransaction.id}
+              operator={editingTransaction.operator}
+              amountFcfa={editingTransaction.amount_fcfa}
+              reference={editingTransaction.reference}
+              authorId={editingTransaction.created_by}
+            />
+          )}
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -87,10 +87,36 @@ export function NotificationBell() {
         .order("created_at", { ascending: false })
         .limit(30);
 
-      const persisted: Notification[] = (dbNotifs || []).map((n) => ({
+      const rawPersisted: Notification[] = (dbNotifs || []).map((n) => ({
         ...n,
         read: Boolean(n.read),
       }));
+
+      // Dédupliquer les notifications persistantes pour une même opération (privilégier la version enrichie)
+      const dedupedMap = new Map<string, Notification>();
+      const persisted: Notification[] = [];
+      for (const n of rawPersisted) {
+        if (!n.operation_id) {
+          persisted.push(n);
+          continue;
+        }
+        const key = `${n.operation_id}:${n.type}`;
+        const existing = dedupedMap.get(key);
+        if (!existing) {
+          dedupedMap.set(key, n);
+          persisted.push(n);
+        } else {
+          const existingIsGeneric =
+            existing.message === "Une nouvelle opération nécessite votre validation";
+          const currentIsGeneric =
+            n.message === "Une nouvelle opération nécessite votre validation";
+          if (existingIsGeneric && !currentIsGeneric) {
+            const idx = persisted.indexOf(existing);
+            if (idx !== -1) persisted[idx] = n;
+            dedupedMap.set(key, n);
+          }
+        }
+      }
 
       // Track existing (operation_id + type) pairs to avoid duplicates with synthetic items
       const existingKeys = new Set(
@@ -378,11 +404,11 @@ export function NotificationBell() {
     toast.success("Toutes les notifications marquées comme lues");
   };
 
-  const handleNotificationClick = async (notif: Notification) => {
-    await markAsRead(notif);
+  const handleNotificationClick = (notif: Notification) => {
     const target = resolveNotificationTarget(notif, user?.role);
     setOpen(false);
     navigate(target.path);
+    void markAsRead(notif);
   };
 
   const handleSendTestEmail = async () => {

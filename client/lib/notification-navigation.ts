@@ -80,8 +80,13 @@ export function resolveNotificationTarget(
         category,
       };
     }
+    const query = ref
+      ? `?ref=${encodeURIComponent(ref)}`
+      : opId
+        ? `?id=${encodeURIComponent(opId)}`
+        : "";
     return {
-      path: `/tests${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`,
+      path: `/tests${query}`,
       label: "Tests de paris",
       category,
     };
@@ -101,8 +106,13 @@ export function resolveNotificationTarget(
         category,
       };
     }
+    const query = ref
+      ? `?ref=${encodeURIComponent(ref)}`
+      : opId
+        ? `?id=${encodeURIComponent(opId)}`
+        : "";
     return {
-      path: `/transactions${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`,
+      path: `/transactions${query}`,
       label: "Dépôts & Retraits",
       category,
     };
