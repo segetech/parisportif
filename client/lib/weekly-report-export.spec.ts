@@ -209,7 +209,7 @@ describe("weekly-report-export", () => {
     }
     expect(pariMatrixHeaderRow).toBeGreaterThan(13);
     expect(String(wsPari.getCell(`A${pariMatrixHeaderRow - 2}`).value)).toContain(
-      "Récapitulatif clair et structuré",
+      "Matrice Journalière des Tests par Opérateur Actif",
     );
     expect(wsPari.getCell(`C${pariMatrixHeaderRow}`).value).toBe("1XBET");
     expect(wsPari.getCell(`D${pariMatrixHeaderRow}`).value).toBe("BET223");

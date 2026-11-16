@@ -671,7 +671,7 @@ async function buildWeeklyOfficialWorkbookInternal({
     pariRowIdx += 1;
     const introRow = wsPari.getRow(pariRowIdx++);
     introRow.height = 20;
-    introRow.getCell(1).value = `Récapitulatif clair et structuré des tests effectués sur les différentes plateformes de jeux durant la semaine ${sentencePeriod} :`;
+    introRow.getCell(1).value = `Matrice Journalière des Tests par Opérateur Actif (${sentencePeriod}) :`;
     introRow.getCell(1).font = {
       name: "Cambria",
       size: 12,
@@ -921,7 +921,7 @@ async function buildWeeklyOfficialWorkbookInternal({
     txRowIdx += 1;
     const introRow = wsTx.getRow(txRowIdx++);
     introRow.height = 20;
-    introRow.getCell(1).value = `Récapitulatif clair et structuré des dépôts et retraits effectués sur les différentes plateformes de jeux durant la semaine ${sentencePeriod} :`;
+    introRow.getCell(1).value = `Matrice Récapitulative Dépôts & Retraits par Opérateur Actif (F CFA) (${sentencePeriod}) :`;
     introRow.getCell(1).font = {
       name: "Cambria",
       size: 12,
@@ -1223,6 +1223,70 @@ async function buildWeeklyOfficialWorkbookInternal({
     styleHeaderCell(totalRow.getCell(6), "FFF2F2F2", 12);
     totalRow.getCell(6).alignment = { vertical: "middle", horizontal: "right" };
 
+    // Matrice journalière + graphique natif en bas de l'onglet Test <Opérateur>
+    const opBetMatrix = buildDailyBetMatrix(opBets, startDate, endDate, [op]);
+    rIdx += 1;
+    const opBetMTitle = wsOpTest.getRow(rIdx++);
+    opBetMTitle.height = 20;
+    opBetMTitle.getCell(2).value = `Matrice Journalière des Tests — ${op.displayName}`;
+    opBetMTitle.getCell(2).font = { name: "Cambria", size: 12, bold: true, color: { argb: "FF000000" } };
+
+    const opBetMHead = wsOpTest.getRow(rIdx++);
+    opBetMHead.height = 24;
+    opBetMHead.getCell(2).value = "DATE";
+    opBetMHead.getCell(3).value = op.label;
+    styleHeaderCell(opBetMHead.getCell(2), "FFBFBFBF", 12);
+    styleHeaderCell(opBetMHead.getCell(3), op.fill, 12);
+
+    const opBetMFirst = rIdx;
+    let opBetMSum = 0;
+    opBetMatrix.forEach((m) => {
+      const mr = wsOpTest.getRow(rIdx++);
+      mr.height = 20;
+      const cnt = m.counts[op.key] || 0;
+      opBetMSum += cnt;
+      mr.getCell(2).value = m.label;
+      mr.getCell(3).value = cnt > 0 ? cnt : 0;
+      styleDataCell(mr.getCell(2), "center", true, 12);
+      styleDataCell(mr.getCell(3), "center", false, 12);
+    });
+    const opBetMLast = rIdx - 1;
+    const opBetMTotal = wsOpTest.getRow(rIdx++);
+    opBetMTotal.height = 22;
+    opBetMTotal.getCell(2).value = "TOTAL";
+    styleHeaderCell(opBetMTotal.getCell(2), "FFBFBFBF", 12);
+    opBetMTotal.getCell(3).value =
+      opBetMLast >= opBetMFirst
+        ? { formula: `SUM(C${opBetMFirst}:C${opBetMLast})`, result: opBetMSum }
+        : opBetMSum;
+    styleHeaderCell(opBetMTotal.getCell(3), "FFF2F2F2", 12);
+
+    if (opBetMLast >= opBetMFirst) {
+      const safeName = wsOpTest.name.replace(/'/g, "''");
+      charts.push({
+        sheetId: wsOpTest.id,
+        title: `Tests journaliers — ${op.displayName}`,
+        kind: "bar",
+        row: rIdx + 1,
+        column: 1,
+        width: 7,
+        height: 16,
+        unit: "Tests",
+        categories: {
+          formula: `'${safeName}'!$B$${opBetMFirst}:$B$${opBetMLast}`,
+          values: opBetMatrix.map((m) => m.label),
+        },
+        series: [
+          {
+            name: op.displayName,
+            formula: `'${safeName}'!$C$${opBetMFirst}:$C$${opBetMLast}`,
+            values: opBetMatrix.map((m) => m.counts[op.key] || 0),
+            color: op.chartColor.replace(/^#/, ""),
+          },
+        ],
+      });
+    }
+
     // 4b. Onglet Dépôt-Retrait <Opérateur>
     const opTxs = txGroupMap.get(op.key)?.items || [];
     const wsOpTx = wb.addWorksheet(
@@ -1295,6 +1359,94 @@ async function buildWeeklyOfficialWorkbookInternal({
     retRow.getCell(7).numFmt = "#,##0";
     styleHeaderCell(retRow.getCell(7), "FFF2F2F2", 12);
     retRow.getCell(7).alignment = { vertical: "middle", horizontal: "right" };
+
+    // Matrice récapitulative + graphique natif en bas de l'onglet Dépôt-Retrait <Opérateur>
+    const opTxMatrix = buildDailyTxMatrix(opTxs, startDate, endDate, [op]);
+    txRIdx += 1;
+    const opTxMTitle = wsOpTx.getRow(txRIdx++);
+    opTxMTitle.height = 20;
+    opTxMTitle.getCell(2).value = `Matrice Récapitulative Dépôts & Retraits — ${op.displayName} (F CFA)`;
+    opTxMTitle.getCell(2).font = { name: "Cambria", size: 12, bold: true, color: { argb: "FF000000" } };
+
+    const opTxMHead = wsOpTx.getRow(txRIdx++);
+    opTxMHead.height = 24;
+    opTxMHead.getCell(2).value = "DATE";
+    opTxMHead.getCell(3).value = "DEPOTS";
+    opTxMHead.getCell(4).value = "RETRAITS";
+    styleHeaderCell(opTxMHead.getCell(2), "FFBFBFBF", 12);
+    styleHeaderCell(opTxMHead.getCell(3), op.fill, 12);
+    styleHeaderCell(opTxMHead.getCell(4), op.fill, 12);
+
+    const opTxMFirst = txRIdx;
+    let opTxMDepotSum = 0;
+    let opTxMRetraitSum = 0;
+    opTxMatrix.forEach((m) => {
+      const mr = wsOpTx.getRow(txRIdx++);
+      mr.height = 20;
+      const dVal = m.depots[op.key] || 0;
+      const rVal = m.retraits[op.key] || 0;
+      opTxMDepotSum += dVal;
+      opTxMRetraitSum += rVal;
+      mr.getCell(2).value = m.label;
+      styleDataCell(mr.getCell(2), "center", true, 12);
+      mr.getCell(3).value = dVal > 0 ? dVal : 0;
+      mr.getCell(3).numFmt = "#,##0";
+      styleDataCell(mr.getCell(3), "right", false, 12);
+      mr.getCell(4).value = rVal > 0 ? rVal : 0;
+      mr.getCell(4).numFmt = "#,##0";
+      styleDataCell(mr.getCell(4), "right", false, 12);
+    });
+    const opTxMLast = txRIdx - 1;
+    const opTxMTotal = wsOpTx.getRow(txRIdx++);
+    opTxMTotal.height = 22;
+    opTxMTotal.getCell(2).value = "TOTAL";
+    styleHeaderCell(opTxMTotal.getCell(2), "FFBFBFBF", 12);
+    opTxMTotal.getCell(3).value =
+      opTxMLast >= opTxMFirst
+        ? { formula: `SUM(C${opTxMFirst}:C${opTxMLast})`, result: opTxMDepotSum }
+        : opTxMDepotSum;
+    opTxMTotal.getCell(3).numFmt = "#,##0";
+    styleHeaderCell(opTxMTotal.getCell(3), "FFF2F2F2", 12);
+    opTxMTotal.getCell(3).alignment = { vertical: "middle", horizontal: "right" };
+    opTxMTotal.getCell(4).value =
+      opTxMLast >= opTxMFirst
+        ? { formula: `SUM(D${opTxMFirst}:D${opTxMLast})`, result: opTxMRetraitSum }
+        : opTxMRetraitSum;
+    opTxMTotal.getCell(4).numFmt = "#,##0";
+    styleHeaderCell(opTxMTotal.getCell(4), "FFF2F2F2", 12);
+    opTxMTotal.getCell(4).alignment = { vertical: "middle", horizontal: "right" };
+
+    if (opTxMLast >= opTxMFirst) {
+      const safeName = wsOpTx.name.replace(/'/g, "''");
+      charts.push({
+        sheetId: wsOpTx.id,
+        title: `Dépôts & Retraits — ${op.displayName} (F CFA)`,
+        kind: "bar",
+        row: txRIdx + 1,
+        column: 1,
+        width: 8,
+        height: 16,
+        unit: "FCFA",
+        categories: {
+          formula: `'${safeName}'!$B$${opTxMFirst}:$B$${opTxMLast}`,
+          values: opTxMatrix.map((m) => m.label),
+        },
+        series: [
+          {
+            name: "Dépôts",
+            formula: `'${safeName}'!$C$${opTxMFirst}:$C$${opTxMLast}`,
+            values: opTxMatrix.map((m) => m.depots[op.key] || 0),
+            color: op.chartColor.replace(/^#/, ""),
+          },
+          {
+            name: "Retraits",
+            formula: `'${safeName}'!$D$${opTxMFirst}:$D$${opTxMLast}`,
+            values: opTxMatrix.map((m) => m.retraits[op.key] || 0),
+            color: "E52329",
+          },
+        ],
+      });
+    }
   });
 
   return { wb, charts };
