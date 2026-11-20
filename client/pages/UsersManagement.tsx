@@ -532,17 +532,6 @@ function UsersManagement() {
     }
   };
 
-  if (isLoading && users.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-3">
-        <Loader2 className="h-8 w-8 animate-spin text-[#006B2D]" />
-        <div className="text-sm text-[#556B5C]">
-          Chargement de la gouvernance des comptes...
-        </div>
-      </div>
-    );
-  }
-
   const userNameById = useMemo(() => {
     const map: Record<string, string> = {};
     for (const u of users) {
@@ -632,6 +621,17 @@ function UsersManagement() {
   }
 
   const anyFetching = isFetching || fetchingLogins || fetchingAudit;
+
+  if (isLoading && users.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-[#006B2D]" />
+        <div className="text-sm text-[#556B5C]">
+          Chargement de la gouvernance des comptes...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -145,8 +145,8 @@ describe("weekly-report-export", () => {
       activeOperatorNames: ["1xBet", "Bet223", "PremierBet"],
     });
 
-    // --- FEUILLE PARI ---
-    const wsPari = wb.getWorksheet("PARI")!;
+    // --- FEUILLE TEST ---
+    const wsPari = wb.getWorksheet("TEST")!;
     expect(wsPari).toBeDefined();
     expect(wsPari.getCell("C1").value).toBe(
       "RAPPORT DE LA SEMAINE DU 16 AU 22 JANVIER",

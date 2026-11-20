@@ -12,13 +12,23 @@ import {
 } from "recharts";
 import {
   Download,
+  Eye,
   FileSpreadsheet,
   Image as ImageIcon,
   Calendar,
   BarChart3,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PeriodSelector, type PeriodMode } from "@/components/reports/PeriodSelector";
 import {
   currentReportPeriod,
@@ -39,8 +49,66 @@ import {
   buildDailyBetMatrix,
   buildDailyTxMatrix,
   groupOperationsByOperator,
+  buildWeeklyOfficialWorkbook,
   exportWeeklyOfficialReport,
 } from "@/lib/weekly-report-export";
+
+interface PreviewSheetCell {
+  text: string;
+  bgHex?: string;
+  bold?: boolean;
+  align?: "left" | "center" | "right";
+  colSpan?: number;
+  rowSpan?: number;
+}
+
+function colLettersToNumber(letters: string): number {
+  let num = 0;
+  for (let i = 0; i < letters.length; i++) {
+    num = num * 26 + (letters.charCodeAt(i) - 64);
+  }
+  return num;
+}
+
+function parseMergeBounds(range: string): { r1: number; c1: number; r2: number; c2: number } | null {
+  const m = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i.exec(range.trim());
+  if (!m) return null;
+  return {
+    c1: colLettersToNumber(m[1].toUpperCase()),
+    r1: Number(m[2]),
+    c2: colLettersToNumber(m[3].toUpperCase()),
+    r2: Number(m[4]),
+  };
+}
+
+interface PreviewSheetData {
+  name: string;
+  colCount: number;
+  colWidthsPx: number[];
+  rows: Array<{ rowNum: number; cells: PreviewSheetCell[] }>;
+}
+
+function argbToHex(argb?: string): string | undefined {
+  if (!argb || argb.length < 6) return undefined;
+  const hex = argb.length === 8 ? argb.slice(2) : argb;
+  return `#${hex}`;
+}
+
+function formatPreviewCellText(val: any): string {
+  if (val === null || val === undefined || val === "") return "";
+  if (typeof val === "object") {
+    if ("result" in val) {
+      const r = val.result;
+      if (typeof r === "number") return r.toLocaleString("fr-FR");
+      return r !== null && r !== undefined ? String(r) : "";
+    }
+    if ("richText" in val && Array.isArray(val.richText)) {
+      return val.richText.map((t: any) => t.text).join("");
+    }
+  }
+  if (typeof val === "number") return val.toLocaleString("fr-FR");
+  return String(val);
+}
 
 export interface WeeklyReportSectionProps {
   externalStartDate?: string;
@@ -63,6 +131,10 @@ export function WeeklyReportSection({
   const [customStart, setCustomStart] = useState(initialPeriod.start);
   const [customEnd, setCustomEnd] = useState(initialPeriod.end);
   const [isExporting, setIsExporting] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSheets, setPreviewSheets] = useState<PreviewSheetData[]>([]);
+  const [previewActiveTab, setPreviewActiveTab] = useState<string>("TEST");
 
   const selectedPeriod = useMemo(() => {
     try {
@@ -276,56 +348,140 @@ export function WeeklyReportSection({
     toast.success("Image PNG du graphe téléchargée");
   }
 
-  async function handleExportExcel() {
-    if (!startDate || !endDate || startDate > endDate) {
-      toast.error("Veuillez sélectionner une période valide");
-      return;
-    }
+  async function fetchReportPayload() {
     const frozenStart = startDate;
     const frozenEnd = endDate;
     const frozenPeriod =
       externalStartDate !== undefined || periodMode === "custom"
         ? customReportPeriod(frozenStart, frozenEnd)
         : selectedPeriod;
+    const chartImg = await captureChartBase64();
+    let exportBets = bets;
+    let exportTx = transactions;
+    let exportIllegals = illegals;
+
+    if (frozenPeriod) {
+      const snapshot = await fetchOpenReport(supabase, {
+        period: frozenPeriod,
+        scope: "all",
+        operators:
+          externalOperators && externalOperators.length > 0
+            ? externalOperators
+            : undefined,
+      });
+      exportBets = snapshot.tests as any;
+      exportTx = snapshot.transactions as any;
+      exportIllegals = snapshot.anomalies.map((r: any) => ({
+        ...r,
+        category:
+          r.report_entity === "Transaction signalée"
+            ? "Dépôt/Retrait illégal"
+            : "Pari illégal",
+      }));
+    }
+
+    return {
+      startDate: frozenStart,
+      endDate: frozenEnd,
+      activeOperatorNames,
+      bets: exportBets,
+      transactions: exportTx,
+      illegals: exportIllegals,
+      chartImageBase64: chartImg,
+    };
+  }
+
+  async function handlePreviewExcel() {
+    if (!startDate || !endDate || startDate > endDate) {
+      toast.error("Veuillez sélectionner une période valide");
+      return;
+    }
+    setIsPreviewing(true);
+    try {
+      const payload = await fetchReportPayload();
+      const wb = await buildWeeklyOfficialWorkbook(payload);
+
+      const sheets: PreviewSheetData[] = wb.worksheets.map((ws) => {
+        const colCount = Math.max(ws.columnCount || 9, 1);
+        const colWidthsPx: number[] = [];
+        for (let c = 1; c <= colCount; c++) {
+          const w = ws.getColumn(c).width;
+          const fallback = c === 1 ? 6 : c === 2 ? 14 : 18;
+          const px = Math.max(44, Math.min(260, Math.round((w || fallback) * 7.2)));
+          colWidthsPx.push(px);
+        }
+        const mergeMasterMap = new Map<string, { colSpan: number; rowSpan: number }>();
+        const mergeSlaveSet = new Set<string>();
+        for (const mRange of ws.model?.merges || []) {
+          const b = parseMergeBounds(mRange);
+          if (!b) continue;
+          mergeMasterMap.set(`${b.r1}:${b.c1}`, {
+            colSpan: b.c2 - b.c1 + 1,
+            rowSpan: b.r2 - b.r1 + 1,
+          });
+          for (let rr = b.r1; rr <= b.r2; rr++) {
+            for (let cc = b.c1; cc <= b.c2; cc++) {
+              if (rr === b.r1 && cc === b.c1) continue;
+              mergeSlaveSet.add(`${rr}:${cc}`);
+            }
+          }
+        }
+
+        const rows: PreviewSheetData["rows"] = [];
+        for (let r = 1; r <= ws.rowCount; r++) {
+          const row = ws.getRow(r);
+          const cells: PreviewSheetCell[] = [];
+          for (let c = 1; c <= colCount; c++) {
+            const coordKey = `${r}:${c}`;
+            if (mergeSlaveSet.has(coordKey)) continue;
+            const span = mergeMasterMap.get(coordKey);
+            const cell = row.getCell(c);
+            const fill: any = cell.fill;
+            const bgHex =
+              fill?.type === "pattern" ? argbToHex(fill?.fgColor?.argb) : undefined;
+            cells.push({
+              text: formatPreviewCellText(cell.value),
+              bgHex,
+              bold: Boolean(cell.font?.bold),
+              align:
+                (cell.alignment?.horizontal as "left" | "center" | "right") ||
+                "left",
+              colSpan: span && span.colSpan > 1 ? span.colSpan : undefined,
+              rowSpan: span && span.rowSpan > 1 ? span.rowSpan : undefined,
+            });
+          }
+          rows.push({ rowNum: r, cells });
+        }
+        return { name: ws.name, colCount, colWidthsPx, rows };
+      });
+
+      setPreviewSheets(sheets);
+      if (sheets.length > 0) setPreviewActiveTab(sheets[0].name);
+      setPreviewOpen(true);
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Impossible de générer l'aperçu du classeur",
+      );
+    } finally {
+      setIsPreviewing(false);
+    }
+  }
+
+  async function handleExportExcel() {
+    if (!startDate || !endDate || startDate > endDate) {
+      toast.error("Veuillez sélectionner une période valide");
+      return;
+    }
     setIsExporting(true);
     toast.loading("Génération du rapport officiel Excel...", {
       id: "weekly-report",
     });
     try {
-      const chartImg = await captureChartBase64();
-      let exportBets = bets;
-      let exportTx = transactions;
-      let exportIllegals = illegals;
-
-      if (frozenPeriod) {
-        const snapshot = await fetchOpenReport(supabase, {
-          period: frozenPeriod,
-          scope: "all",
-          operators:
-            externalOperators && externalOperators.length > 0
-              ? externalOperators
-              : undefined,
-        });
-        exportBets = snapshot.tests as any;
-        exportTx = snapshot.transactions as any;
-        exportIllegals = snapshot.anomalies.map((r: any) => ({
-          ...r,
-          category:
-            r.report_entity === "Transaction signalée"
-              ? "Dépôt/Retrait illégal"
-              : "Pari illégal",
-        }));
-      }
-
-      await exportWeeklyOfficialReport({
-        startDate: frozenStart,
-        endDate: frozenEnd,
-        activeOperatorNames,
-        bets: exportBets,
-        transactions: exportTx,
-        illegals: exportIllegals,
-        chartImageBase64: chartImg,
-      });
+      const payload = await fetchReportPayload();
+      await exportWeeklyOfficialReport(payload);
       toast.success("Rapport officiel (.xlsx) généré avec succès", {
         id: "weekly-report",
       });
@@ -349,40 +505,63 @@ export function WeeklyReportSection({
     <div className="space-y-6">
       {/* En-tête & Sélection de période */}
       <div className="p-5 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-xl bg-[#EBF7EE] text-[#006B2D] flex items-center justify-center shrink-0 border border-[#D8E6DB]">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="h-10 w-10 rounded-xl bg-[#EBF7EE] text-[#006B2D] flex items-center justify-center shrink-0 border border-[#CFE4D5]">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
-            <div>
-              <h2 className="text-lg font-extrabold text-[#17251C]">
-                Matrice &amp; Rapport Officiel par Période (PARI, DEPOT-RETRAIT, ILLEGAL)
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-extrabold text-[#17251C] tracking-tight">
+                Matrice &amp; Rapport Officiel par Période
               </h2>
-              <p className="text-xs text-[#556B5C]">
-                Aperçu journalier dynamique sur les {reportOperators.length} opérateur(s) actif(s) — export complet paginé au format Excel avec graphe intégré.
+              <p className="text-xs text-[#556B5C] mt-0.5">
+                Feuilles <span className="font-semibold text-[#17251C]">TEST</span>,{" "}
+                <span className="font-semibold text-[#17251C]">DEPOT-RETRAIT</span> et{" "}
+                <span className="font-semibold text-[#17251C]">ILLEGAL</span> sur{" "}
+                {reportOperators.length} opérateur(s) actif(s).
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button
+              type="button"
               variant="outline"
               onClick={handleDownloadChartPng}
-              className="min-h-11 text-xs font-bold text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5] rounded-xl gap-1.5"
+              className="h-10 px-3.5 text-xs font-semibold text-[#17251C] bg-[#FAFBF9] border-[#D8E6DB] hover:bg-[#F0F5F1] hover:border-[#B8DEC6] rounded-lg gap-1.5 whitespace-nowrap transition-colors duration-150"
             >
-              <ImageIcon className="h-4 w-4 text-[#006B2D]" />
-              <span>Télécharger le graphe (PNG)</span>
+              <ImageIcon className="h-4 w-4 text-[#556B5C]" />
+              <span>Graphe PNG</span>
             </Button>
             <Button
+              type="button"
+              variant="outline"
+              onClick={handlePreviewExcel}
+              disabled={isPreviewing || isExporting || !startDate || !endDate || startDate > endDate}
+              className="h-10 px-3.5 text-xs font-bold text-[#006B2D] bg-[#EBF7EE] border-[#B8DEC6] hover:bg-[#DCF1E2] hover:border-[#006B2D]/40 rounded-lg gap-1.5 whitespace-nowrap transition-colors duration-150"
+            >
+              {isPreviewing ? (
+                <Loader2 className="h-4 w-4 animate-spin text-[#006B2D]" />
+              ) : (
+                <Eye className="h-4 w-4 text-[#006B2D]" />
+              )}
+              <span>
+                {isPreviewing ? "Chargement…" : "Aperçu Excel"}
+              </span>
+            </Button>
+            <Button
+              type="button"
               onClick={handleExportExcel}
               disabled={isExporting || !startDate || !endDate || startDate > endDate}
-              className="min-h-11 text-xs font-bold bg-[#006B2D] hover:bg-[#004D20] text-white rounded-xl gap-2 shadow-xs"
+              className="h-10 px-4 text-xs font-bold bg-[#006B2D] hover:bg-[#004D20] active:bg-[#003D19] text-white rounded-lg gap-2 whitespace-nowrap shadow-xs transition-colors duration-150"
             >
-              <Download className="h-4 w-4 text-[#FFD000]" />
+              {isExporting ? (
+                <Loader2 className="h-4 w-4 animate-spin text-[#FFD000]" />
+              ) : (
+                <Download className="h-4 w-4 text-[#FFD000]" />
+              )}
               <span>
-                {isExporting
-                  ? "Génération..."
-                  : "Télécharger le Classeur Matrice (.xlsx)"}
+                {isExporting ? "Génération…" : "Télécharger (.xlsx)"}
               </span>
             </Button>
           </div>
@@ -736,6 +915,122 @@ export function WeeklyReportSection({
           </table>
         </div>
       </div>
+
+      {/* Modal d'aperçu du classeur Excel sans téléchargement */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[95vw] max-w-6xl max-h-[92dvh] p-3 sm:p-6 overflow-hidden flex flex-col bg-white border border-[#D8E6DB]">
+          <DialogHeader className="shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pr-7">
+              <div className="min-w-0">
+                <DialogTitle className="text-sm sm:text-lg font-extrabold text-[#17251C] flex items-center gap-2">
+                  <FileSpreadsheet className="h-5 w-5 text-[#006B2D] shrink-0" />
+                  <span className="truncate">Aperçu du Classeur Officiel (.xlsx)</span>
+                </DialogTitle>
+                <DialogDescription className="text-[11px] sm:text-xs text-[#556B5C] mt-0.5">
+                  Prévisualisation des feuilles générées (blocs opérateurs, sous-totaux et matrices) pour la période {startDate} → {endDate}.
+                </DialogDescription>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPreviewOpen(false);
+                  void handleExportExcel();
+                }}
+                disabled={isExporting}
+                className="w-full sm:w-auto shrink-0 bg-[#006B2D] hover:bg-[#004D20] text-white text-xs font-bold gap-1.5"
+              >
+                <Download className="h-3.5 w-3.5 text-[#FFD000]" />
+                <span>Télécharger (.xlsx)</span>
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {previewSheets.length > 0 && (
+            <Tabs
+              value={previewActiveTab}
+              onValueChange={setPreviewActiveTab}
+              className="flex-1 min-h-0 min-w-0 w-full flex flex-col space-y-2.5"
+            >
+              <TabsList className="w-full max-w-full h-auto max-h-28 overflow-y-auto flex flex-wrap justify-start gap-1 bg-[#EEF4EF] border border-[#D8E6DB] p-1 rounded-xl shrink-0">
+                {previewSheets.map((s) => (
+                  <TabsTrigger
+                    key={s.name}
+                    value={s.name}
+                    className="h-7 px-2.5 text-[11px] sm:text-xs font-bold rounded-lg data-[state=active]:bg-[#006B2D] data-[state=active]:text-white whitespace-nowrap"
+                  >
+                    {s.name} ({s.rows.length} lig.)
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              {previewSheets.map((s) => (
+                <TabsContent
+                  key={s.name}
+                  value={s.name}
+                  className="flex-1 min-h-0 min-w-0 w-full overflow-auto rounded-xl border border-[#D8E6DB] bg-[#FAFBF9] mt-0"
+                >
+                  <table className="table-fixed w-max border-collapse text-[10px] sm:text-[11px] font-sans">
+                    <colgroup>
+                      <col style={{ width: "36px" }} />
+                      {s.colWidthsPx.map((px, i) => (
+                        <col key={i} style={{ width: `${px}px` }} />
+                      ))}
+                    </colgroup>
+                    <tbody>
+                      {s.rows.map((r) => {
+                        const isBlank = r.cells.every((c) => !c.text);
+                        return (
+                          <tr
+                            key={r.rowNum}
+                            className={
+                              isBlank
+                                ? "h-3.5 bg-[#FAFBF9]"
+                                : r.rowNum <= 2
+                                  ? "bg-[#F5F8F5]"
+                                  : "bg-white hover:bg-[#F5F8F5]/60"
+                            }
+                          >
+                            <td className="sticky left-0 z-10 px-1.5 sm:px-2 py-1 text-[10px] font-mono text-[#556B5C] bg-[#F5F8F5] border border-[#D8E6DB] text-center select-none w-8 sm:w-9">
+                              {r.rowNum}
+                            </td>
+                            {r.cells.map((c, idx) => (
+                              <td
+                                key={idx}
+                                colSpan={c.colSpan}
+                                rowSpan={c.rowSpan}
+                                style={
+                                  c.bgHex
+                                    ? { backgroundColor: c.bgHex }
+                                    : undefined
+                                }
+                                className={`px-1.5 sm:px-2 py-1 border border-[#D8E6DB] text-[#17251C] ${
+                                  c.colSpan && c.colSpan > 1
+                                    ? "whitespace-normal"
+                                    : "truncate"
+                                } ${
+                                  c.bold ? "font-bold" : "font-normal"
+                                } ${
+                                  c.align === "right"
+                                    ? "text-right tabular-nums"
+                                    : c.align === "center"
+                                      ? "text-center"
+                                      : "text-left"
+                                }`}
+                              >
+                                {c.text}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

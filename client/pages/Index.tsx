@@ -348,7 +348,7 @@ function Dashboard() {
       {/* VUE 1 : AGENT DE SAISIE */}
       {isAgent && (
         <div className="space-y-6">
-          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
             {/* Mes Paris Enregistrés */}
             <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
@@ -554,7 +554,7 @@ function Dashboard() {
       {/* VUE 2 : CONTRÔLEUR DE CONFORMITÉ */}
       {isController && (
         <div className="space-y-6">
-          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
             {/* Opérations en Attente de Contrôle */}
             <motion.div variants={fadeUpItem}>
               <Link
@@ -670,131 +670,138 @@ function Dashboard() {
       {isAdmin && (
         <div className="space-y-6">
           {/* Bento Grid Financier Exécutif */}
-          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
             {/* Volume des Mises */}
-            <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Volume des Montants engagés</span>
-                <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
+            <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-4 sm:p-5 shadow-xs min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider leading-snug">
+                  Volume des Montants engagés
+                </span>
+                <div className="h-9 w-9 shrink-0 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
                   <Coins className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
-                <div className="text-2xl font-black text-[#17251C] font-mono">
+                <div className="text-xl sm:text-2xl font-black text-[#17251C] font-mono tabular-nums whitespace-nowrap">
                   <AnimatedNumber value={stats.totalBetsAmount} suffix="FCFA" />
                 </div>
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <Badge variant="outline" className="bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30 text-[11px] font-bold px-1.5 py-0">
-                    <ArrowUpRight className="h-3 w-3" />
-
-                    Montants engagés engagées
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <Badge variant="outline" className="bg-[#006B2D]/10 text-[#006B2D] border-[#006B2D]/30 text-[11px] font-bold px-2 py-0.5 whitespace-nowrap shrink-0 gap-1">
+                    <ArrowUpRight className="h-3 w-3 shrink-0" />
+                    <span>Montants engagés</span>
                   </Badge>
-                  <span className="text-xs text-[#556B5C]">{stats.totalBets}  tests</span>
+                  <span className="text-xs text-[#556B5C] whitespace-nowrap">{stats.totalBets} tests</span>
                 </div>
               </div>
             </motion.div>
 
             {/* Total Dépôts */}
-            <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Total Dépôts</span>
-                <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
+            <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-4 sm:p-5 shadow-xs min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider leading-snug">
+                  Total Dépôts
+                </span>
+                <div className="h-9 w-9 shrink-0 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
                   <ArrowDownRight className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
-                <div className="text-2xl font-black text-[#17251C] font-mono">
+                <div className="text-xl sm:text-2xl font-black text-[#17251C] font-mono tabular-nums whitespace-nowrap">
                   <AnimatedNumber value={stats.totalDeposits} suffix="FCFA" />
                 </div>
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[11px] font-bold px-1.5 py-0">
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[11px] font-bold px-2 py-0.5 whitespace-nowrap shrink-0">
                     Entrées Mobile Money
                   </Badge>
-                  <span className="text-xs text-[#556B5C]">recharges</span>
+                  <span className="text-xs text-[#556B5C] whitespace-nowrap">recharges</span>
                 </div>
               </div>
             </motion.div>
 
             {/* Total Retraits */}
-            <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Total Retraits</span>
-                <div className="h-9 w-9 rounded-lg bg-amber-50 text-amber-800 flex items-center justify-center">
+            <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-4 sm:p-5 shadow-xs min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider leading-snug">
+                  Total Retraits
+                </span>
+                <div className="h-9 w-9 shrink-0 rounded-lg bg-amber-50 text-amber-800 flex items-center justify-center">
                   <ArrowUpRight className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
-                <div className="text-2xl font-black text-[#17251C] font-mono">
+                <div className="text-xl sm:text-2xl font-black text-[#17251C] font-mono tabular-nums whitespace-nowrap">
                   <AnimatedNumber value={stats.totalWithdrawals} suffix="FCFA" />
                 </div>
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 text-[11px] font-bold px-1.5 py-0">
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 text-[11px] font-bold px-2 py-0.5 whitespace-nowrap shrink-0">
                     Sorties Mobile Money
                   </Badge>
-                  <span className="text-xs text-[#556B5C]">retraits</span>
+                  <span className="text-xs text-[#556B5C] whitespace-nowrap">retraits</span>
                 </div>
               </div>
             </motion.div>
 
             {/* Gains Connus Distribués */}
-            <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-5 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider">Montants retournés renseignés</span>
-                <div className="h-9 w-9 rounded-lg bg-[#FFD000]/20 text-[#004D20] flex items-center justify-center">
+            <motion.div variants={fadeUpItem} className="rounded-xl border border-[#D8E6DB] bg-white p-4 sm:p-5 shadow-xs min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider leading-snug">
+                  Montants retournés renseignés
+                </span>
+                <div className="h-9 w-9 shrink-0 rounded-lg bg-[#FFD000]/20 text-[#004D20] flex items-center justify-center">
                   <ClipboardCheck className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
-                <div className="text-2xl font-black text-[#17251C] font-mono">
+                <div className="text-xl sm:text-2xl font-black text-[#17251C] font-mono tabular-nums whitespace-nowrap">
                   <AnimatedNumber value={stats.totalKnownWinnings} suffix="FCFA" />
                 </div>
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <Badge variant="outline" className="bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50 text-[11px] font-bold px-1.5 py-0">
-                    {stats.wonBetsCount}  issues favorables
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <Badge variant="outline" className="bg-[#FFD000]/20 text-[#004D20] border-[#FFD000]/50 text-[11px] font-bold px-2 py-0.5 whitespace-nowrap shrink-0">
+                    {stats.wonBetsCount} issues favorables
                   </Badge>
-                  <span className="text-xs text-[#556B5C]">retour brut</span>
+                  <span className="text-xs text-[#556B5C] whitespace-nowrap">retour brut</span>
                 </div>
               </div>
             </motion.div>
           </motion.div>
 
           {/* Ligne Gouvernance et Réseau */}
-          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between shadow-xs">
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Sites Répertoriées</span>
-                <div className="text-xl font-black text-[#17251C]">
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between gap-3 shadow-xs min-w-0">
+              <div className="space-y-1 min-w-0">
+                <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Sites Répertoriés</span>
+                <div className="text-xl font-black text-[#17251C] flex flex-wrap items-baseline gap-x-2">
                   <AnimatedNumber value={stats.totalVenues} />
-                  <span className="text-xs font-normal text-[#556B5C] ml-2">points de vente</span>
+                  <span className="text-xs font-normal text-[#556B5C]">points de vente</span>
                 </div>
               </div>
-              <div className="h-9 w-9 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
+              <div className="h-9 w-9 shrink-0 rounded-lg bg-[#006B2D]/10 text-[#006B2D] flex items-center justify-center">
                 <Building2 className="h-4 w-4" />
               </div>
             </div>
 
-            <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between shadow-xs">
-              <div className="space-y-1">
+            <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between gap-3 shadow-xs min-w-0">
+              <div className="space-y-1 min-w-0">
                 <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Opérations à Valider</span>
-                <div className="text-xl font-black text-[#17251C]">
+                <div className="text-xl font-black text-[#17251C] flex flex-wrap items-baseline gap-x-2">
                   <AnimatedNumber value={stats.pendingValidationsCount} />
-                  <span className="text-xs font-normal text-[#556B5C] ml-2">en attente</span>
+                  <span className="text-xs font-normal text-[#556B5C]">en attente</span>
                 </div>
               </div>
-              <div className="h-9 w-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+              <div className="h-9 w-9 shrink-0 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
                 <Clock className="h-4 w-4" />
               </div>
             </div>
 
-            <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between shadow-xs">
-              <div className="space-y-1">
+            <div className="p-4 rounded-xl border border-[#D8E6DB] bg-white flex items-center justify-between gap-3 shadow-xs min-w-0">
+              <div className="space-y-1 min-w-0">
                 <span className="text-xs font-bold text-[#556B5C] uppercase tracking-wider block">Vigilance Fraudes</span>
-                <div className="text-xl font-black text-[#17251C]">
+                <div className="text-xl font-black text-[#17251C] flex flex-wrap items-baseline gap-x-2">
                   <AnimatedNumber value={totalAnomalies} />
-                  <span className="text-xs font-normal text-[#556B5C] ml-2">signalements</span>
+                  <span className="text-xs font-normal text-[#556B5C]">signalements</span>
                 </div>
               </div>
-              <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${
+              <div className={`h-9 w-9 shrink-0 rounded-lg flex items-center justify-center ${
                 totalAnomalies > 0 ? "bg-[#E52329]/10 text-[#E52329]" : "bg-[#006B2D]/10 text-[#006B2D]"
               }`}>
                 <ShieldAlert className="h-4 w-4" />
@@ -808,7 +815,7 @@ function Dashboard() {
           3. SECTION ANALYTIQUE (GRAPHES RECHARTS AVEC VRAIES VALEURS)
           ========================================================================= */}
       {(isAdmin || isController) && (
-        <motion.div variants={fadeUpItem} className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+        <motion.div variants={fadeUpItem} className="grid gap-4 sm:gap-6 grid-cols-1 xl:grid-cols-3">
           {/* Donut Opérateurs */}
           <Card className="rounded-xl border border-[#D8E6DB] bg-white shadow-xs">
             <CardHeader className="pb-2">

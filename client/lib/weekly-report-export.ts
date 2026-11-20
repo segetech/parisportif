@@ -572,9 +572,9 @@ async function buildWeeklyOfficialWorkbookInternal({
   const sentencePeriod = formatSentencePeriod(startDate, endDate);
 
   // ============================================================================
-  // 1. FEUILLE PARI (classée par blocs d'opérateurs)
+  // 1. FEUILLE TEST (classée par blocs d'opérateurs)
   // ============================================================================
-  const wsPari = wb.addWorksheet("PARI");
+  const wsPari = wb.addWorksheet("TEST");
   applyPrintablePageSetup(wsPari);
   wsPari.mergeCells("C1:I1");
   const pariTitle = wsPari.getCell("C1");
@@ -593,7 +593,7 @@ async function buildWeeklyOfficialWorkbookInternal({
     "DATE",
     "Opérateur de jeux",
     "Support",
-    "Type de Pari",
+    "Type de Test",
     "Montant FCFA",
     "Heure",
     "Numéro de téléphone",
@@ -669,8 +669,10 @@ async function buildWeeklyOfficialWorkbookInternal({
   // Récapitulatif journalier PARI (à partir de la colonne B, style référence)
   if (reportOperators.length > 0) {
     pariRowIdx += 1;
-    const introRow = wsPari.getRow(pariRowIdx++);
+    const introRowNum = pariRowIdx++;
+    const introRow = wsPari.getRow(introRowNum);
     introRow.height = 20;
+    wsPari.mergeCells(`A${introRowNum}:I${introRowNum}`);
     introRow.getCell(1).value = `Matrice Journalière des Tests par Opérateur Actif (${sentencePeriod}) :`;
     introRow.getCell(1).font = {
       name: "Cambria",
@@ -919,8 +921,10 @@ async function buildWeeklyOfficialWorkbookInternal({
   // Matrice récapitulative DEPOT-RETRAIT dès la colonne B
   if (reportOperators.length > 0) {
     txRowIdx += 1;
-    const introRow = wsTx.getRow(txRowIdx++);
+    const introRowNum = txRowIdx++;
+    const introRow = wsTx.getRow(introRowNum);
     introRow.height = 20;
+    wsTx.mergeCells(`A${introRowNum}:K${introRowNum}`);
     introRow.getCell(1).value = `Matrice Récapitulative Dépôts & Retraits par Opérateur Actif (F CFA) (${sentencePeriod}) :`;
     introRow.getCell(1).font = {
       name: "Cambria",
