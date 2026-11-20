@@ -8,6 +8,19 @@ const user = process.env.EMAIL_USER || "pari@buymore.ml";
 const pass = process.env.EMAIL_PASSWORD;
 
 const DEFAULT_RESEND_FROM = "OPEN Plateforme <onboarding@resend.dev>";
+export const DEFAULT_PUBLIC_APP_URL = "https://open.businessmoresarl.com";
+
+/**
+ * Returns the public base URL of the application (never localhost in emails).
+ * Strips trailing slashes and any accidental `/login` suffix.
+ */
+export function getPublicAppUrl(): string {
+  const raw = process.env.APP_URL?.trim();
+  if (!raw || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(raw)) {
+    return DEFAULT_PUBLIC_APP_URL;
+  }
+  return raw.replace(/\/+$/, "").replace(/\/login$/i, "") || DEFAULT_PUBLIC_APP_URL;
+}
 
 // Do not attempt to initialize real SMTP transport if password is missing or during tests
 const transporter = pass

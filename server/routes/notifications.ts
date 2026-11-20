@@ -2,6 +2,7 @@ import { RequestHandler } from "express";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import {
   buildOpenNotificationEmailHtml,
+  getPublicAppUrl,
   sendEmail,
   SendEmailResult,
 } from "../lib/email";
@@ -55,12 +56,18 @@ function normalizeOperationType(value?: string): OperationType {
 
 function getAppBaseUrl(req: Parameters<RequestHandler>[0]): string {
   const envUrl = process.env.APP_URL?.trim();
-  if (envUrl) return envUrl.replace(/\/$/, "");
-  const origin = req.headers.origin;
-  if (typeof origin === "string" && origin.startsWith("http")) {
-    return origin.replace(/\/$/, "");
+  if (envUrl && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(envUrl)) {
+    return envUrl.replace(/\/+$/, "").replace(/\/login$/i, "");
   }
-  return "http://localhost:3000";
+  const origin = req.headers.origin;
+  if (
+    typeof origin === "string" &&
+    origin.startsWith("http") &&
+    !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(origin)
+  ) {
+    return origin.replace(/\/+$/, "");
+  }
+  return getPublicAppUrl();
 }
 
 function formatAmount(amount?: number | string): string {

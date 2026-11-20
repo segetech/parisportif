@@ -114,7 +114,23 @@ function ExcelImportContent() {
   const [fileSize, setFileSize] = useState<string>("");
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>("");
+  const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
+  const [sheetTypeMap, setSheetTypeMap] = useState<Record<string, TargetEntityType>>({});
+  const [importedSheets, setImportedSheets] = useState<string[]>([]);
   const [detectedType, setDetectedType] = useState<TargetEntityType>("depotretrait");
+  const [multiPreviews, setMultiPreviews] = useState<
+    Record<
+      string,
+      {
+        sheetName: string;
+        entityType: TargetEntityType;
+        parsedTransactions: ParsedTransactionRow[];
+        parsedBets: ParsedBetRow[];
+        parsedVenues: ParsedVenueGroup[];
+      }
+    >
+  >({});
+  const [activePreviewSheet, setActivePreviewSheet] = useState<string>("");
 
   // Référence persistante au classeur chargé et séquence de changement de feuille
   const workbookRef = useRef<ExcelJS.Workbook | null>(null);
@@ -311,12 +327,13 @@ function ExcelImportContent() {
     setFilterStartDate("");
     setFilterEndDate("");
 
-    let type: TargetEntityType = explicitType || "depotretrait";
-    if (!explicitType) {
+    let type: TargetEntityType = explicitType || sheetTypeMap[newSheet] || "depotretrait";
+    if (!explicitType && !sheetTypeMap[newSheet]) {
       const lower = newSheet.toLowerCase().trim();
       type = detectImportEntity(lower);
     }
     setDetectedType(type);
+    setSheetTypeMap((prev) => ({ ...prev, [newSheet]: type }));
 
     if (workbookRef.current) {
       const rows = extractSheetRows(workbookRef.current, newSheet, type);
@@ -343,6 +360,7 @@ function ExcelImportContent() {
 
     setFileName(file.name);
     setFileSize((file.size / 1024).toFixed(1) + " Ko");
+    setImportedSheets([]);
     setIsProcessing(true);
 
     try {
@@ -354,6 +372,12 @@ function ExcelImportContent() {
       const sheetNames: string[] = [];
       workbook.eachSheet((s) => sheetNames.push(s.name));
       setAvailableSheets(sheetNames);
+      const initialTypeMap: Record<string, TargetEntityType> = {};
+      for (const name of sheetNames) {
+        initialTypeMap[name] = detectImportEntity(name);
+      }
+      setSheetTypeMap(initialTypeMap);
+      setMultiPreviews({});
 
       let defaultSheet = sheetNames[0] || "";
       let type: TargetEntityType = "depotretrait";
@@ -375,6 +399,7 @@ function ExcelImportContent() {
         }
       }
 
+      setSelectedSheets(defaultSheet ? [defaultSheet] : []);
       handleSheetChange(defaultSheet, type);
 
       setCurrentStep("config");
@@ -394,36 +419,105 @@ function ExcelImportContent() {
   async function handleProceedToPreview() {
     setIsProcessing(true);
     try {
-      const activeStart = detectedDateRange ? filterStartDate || detectedDateRange.min : "";
-      const activeEnd = detectedDateRange ? filterEndDate || detectedDateRange.max : "";
-      const inRange = (d: string | null) => {
-        if (!detectedDateRange || !d) return true;
-        if (activeStart && d < activeStart) return false;
-        if (activeEnd && d > activeEnd) return false;
-        return true;
-      };
-
-      if (detectedType === "depotretrait") {
-        // Charger les références existantes en base pour détecter les collisions
-        const { data: existingTxs } = await supabase.from("transactions").select("reference").not("reference", "is", null);
-        const existingRefs = new Set((existingTxs || []).map((t: any) => String(t.reference).toLowerCase()));
-
-        const parsed = rawRows
-          .map((r) => parseTransactionRow(r, r.rowNumber, selectedDate))
-          .filter((row) => inRange(row.date));
-        if (preventDuplicates) {
-          detectDuplicatesInTransactions(parsed, existingRefs);
-        }
-        setParsedTransactions(parsed);
-      } else if (detectedType === "pari") {
-        const parsed = rawRows
-          .map((r) => parseBetRow(r, r.rowNumber, selectedDate))
-          .filter((row) => inRange(row.date));
-        setParsedBets(parsed);
-      } else if (detectedType === "salles") {
-        const grouped = parseVenuesGrouped(rawRows as any);
-        setParsedVenues(grouped);
+      const sheetsToAnalyze =
+        selectedSheets.length > 0 ? selectedSheets : selectedSheet ? [selectedSheet] : [];
+      if (sheetsToAnalyze.length === 0) {
+        toast.error("Veuillez sélectionner au moins un onglet à importer.");
+        return;
       }
+
+      const needsTxRefs = sheetsToAnalyze.some((s) => {
+        const t = s === selectedSheet ? detectedType : sheetTypeMap[s] || detectImportEntity(s);
+        return t === "depotretrait";
+      });
+      let existingRefs = new Set<string>();
+      if (needsTxRefs) {
+        const { data: existingTxs } = await supabase
+          .from("transactions")
+          .select("reference")
+          .not("reference", "is", null);
+        existingRefs = new Set((existingTxs || []).map((t: any) => String(t.reference).toLowerCase()));
+      }
+
+      const previews: Record<
+        string,
+        {
+          sheetName: string;
+          entityType: TargetEntityType;
+          parsedTransactions: ParsedTransactionRow[];
+          parsedBets: ParsedBetRow[];
+          parsedVenues: ParsedVenueGroup[];
+        }
+      > = {};
+
+      for (const sheetName of sheetsToAnalyze) {
+        const entityType: TargetEntityType =
+          sheetName === selectedSheet
+            ? detectedType
+            : sheetTypeMap[sheetName] || detectImportEntity(sheetName);
+
+        const rows =
+          sheetName === selectedSheet && rawRows.length > 0
+            ? rawRows
+            : workbookRef.current
+              ? extractSheetRows(workbookRef.current, sheetName, entityType)
+              : [];
+
+        const sheetDates: string[] = [];
+        for (const r of rows) {
+          const rawD = r["DATE"] ?? r["DATE "] ?? r["Date"] ?? r["date"];
+          const norm = normalizeImportDate(rawD, null);
+          if (norm) sheetDates.push(norm);
+        }
+        const hasSheetDates = sheetDates.length > 0;
+        const activeStart = hasSheetDates ? filterStartDate : "";
+        const activeEnd = hasSheetDates ? filterEndDate : "";
+        const inRange = (d: string | null) => {
+          if (!hasSheetDates || !d) return true;
+          if (activeStart && d < activeStart) return false;
+          if (activeEnd && d > activeEnd) return false;
+          return true;
+        };
+
+        let txs: ParsedTransactionRow[] = [];
+        let betsList: ParsedBetRow[] = [];
+        let venuesList: ParsedVenueGroup[] = [];
+
+        if (entityType === "depotretrait") {
+          txs = rows
+            .map((r) => parseTransactionRow(r, r.rowNumber, selectedDate))
+            .filter((row) => inRange(row.date));
+          if (preventDuplicates) {
+            detectDuplicatesInTransactions(txs, existingRefs);
+          }
+        } else if (entityType === "pari") {
+          betsList = rows
+            .map((r) => parseBetRow(r, r.rowNumber, selectedDate))
+            .filter((row) => inRange(row.date));
+        } else if (entityType === "salles") {
+          venuesList = parseVenuesGrouped(rows as any);
+        }
+
+        previews[sheetName] = {
+          sheetName,
+          entityType,
+          parsedTransactions: txs,
+          parsedBets: betsList,
+          parsedVenues: venuesList,
+        };
+      }
+
+      setMultiPreviews(previews);
+      const firstSheet = sheetsToAnalyze.includes(selectedSheet)
+        ? selectedSheet
+        : sheetsToAnalyze[0];
+      const firstPreview = previews[firstSheet];
+      setActivePreviewSheet(firstSheet);
+      setSelectedSheet(firstSheet);
+      setDetectedType(firstPreview.entityType);
+      setParsedTransactions(firstPreview.parsedTransactions);
+      setParsedBets(firstPreview.parsedBets);
+      setParsedVenues(firstPreview.parsedVenues);
 
       setCurrentStep("preview");
     } catch (e: any) {
@@ -479,9 +573,219 @@ function ExcelImportContent() {
     return { total, validCount, errorCount, warningCount, allAnomalies };
   }, [detectedType, parsedTransactions, parsedBets, parsedVenues]);
 
+  const multiStats = useMemo(() => {
+    const keys = Object.keys(multiPreviews);
+    if (keys.length <= 1) {
+      return { totalValid: stats.validCount, sheetCount: 1 };
+    }
+    let totalValid = 0;
+    for (const k of keys) {
+      const p = multiPreviews[k];
+      if (p.entityType === "depotretrait") {
+        totalValid += p.parsedTransactions.filter((t) => t.isValid).length;
+      } else if (p.entityType === "pari") {
+        totalValid += p.parsedBets.filter((b) => b.isValid).length;
+      } else if (p.entityType === "salles") {
+        totalValid += p.parsedVenues.filter((v) => v.isValid).length;
+      }
+    }
+    return { totalValid, sheetCount: keys.length };
+  }, [multiPreviews, stats.validCount]);
+
+  function switchPreviewTab(sheetName: string) {
+    const preview = multiPreviews[sheetName];
+    if (!preview) return;
+    setActivePreviewSheet(sheetName);
+    setSelectedSheet(sheetName);
+    setDetectedType(preview.entityType);
+    setParsedTransactions(preview.parsedTransactions);
+    setParsedBets(preview.parsedBets);
+    setParsedVenues(preview.parsedVenues);
+  }
+
   // ---------------------------------------------------------------------------
   // 4. CONFIRMATION ET ENREGISTREMENT EN BASE DE DONNÉES
   // ---------------------------------------------------------------------------
+
+  async function handleMultiSheetImport() {
+    if (!user) throw new Error("Session requise pour importer des données.");
+    const isAgent = user.role === "AGENT";
+    const initialStatus = isAgent ? "en_attente" : "valide";
+    const sheetKeys = Object.keys(multiPreviews);
+
+    let totalRowsAll = 0;
+    let totalImported = 0;
+    let totalRejected = 0;
+    let totalIgnored = 0;
+    const allAnomalies: Anomaly[] = [];
+    const batchIds: string[] = [];
+    const newlyImported: string[] = [];
+
+    for (let idx = 0; idx < sheetKeys.length; idx++) {
+      const sheetName = sheetKeys[idx];
+      const preview = multiPreviews[sheetName];
+      const entityType = preview.entityType;
+      const targetTable =
+        entityType === "depotretrait"
+          ? "transactions"
+          : entityType === "pari"
+            ? "bets"
+            : "venues";
+
+      const sheetTotal =
+        entityType === "depotretrait"
+          ? preview.parsedTransactions.length
+          : entityType === "pari"
+            ? preview.parsedBets.length
+            : preview.parsedVenues.length;
+      const validCount =
+        entityType === "depotretrait"
+          ? preview.parsedTransactions.filter((t) => t.isValid).length
+          : entityType === "pari"
+            ? preview.parsedBets.filter((b) => b.isValid).length
+            : preview.parsedVenues.filter((v) => v.isValid).length;
+
+      totalRowsAll += sheetTotal;
+      if (validCount === 0) {
+        totalRejected += sheetTotal;
+        continue;
+      }
+
+      await verifyImportSchema(supabase, targetTable);
+      const batchId = crypto.randomUUID();
+      batchIds.push(batchId);
+
+      await createImportBatch(supabase, {
+        id: batchId,
+        file_name: fileName,
+        sheet_name: sheetName,
+        entity_type: entityType,
+        total_rows: sheetTotal,
+        imported_rows: 0,
+        rejected_rows: 0,
+        ignored_rows: 0,
+        status: "en_cours",
+        anomalies: [],
+        imported_by: user.id,
+      });
+
+      let sheetImported = 0;
+      let sheetRejected = sheetTotal - validCount;
+      const sheetAnomalies: Anomaly[] = [];
+
+      if (entityType === "depotretrait") {
+        const rowsToInsert = preview.parsedTransactions.filter((tx) => tx.isValid);
+        preview.parsedTransactions.forEach((tx) => sheetAnomalies.push(...tx.anomalies));
+        for (const chunk of chunkArray(rowsToInsert, 25)) {
+          const records = chunk.map((tx) => ({
+            date: tx.date,
+            time: tx.time ? `${tx.time}:00` : null,
+            operator: tx.operator,
+            platform: tx.platform?.trim() || null,
+            payment_operator: tx.paymentOperator?.trim() || null,
+            type: tx.type,
+            amount_fcfa: tx.amount,
+            phone: tx.phone?.trim() || null,
+            reference: tx.reference?.trim() || null,
+            proof_status: tx.proofStatus,
+            created_by: user.id,
+            validation_status: initialStatus,
+            import_batch_id: batchId,
+          }));
+          const { error } = await supabase.from("transactions").insert(records);
+          if (error) throw error;
+          sheetImported += chunk.length;
+        }
+        await queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      } else if (entityType === "pari") {
+        const rowsToInsert = preview.parsedBets.filter((b) => b.isValid);
+        preview.parsedBets.forEach((b) => sheetAnomalies.push(...b.anomalies));
+        for (const chunk of chunkArray(rowsToInsert, 25)) {
+          const records = chunk.map((b) => ({
+            date: b.date,
+            time: b.time ? `${b.time}:00` : null,
+            operator: b.operator,
+            support: b.support?.trim() || null,
+            bet_type: b.betType?.trim() || null,
+            amount_fcfa: b.amount,
+            phone: b.phone?.trim() || null,
+            reference: b.reference?.trim() || null,
+            status: b.status,
+            amount_won_fcfa: b.amountWon,
+            proof_status: b.proofStatus,
+            created_by: user.id,
+            validation_status: initialStatus,
+            import_batch_id: batchId,
+          }));
+          const { error } = await supabase.from("bets").insert(records);
+          if (error) throw error;
+          sheetImported += chunk.length;
+        }
+        await queryClient.invalidateQueries({ queryKey: ["bets"] });
+      } else if (entityType === "salles") {
+        const rowsToInsert = preview.parsedVenues.filter((v) => v.isValid);
+        preview.parsedVenues.forEach((v) => sheetAnomalies.push(...v.anomalies));
+        for (const chunk of chunkArray(rowsToInsert, 25)) {
+          const records = chunk.map((v) => ({
+            quartier_no: v.venueNumber ? String(v.venueNumber) : null,
+            quartier: v.quartier,
+            operator: v.operator,
+            support: v.support,
+            bet_type: v.games.join(", "),
+            games: v.games,
+            address: v.address,
+            notes:
+              v.secondaryLocations.length > 0
+                ? `Localisations complémentaires : ${v.secondaryLocations.join(" | ")}`
+                : null,
+            created_by: user.id,
+            validation_status: initialStatus,
+            import_batch_id: batchId,
+          }));
+          const { error } = await supabase.from("venues").insert(records);
+          if (error) throw error;
+          sheetImported += chunk.length;
+        }
+        await queryClient.invalidateQueries({ queryKey: ["venues"] });
+      }
+
+      const finalStatus = sheetRejected > 0 && sheetImported > 0 ? "partiel" : "termine";
+      await supabase
+        .from("import_batches")
+        .update({
+          imported_rows: sheetImported,
+          rejected_rows: sheetRejected,
+          ignored_rows: 0,
+          status: finalStatus,
+          anomalies: sheetAnomalies.slice(0, 100),
+        })
+        .eq("id", batchId);
+
+      totalImported += sheetImported;
+      totalRejected += sheetRejected;
+      allAnomalies.push(...sheetAnomalies);
+      newlyImported.push(sheetName);
+      setImportProgress(Math.min(95, Math.round(((idx + 1) / sheetKeys.length) * 90)));
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    clearImportSession(user.id);
+    setActiveSession(null);
+    setImportProgress(100);
+    setBatchResult({
+      batchId: batchIds.join(", "),
+      total: totalRowsAll,
+      imported: totalImported,
+      rejected: totalRejected,
+      ignored: totalIgnored,
+      anomalies: allAnomalies,
+    });
+    setImportedSheets((prev) => Array.from(new Set([...prev, ...newlyImported])));
+    setCurrentStep("report");
+    toast.success(
+      `Import multi-onglets terminé : ${totalImported} élément(s) importé(s) sur ${newlyImported.length} onglet(s)`,
+    );
+  }
 
   async function handleConfirmImport() {
     if (isProcessing) return;
@@ -489,14 +793,30 @@ function ExcelImportContent() {
     setCurrentStep("importing");
     setImportProgress(10);
 
+    if (Object.keys(multiPreviews).length > 1) {
+      try {
+        await handleMultiSheetImport();
+      } catch (importErr: any) {
+        console.error("Erreur enregistrement multi-import:", importErr);
+        toast.error(
+          "Erreur durant l'enregistrement : " +
+          (importErr.message || "Erreur base de données"),
+        );
+        setCurrentStep("preview");
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     const isAgent = user?.role === "AGENT";
     const initialStatus = isAgent ? "en_attente" : "valide";
 
     // Si nous reprenons un lot existant sur le même fichier, conserver son ID pour continuité exacte
     const batchId =
       activeSession &&
-      activeSession.fileName === fileName &&
-      activeSession.batchId
+        activeSession.fileName === fileName &&
+        activeSession.batchId
         ? activeSession.batchId
         : crypto.randomUUID();
 
@@ -572,12 +892,12 @@ function ExcelImportContent() {
               date: tx.date,
               time: tx.time ? `${tx.time}:00` : null,
               operator: tx.operator,
-              platform: tx.platform,
-              payment_operator: tx.paymentOperator,
+              platform: tx.platform?.trim() || null,
+              payment_operator: tx.paymentOperator?.trim() || null,
               type: tx.type,
               amount_fcfa: tx.amount,
-              phone: tx.phone,
-              reference: tx.reference,
+              phone: tx.phone?.trim() || null,
+              reference: tx.reference?.trim() || null,
               proof_status: tx.proofStatus,
               created_by: user?.id,
               validation_status: initialStatus,
@@ -646,11 +966,11 @@ function ExcelImportContent() {
               date: b.date,
               time: b.time ? `${b.time}:00` : null,
               operator: b.operator,
-              support: b.support,
-              bet_type: b.betType,
+              support: b.support?.trim() || null,
+              bet_type: b.betType?.trim() || null,
               amount_fcfa: b.amount,
-              phone: b.phone,
-              reference: b.reference,
+              phone: b.phone?.trim() || null,
+              reference: b.reference?.trim() || null,
               status: b.status,
               amount_won_fcfa: b.amountWon,
               proof_status: b.proofStatus,
@@ -789,6 +1109,9 @@ function ExcelImportContent() {
         ignored,
         anomalies: stats.allAnomalies,
       });
+      setImportedSheets((prev) =>
+        prev.includes(selectedSheet) ? prev : [...prev, selectedSheet],
+      );
 
       setCurrentStep("report");
       toast.success(
@@ -861,7 +1184,7 @@ function ExcelImportContent() {
 
       toast.error(
         "Erreur durant l'enregistrement : " +
-          (importErr.message || "Erreur base de données"),
+        (importErr.message || "Erreur base de données"),
       );
       setCurrentStep("preview");
     } finally {
@@ -972,38 +1295,43 @@ function ExcelImportContent() {
         {/* INDICATEUR D'ÉTAPES RESPONSIVE */}
         <div className="grid grid-cols-4 gap-2 text-xs font-semibold">
           <div
-            className={`p-2.5 rounded-xl border text-center transition-all ${
-              currentStep === "upload"
+            className={`p-2.5 rounded-xl border text-center transition-all ${currentStep === "upload"
                 ? "bg-[#006B2D] text-white border-[#006B2D] font-bold"
                 : "bg-white text-[#556B5C] border-[#D8E6DB]"
-            }`}
+              }`}
           >
             1. Choix du fichier
           </div>
-          <div
-            className={`p-2.5 rounded-xl border text-center transition-all ${
-              currentStep === "config"
+          <button
+            type="button"
+            disabled={!workbookRef.current || currentStep === "importing"}
+            onClick={() => {
+              if (workbookRef.current && currentStep !== "importing") {
+                setCurrentStep("config");
+              }
+            }}
+            className={`p-2.5 rounded-xl border text-center transition-all ${currentStep === "config"
                 ? "bg-[#006B2D] text-white border-[#006B2D] font-bold"
-                : "bg-white text-[#556B5C] border-[#D8E6DB]"
-            }`}
+                : workbookRef.current && currentStep !== "importing"
+                  ? "bg-white text-[#006B2D] border-[#D8E6DB] hover:bg-[#F5F8F5] cursor-pointer"
+                  : "bg-white text-[#556B5C] border-[#D8E6DB] cursor-default"
+              }`}
           >
             2. Configuration
-          </div>
+          </button>
           <div
-            className={`p-2.5 rounded-xl border text-center transition-all ${
-              currentStep === "preview"
+            className={`p-2.5 rounded-xl border text-center transition-all ${currentStep === "preview"
                 ? "bg-[#006B2D] text-white border-[#006B2D] font-bold"
                 : "bg-white text-[#556B5C] border-[#D8E6DB]"
-            }`}
+              }`}
           >
             3. Contrôle & Aperçu
           </div>
           <div
-            className={`p-2.5 rounded-xl border text-center transition-all ${
-              currentStep === "report"
+            className={`p-2.5 rounded-xl border text-center transition-all ${currentStep === "report"
                 ? "bg-[#006B2D] text-white border-[#006B2D] font-bold"
                 : "bg-white text-[#556B5C] border-[#D8E6DB]"
-            }`}
+              }`}
           >
             4. Rapport final
           </div>
@@ -1126,26 +1454,103 @@ function ExcelImportContent() {
                   ))}
                 </select>
 
-                {/* Accès rapide à tous les onglets détectés (PARI, DEPOT-RETRAIT, etc.) */}
+                {/* Sélection simple ou multi-onglets (PARI, DEPOT-RETRAIT, etc.) */}
                 {availableSheets.length > 1 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {availableSheets.map((s) => {
-                      const active = s === selectedSheet;
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => handleSheetChange(s)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
-                            active
-                              ? "bg-[#006B2D] text-white border-[#006B2D]"
-                              : "bg-white text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5]"
-                          }`}
-                        >
-                          {s}
-                        </button>
-                      );
-                    })}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium text-[#556B5C]">
+                        Onglets à importer ({selectedSheets.length}/{availableSheets.length} sélectionné(s)) :
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedSheets.length === availableSheets.length) {
+                            setSelectedSheets(selectedSheet ? [selectedSheet] : [availableSheets[0]]);
+                          } else {
+                            setSelectedSheets([...availableSheets]);
+                          }
+                        }}
+                        className="text-[11px] font-semibold text-[#006B2D] hover:underline"
+                      >
+                        {selectedSheets.length === availableSheets.length
+                          ? "Un seul onglet"
+                          : "Tout sélectionner"}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableSheets.map((s) => {
+                        const active = s === selectedSheet;
+                        const checked = selectedSheets.includes(s);
+                        const wasImported = importedSheets.includes(s);
+                        const sheetEntity = sheetTypeMap[s] || detectImportEntity(s);
+                        const entityHint =
+                          sheetEntity === "pari"
+                            ? "Tests"
+                            : sheetEntity === "salles"
+                              ? "Sites"
+                              : "Dépôt / Retrait";
+                        return (
+                          <div
+                            key={s}
+                            className={`rounded-lg text-[11px] font-semibold border transition-colors flex items-center overflow-hidden ${active
+                                ? "bg-[#006B2D] text-white border-[#006B2D]"
+                                : checked
+                                  ? "bg-[#E8F5EC] text-[#17251C] border-[#006B2D]"
+                                  : "bg-white text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5]"
+                              }`}
+                          >
+                            <label className="pl-2.5 pr-1 py-1.5 flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedSheets((prev) =>
+                                      prev.includes(s) ? prev : [...prev, s],
+                                    );
+                                    handleSheetChange(s);
+                                  } else {
+                                    if (selectedSheets.length <= 1) {
+                                      toast.info("Au moins un onglet doit rester sélectionné.");
+                                      return;
+                                    }
+                                    const remaining = selectedSheets.filter((x) => x !== s);
+                                    setSelectedSheets(remaining);
+                                    if (active && remaining[0]) {
+                                      handleSheetChange(remaining[0]);
+                                    }
+                                  }
+                                }}
+                                className="h-3.5 w-3.5 accent-[#006B2D] cursor-pointer"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => handleSheetChange(s)}
+                              className="pr-2.5 pl-1 py-1.5 flex items-center gap-1.5"
+                            >
+                              <span>{s}</span>
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded ${active
+                                    ? "bg-white/20 text-white"
+                                    : "bg-white text-[#556B5C]"
+                                  }`}
+                              >
+                                {entityHint}
+                              </span>
+                              {wasImported && (
+                                <span
+                                  className={`text-[10px] font-bold ${active ? "text-emerald-200" : "text-emerald-700"
+                                    }`}
+                                >
+                                  ✓
+                                </span>
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
@@ -1284,6 +1689,66 @@ function ExcelImportContent() {
         {/* =================================================================== */}
         {currentStep === "preview" && (
           <div className="space-y-6">
+            {/* SÉLECTEUR RAPIDE D'ONGLET EXCEL EN ÉTAPE 3 */}
+            {availableSheets.length > 1 && (
+              <div className="bg-white rounded-2xl border border-[#D8E6DB] p-3.5 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs text-[#556B5C]">
+                  <FileSpreadsheet className="h-4 w-4 text-[#006B2D]" />
+                  <span>
+                    Onglet analysé : <strong className="text-[#17251C]">{selectedSheet}</strong>
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {availableSheets.map((s) => {
+                    const active = s === selectedSheet;
+                    const wasImported = importedSheets.includes(s);
+                    const sheetEntity = detectImportEntity(s);
+                    const entityHint =
+                      sheetEntity === "pari"
+                        ? "Tests"
+                        : sheetEntity === "salles"
+                          ? "Sites"
+                          : "Dépôt / Retrait";
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          if (!active) {
+                            if (multiPreviews[s]) {
+                              switchPreviewTab(s);
+                            } else {
+                              handleSheetChange(s);
+                              setCurrentStep("config");
+                            }
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors flex items-center gap-1.5 ${active
+                            ? "bg-[#006B2D] text-white border-[#006B2D]"
+                            : multiPreviews[s]
+                              ? "bg-[#E8F5EC] text-[#17251C] border-[#006B2D]/40 hover:bg-[#D8E6DB]"
+                              : "bg-[#F5F8F5] text-[#17251C] border-[#D8E6DB] hover:bg-[#E8F5EC] hover:border-[#006B2D]/40"
+                          }`}
+                      >
+                        <span>{s}</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded ${active ? "bg-white/20 text-white" : "bg-white text-[#556B5C]"
+                            }`}
+                        >
+                          {entityHint}
+                        </span>
+                        {wasImported && (
+                          <span className={active ? "text-emerald-200" : "text-emerald-700"}>
+                            ✓
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* KPI STATISTIQUES D'ANALYSE */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-4 bg-white rounded-2xl border border-[#D8E6DB]">
@@ -1322,11 +1787,10 @@ function ExcelImportContent() {
                   variant={filterAnomalyOnly ? "default" : "outline"}
                   size="sm"
                   onClick={() => setFilterAnomalyOnly(!filterAnomalyOnly)}
-                  className={`min-h-[40px] text-xs font-semibold ${
-                    filterAnomalyOnly
+                  className={`min-h-[40px] text-xs font-semibold ${filterAnomalyOnly
                       ? "bg-amber-600 hover:bg-amber-700 text-white"
                       : "border-[#D8E6DB] text-[#556B5C]"
-                  }`}
+                    }`}
                 >
                   <Filter className="h-3.5 w-3.5 mr-1" />
                   {filterAnomalyOnly ? "Afficher tout" : "Filtrer seulement les anomalies"}
@@ -1362,13 +1826,12 @@ function ExcelImportContent() {
                     .map((tx) => (
                       <div
                         key={tx.rowNumber}
-                        className={`p-4 rounded-xl border bg-white space-y-2 transition-all ${
-                          !tx.isValid
+                        className={`p-4 rounded-xl border bg-white space-y-2 transition-all ${!tx.isValid
                             ? "border-[#E52329]/50 bg-red-50/20"
                             : tx.anomalies.length > 0
-                            ? "border-amber-300 bg-amber-50/20"
-                            : "border-[#D8E6DB]"
-                        }`}
+                              ? "border-amber-300 bg-amber-50/20"
+                              : "border-[#D8E6DB]"
+                          }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -1419,11 +1882,10 @@ function ExcelImportContent() {
                             {tx.anomalies.map((a, i) => (
                               <div
                                 key={i}
-                                className={`text-[11px] p-2 rounded-lg flex items-center gap-2 ${
-                                  a.severity === "error"
+                                className={`text-[11px] p-2 rounded-lg flex items-center gap-2 ${a.severity === "error"
                                     ? "bg-red-100/70 text-red-800 font-semibold"
                                     : "bg-amber-100/70 text-amber-800"
-                                }`}
+                                  }`}
                               >
                                 {a.severity === "error" ? (
                                   <XCircle className="h-3.5 w-3.5 shrink-0 text-red-600" />
@@ -1447,13 +1909,12 @@ function ExcelImportContent() {
                     .map((b) => (
                       <div
                         key={b.rowNumber}
-                        className={`p-4 rounded-xl border bg-white space-y-2 transition-all ${
-                          !b.isValid
+                        className={`p-4 rounded-xl border bg-white space-y-2 transition-all ${!b.isValid
                             ? "border-[#E52329]/50 bg-red-50/20"
                             : b.anomalies.length > 0
-                            ? "border-amber-300 bg-amber-50/20"
-                            : "border-[#D8E6DB]"
-                        }`}
+                              ? "border-amber-300 bg-amber-50/20"
+                              : "border-[#D8E6DB]"
+                          }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -1467,8 +1928,8 @@ function ExcelImportContent() {
                                 b.status === "gagné"
                                   ? "bg-emerald-100 text-emerald-800 font-bold"
                                   : b.status === "perdu"
-                                  ? "bg-red-100 text-red-800"
-                                  : "bg-amber-100 text-amber-800"
+                                    ? "bg-red-100 text-red-800"
+                                    : "bg-amber-100 text-amber-800"
                               }
                             >
                               {testStatusLabel(b.status)}
@@ -1512,11 +1973,10 @@ function ExcelImportContent() {
                             {b.anomalies.map((a, i) => (
                               <div
                                 key={i}
-                                className={`text-[11px] p-2 rounded-lg flex items-center gap-2 ${
-                                  a.severity === "error"
+                                className={`text-[11px] p-2 rounded-lg flex items-center gap-2 ${a.severity === "error"
                                     ? "bg-red-100/70 text-red-800 font-semibold"
                                     : "bg-amber-100/70 text-amber-800"
-                                }`}
+                                  }`}
                               >
                                 {a.severity === "error" ? (
                                   <XCircle className="h-3.5 w-3.5 shrink-0 text-red-600" />
@@ -1538,13 +1998,12 @@ function ExcelImportContent() {
                   {parsedVenues.map((v, idx) => (
                     <div
                       key={idx}
-                      className={`p-4 rounded-xl border bg-white space-y-3 transition-all ${
-                        !v.isValid
+                      className={`p-4 rounded-xl border bg-white space-y-3 transition-all ${!v.isValid
                           ? "border-[#E52329]/50 bg-red-50/20"
                           : v.anomalies.length > 0
-                          ? "border-amber-300 bg-amber-50/20"
-                          : "border-[#D8E6DB]"
-                      }`}
+                            ? "border-amber-300 bg-amber-50/20"
+                            : "border-[#D8E6DB]"
+                        }`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1584,11 +2043,10 @@ function ExcelImportContent() {
                           {v.anomalies.map((a, i) => (
                             <div
                               key={i}
-                              className={`text-[11px] p-2 rounded-lg flex items-center gap-2 ${
-                                a.severity === "error"
+                              className={`text-[11px] p-2 rounded-lg flex items-center gap-2 ${a.severity === "error"
                                   ? "bg-red-100/70 text-red-800 font-semibold"
                                   : "bg-amber-100/70 text-amber-800"
-                              }`}
+                                }`}
                             >
                               {a.severity === "error" ? (
                                 <XCircle className="h-3.5 w-3.5 shrink-0 text-red-600" />
@@ -1628,11 +2086,12 @@ function ExcelImportContent() {
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <Button
                   onClick={handleConfirmImport}
-                  disabled={isProcessing || stats.validCount === 0}
+                  disabled={isProcessing || multiStats.totalValid === 0}
                   className="w-full sm:w-auto min-h-[44px] px-6 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold rounded-xl shadow-xs"
                 >
                   <Check className="h-4 w-4 mr-1.5" />
-                  Confirmer et importer {stats.validCount} élément(s) valide(s)
+                  Confirmer et importer {multiStats.totalValid} élément(s) valide(s)
+                  {multiStats.sheetCount > 1 ? ` (${multiStats.sheetCount} onglets)` : ""}
                 </Button>
               </div>
             </div>
@@ -1714,6 +2173,26 @@ function ExcelImportContent() {
                 </Button>
               )}
 
+              {workbookRef.current && availableSheets.length > 1 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const nextSheet =
+                      availableSheets.find(
+                        (s) => s !== selectedSheet && !importedSheets.includes(s),
+                      ) || availableSheets.find((s) => s !== selectedSheet);
+                    if (nextSheet) {
+                      handleSheetChange(nextSheet);
+                    }
+                    setCurrentStep("config");
+                  }}
+                  className="w-full sm:w-auto min-h-[44px] px-5 border-[#006B2D] text-[#006B2D] hover:bg-[#E8F5EC] font-semibold rounded-xl"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-1.5" />
+                  Importer un autre onglet de ce fichier
+                </Button>
+              )}
+
               <Button
                 onClick={() => {
                   setCurrentStep("upload");
@@ -1721,6 +2200,7 @@ function ExcelImportContent() {
                   setParsedTransactions([]);
                   setParsedBets([]);
                   setParsedVenues([]);
+                  setImportedSheets([]);
                   setBatchResult(null);
                 }}
                 className="w-full sm:w-auto min-h-[44px] px-6 bg-[#006B2D] hover:bg-[#004D20] text-white font-bold rounded-xl shadow-xs"

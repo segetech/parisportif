@@ -53,7 +53,7 @@ export interface ParsedBetRow {
   date: string | null;
   phone: string | null;
   reference: string | null;
-  status: "en_attente" | "gagné" | "perdu";
+  status: "en attente" | "gagné" | "perdu";
   amountWon: number | null;
   proofStatus: "disponible" | "non_disponible" | "non_renseignee";
   raw: Record<string, any>;
@@ -603,14 +603,14 @@ export function parseBetRow(
   }
 
   // 6. Statut du résultat du jeu
-  let status: "en_attente" | "gagné" | "perdu" = "en_attente";
+  let status: "en attente" | "gagné" | "perdu" = "en attente";
   const st = String(rawStatus || "").toLowerCase().trim();
   if (st === "issue favorable" || st.includes("gagn")) {
     status = "gagné";
   } else if (st === "issue défavorable" || st.includes("perd") || st.includes("perdu")) {
     status = "perdu";
   } else {
-    status = "en_attente";
+    status = "en attente";
   }
 
   // 7. Montant gagné (distinction stricte gain brut vs marge)

@@ -115,14 +115,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 interface Bet {
   id: string;
   date: string;
-  time?: string;
+  time?: string | null;
   operator: string;
-  support: string;
-  bet_type: string;
+  support?: string | null;
+  bet_type?: string | null;
   amount_fcfa: number;
   status: string;
   amount_won_fcfa?: number;
-  phone?: string;
+  phone?: string | null;
   proof_status?: string;
   ticket_url?: string;
   proof_attachment_url?: string;

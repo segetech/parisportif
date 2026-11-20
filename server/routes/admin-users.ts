@@ -1,6 +1,6 @@
 import { RequestHandler } from "express";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import { sendEmail } from "../lib/email";
+import { sendEmail, getPublicAppUrl } from "../lib/email";
 import { recordAuditLog } from "../lib/audit-server";
 import crypto from "crypto";
 import { UserRole } from "../types/auth";
@@ -185,7 +185,7 @@ export const handleCreateUserWithPassword: RequestHandler = async (req, res) => 
 
     // Envoi email si demandé
     if (shouldSendEmail) {
-      const baseUrl = process.env.APP_URL || "http://localhost:3000";
+      const baseUrl = getPublicAppUrl();
       const loginUrl = `${baseUrl}/login`;
 
       await sendEmail({
@@ -282,7 +282,7 @@ export const handleResetUserPassword: RequestHandler = async (req, res) => {
     });
 
     if (shouldSendEmail) {
-      const baseUrl = process.env.APP_URL || "http://localhost:3000";
+      const baseUrl = getPublicAppUrl();
       const loginUrl = `${baseUrl}/login`;
 
       await sendEmail({

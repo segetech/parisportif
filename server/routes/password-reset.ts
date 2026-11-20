@@ -1,6 +1,6 @@
 import { RequestHandler } from "express";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import { sendEmail, generatePasswordResetToken, generatePasswordResetLink } from "../lib/email";
+import { sendEmail, getPublicAppUrl, generatePasswordResetToken, generatePasswordResetLink } from "../lib/email";
 import { recordAuditLog } from "../lib/audit-server";
 import crypto from "crypto";
 
@@ -54,7 +54,7 @@ export const handleForgotPassword: RequestHandler = async (req, res) => {
     }
 
     // Generate reset link
-    const baseUrl = process.env.APP_URL || "http://localhost:3000";
+    const baseUrl = getPublicAppUrl();
     const resetLink = generatePasswordResetLink(rawToken, baseUrl);
 
     // Send email

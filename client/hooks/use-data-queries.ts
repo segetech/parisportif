@@ -398,6 +398,30 @@ export function useDashboardData(start?: string, end?: string) {
   });
 }
 
+export async function fetchAllPaginated<T>(
+  buildQuery: (from: number, to: number) => any,
+  maxRows = 50000,
+): Promise<T[]> {
+  const PAGE_SIZE = 1000;
+  const all: T[] = [];
+  let from = 0;
+
+  while (from < maxRows) {
+    const to = Math.min(from + PAGE_SIZE - 1, maxRows - 1);
+    const { data, error } = await buildQuery(from, to);
+    if (error) {
+      if (isAuthError(error)) throw error;
+      throw error;
+    }
+    const batch = (data || []) as T[];
+    all.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return all;
+}
+
 // ============================================================================
 // 2. PARIS (BETS)
 // ============================================================================
@@ -408,35 +432,33 @@ export function useBets(filters?: any) {
   return useQuery({
     queryKey: queryKeys.bets(userId, filters),
     queryFn: async () => {
-      let query = supabase
-        .from("bets")
-        .select("*")
-        .is("archived_at", null)
-        .is("deleted_at", null)
-        .order("date", { ascending: false })
-        .order("time", { ascending: false });
+      const data = await fetchAllPaginated<Bet>((from, to) => {
+        let query = supabase
+          .from("bets")
+          .select("*")
+          .is("archived_at", null)
+          .is("deleted_at", null)
+          .order("date", { ascending: false })
+          .order("time", { ascending: false })
+          .range(from, to);
 
-      if (filters?.operator && filters.operator !== "all" && filters.operator !== "tous") {
-        query = query.eq("operator", filters.operator);
-      }
-      if (filters?.status && filters.status !== "all") {
-        query = query.eq("status", filters.status);
-      }
-      if (filters?.start) {
-        query = query.gte("date", filters.start);
-      }
-      if (filters?.end) {
-        query = query.lte("date", filters.end);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        if (isAuthError(error)) throw error;
-        throw error;
-      }
+        if (filters?.operator && filters.operator !== "all" && filters.operator !== "tous") {
+          query = query.eq("operator", filters.operator);
+        }
+        if (filters?.status && filters.status !== "all") {
+          query = query.eq("status", filters.status);
+        }
+        if (filters?.start) {
+          query = query.gte("date", filters.start);
+        }
+        if (filters?.end) {
+          query = query.lte("date", filters.end);
+        }
+        return query;
+      }, filters?.limit || 50000);
 
       saveToCache("bets", data, userId, filters);
-      return (data || []) as Bet[];
+      return data;
     },
     staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
     gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
@@ -509,36 +531,33 @@ export function useTransactions(filters?: any) {
   return useQuery({
     queryKey: queryKeys.transactions(userId, filters),
     queryFn: async () => {
-      let query = supabase
-        .from("transactions")
-        .select("*")
-        .is("archived_at", null)
-        .is("deleted_at", null)
-        .order("date", { ascending: false })
-        .order("time", { ascending: false })
-        .limit(filters?.limit || 5000);
+      const data = await fetchAllPaginated<Transaction>((from, to) => {
+        let query = supabase
+          .from("transactions")
+          .select("*")
+          .is("archived_at", null)
+          .is("deleted_at", null)
+          .order("date", { ascending: false })
+          .order("time", { ascending: false })
+          .range(from, to);
 
-      if (filters?.type) {
-        query = query.eq("type", filters.type);
-      }
-      if (filters?.operator && filters.operator !== "all" && filters.operator !== "tous") {
-        query = query.eq("operator", filters.operator);
-      }
-      if (filters?.start) {
-        query = query.gte("date", filters.start);
-      }
-      if (filters?.end) {
-        query = query.lte("date", filters.end);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        if (isAuthError(error)) throw error;
-        throw error;
-      }
+        if (filters?.type) {
+          query = query.eq("type", filters.type);
+        }
+        if (filters?.operator && filters.operator !== "all" && filters.operator !== "tous") {
+          query = query.eq("operator", filters.operator);
+        }
+        if (filters?.start) {
+          query = query.gte("date", filters.start);
+        }
+        if (filters?.end) {
+          query = query.lte("date", filters.end);
+        }
+        return query;
+      }, filters?.limit || 50000);
 
       saveToCache("transactions", data, userId, filters);
-      return (data || []) as Transaction[];
+      return data;
     },
     staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
     gcTime: CACHE_TIERS.OPERATIONAL.gcTime,

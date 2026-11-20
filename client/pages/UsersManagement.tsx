@@ -478,10 +478,15 @@ function UsersManagement() {
 
     setIsSendingLink(true);
     try {
+      const publicOrigin =
+        typeof window !== "undefined" &&
+        !/^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
+          ? window.location.origin
+          : "https://open.businessmoresarl.com";
       const { error } = await supabase.auth.resetPasswordForEmail(
         userForPasswordReset.email,
         {
-          redirectTo: `${window.location.origin}/reset-password`,
+          redirectTo: `${publicOrigin}/reset-password`,
         },
       );
 

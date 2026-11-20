@@ -32,16 +32,16 @@ export type LegacyReviewStatus = "en_cours" | "valide" | "rejete";
 export interface Transaction {
   id: string;
   date: string;
-  time: string;
+  time?: string | null;
   operator: string;
-  platform: string;
-  payment_operator: string;
-  support?: string;
+  platform?: string | null;
+  payment_operator?: string | null;
+  support?: string | null;
   venue_id?: string;
   type: "Dépôt" | "Retrait";
   amount_fcfa: number;
-  phone?: string;
-  reference: string;
+  phone?: string | null;
+  reference?: string | null;
   proof: boolean;
   proof_status?: string;
   proof_attachment_url?: string;
@@ -62,13 +62,13 @@ export interface Transaction {
 export interface Bet {
   id: string;
   date: string;
-  time: string;
+  time?: string | null;
   operator: string;
-  support: string;
-  bet_type: string;
+  support?: string | null;
+  bet_type?: string | null;
   amount_fcfa: number;
-  phone?: string;
-  reference: string;
+  phone?: string | null;
+  reference?: string | null;
   status: "gagné" | "perdu" | "en attente";
   amount_won_fcfa?: number;
   ticket_url?: string;
@@ -297,22 +297,28 @@ export const transactions = {
   async create(
     input: Omit<Transaction, "id" | "created_at"> & { created_by: string },
   ): Promise<Transaction> {
-    const ref = input.reference.trim();
+    const ref = input.reference?.trim() || null;
 
-    // Check if reference already exists
-    const { data: existing } = await supabase
-      .from("transactions")
-      .select("id")
-      .ilike("reference", ref);
+    if (ref) {
+      // Check if reference already exists
+      const { data: existing } = await supabase
+        .from("transactions")
+        .select("id")
+        .ilike("reference", ref);
 
-    if (existing && existing.length > 0) {
-      throw new Error("Cette référence existe déjà.");
+      if (existing && existing.length > 0) {
+        throw new Error("Cette référence existe déjà.");
+      }
     }
 
     const { data, error } = await supabase
       .from("transactions")
       .insert({
         ...input,
+        time: input.time?.trim() || null,
+        platform: input.platform?.trim() || null,
+        payment_operator: input.payment_operator?.trim() || null,
+        phone: input.phone?.trim() || null,
         reference: ref,
         validation_status: input.validation_status || "en_attente",
         review_status: input.review_status || "en_cours",
@@ -458,22 +464,28 @@ export const bets = {
   async create(
     input: Omit<Bet, "id" | "created_at"> & { created_by: string },
   ): Promise<Bet> {
-    const ref = input.reference.trim();
+    const ref = input.reference?.trim() || null;
 
-    // Check if reference already exists
-    const { data: existing } = await supabase
-      .from("bets")
-      .select("id")
-      .ilike("reference", ref);
+    if (ref) {
+      // Check if reference already exists
+      const { data: existing } = await supabase
+        .from("bets")
+        .select("id")
+        .ilike("reference", ref);
 
-    if (existing && existing.length > 0) {
-      throw new Error("Cette référence existe déjà.");
+      if (existing && existing.length > 0) {
+        throw new Error("Cette référence existe déjà.");
+      }
     }
 
     const { data, error } = await supabase
       .from("bets")
       .insert({
         ...input,
+        time: input.time?.trim() || null,
+        support: input.support?.trim() || null,
+        bet_type: input.bet_type?.trim() || null,
+        phone: input.phone?.trim() || null,
         reference: ref,
         validation_status: input.validation_status || "en_attente",
         review_status: input.review_status || "en_cours",
