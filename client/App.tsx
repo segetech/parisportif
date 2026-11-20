@@ -31,6 +31,7 @@ import AuditLogPage from "./pages/Audit";
 import UsersManagementPage from "./pages/UsersManagement";
 import ValidationPage from "./pages/ValidationNew";
 import CorbeillePage from "./pages/Corbeille";
+import DepensesPage from "./pages/Depenses";
 import CacheSettingsPage from "./pages/CacheSettings";
 import IllegalActivitiesPage from "./pages/IllegalActivities";
 import ExcelImportPage from "./pages/ExcelImport";
@@ -68,6 +69,7 @@ const App = () => (
                 <Route path="/users-management" element={<UsersManagementPage />} />
                 <Route path="/validation" element={<ValidationPage />} />
                 <Route path="/corbeille" element={<CorbeillePage />} />
+                <Route path="/depenses" element={<DepensesPage />} />
                 <Route path="/parametres" element={<SettingsPage />} />
                 <Route path="/cache" element={<CacheSettingsPage />} />
                 <Route path="/journal" element={<AuditLogPage />} />

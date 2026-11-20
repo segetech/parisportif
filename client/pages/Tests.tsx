@@ -52,7 +52,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
-import { useOptionalSettings } from "@/lib/settings";
+import { useOptionalSettings, buildTransactionFeeSnapshot } from "@/lib/settings";
 import { canAgentEditRecord } from "@/lib/rbac";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
@@ -552,6 +552,12 @@ function Tests() {
                 ? formData.amount_won_fcfa
                 : formData.amount_fcfa;
 
+            const feeSnapshot = buildTransactionFeeSnapshot(
+              transAmount,
+              transType,
+              "Orange",
+              settings.paymentFees,
+            );
             const newTransaction = {
               date: formData.date,
               time: fallbackTime,
@@ -560,6 +566,7 @@ function Tests() {
               platform: formData.support || "App mobile",
               payment_operator: "Orange",
               amount_fcfa: transAmount,
+              ...feeSnapshot,
               notes: ticketRef
                 ? `Flux lié au justificatif [${ticketRef.trim()}] (${formData.bet_type})`
                 : `Flux généré automatiquement depuis le test (${formData.bet_type})`,

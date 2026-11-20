@@ -21,6 +21,7 @@ import {
   Search,
   FileSpreadsheet,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import { useTrashCount } from "@/hooks/use-data-queries";
 import { Button } from "@/components/ui/button";
@@ -168,6 +169,11 @@ export default function AppLayout({
             label: "Rapport",
             icon: <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-300" />,
             requiresExportPermission: true,
+          },
+          {
+            to: "/depenses",
+            label: "Dépenses",
+            icon: <Wallet className="h-4 w-4 shrink-0 text-amber-300" />,
           },
           {
             to: "/corbeille",

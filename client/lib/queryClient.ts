@@ -93,7 +93,7 @@ export const queryKeys = {
 /**
  * Invalidation ciblée des données associées lors d'une mutation
  */
-export function invalidateRelatedQueries(domain: "bets" | "transactions" | "venues" | "validation" | "lookups" | "users" | "illegal") {
+export function invalidateRelatedQueries(domain: "bets" | "transactions" | "venues" | "validation" | "lookups" | "users" | "illegal" | "expenses") {
   switch (domain) {
     case "bets":
       queryClient.invalidateQueries({ queryKey: ["bets"] });
@@ -134,6 +134,9 @@ export function invalidateRelatedQueries(domain: "bets" | "transactions" | "venu
       queryClient.invalidateQueries({ queryKey: ["illegal_bets"] });
       queryClient.invalidateQueries({ queryKey: ["illegal_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      break;
+    case "expenses":
+      queryClient.invalidateQueries({ queryKey: ["monthly-expenses"] });
       break;
   }
 }

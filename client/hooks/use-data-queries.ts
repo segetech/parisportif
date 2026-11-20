@@ -1358,3 +1358,41 @@ export function useClearCache() {
       queryClient.invalidateQueries({ queryKey: [CACHE_CONFIG.USERS.key] }),
   };
 }
+
+export interface MonthlyExpense {
+  id: string;
+  date: string;
+  designation: string;
+  montant_fcfa: number;
+  depenses_fcfa: number;
+  gains_fcfa: number;
+  observations?: string | null;
+  financement_fcfa: number;
+  financement_source?: string | null;
+  soldes_fcfa: number;
+  created_by?: string | null;
+  created_at?: string;
+}
+
+export function useMonthlyExpenses() {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: ["monthly-expenses", userId || "anon"],
+    enabled: !!userId,
+    queryFn: async (): Promise<MonthlyExpense[]> => {
+      const { data, error } = await supabase
+        .from("monthly_expenses")
+        .select("*")
+        .order("date", { ascending: true });
+      if (error) {
+        if (isAuthError(error)) throw error;
+        throw error;
+      }
+      return (data || []) as MonthlyExpense[];
+    },
+    staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+    gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
+  });
+}

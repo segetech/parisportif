@@ -50,7 +50,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RequireAuth, useAuth } from "@/context/AuthContext";
-import { useOptionalSettings } from "@/lib/settings";
+import {
+  useOptionalSettings,
+  computeTransactionFee,
+  buildTransactionFeeSnapshot,
+  resolveStoredTransactionFee,
+} from "@/lib/settings";
 import { canAgentEditRecord } from "@/lib/rbac";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -107,6 +112,10 @@ interface Transaction {
   support?: string;
   amount_fcfa: number;
   payment_operator?: string;
+  fee_rate_percent?: number | null;
+  fee_fixed_fcfa?: number | null;
+  fee_fcfa?: number | null;
+  net_amount_fcfa?: number | null;
   phone?: string;
   proof_status?: string;
   proof_attachment_url?: string;
@@ -499,6 +508,30 @@ function Transactions() {
 
     try {
       const fallbackTime = formData.time || new Date().toTimeString().slice(0, 5);
+      const keepFrozenFee =
+        editingTransaction &&
+        editingTransaction.fee_fcfa !== null &&
+        editingTransaction.fee_fcfa !== undefined &&
+        Number(editingTransaction.amount_fcfa) === Number(formData.amount_fcfa) &&
+        editingTransaction.type === formData.type &&
+        (editingTransaction.payment_operator || "") === (formData.payment_operator || "");
+
+      const feeSnapshot = keepFrozenFee
+        ? {
+            fee_rate_percent: Number(editingTransaction!.fee_rate_percent ?? 0),
+            fee_fixed_fcfa: Number(editingTransaction!.fee_fixed_fcfa ?? 0),
+            fee_fcfa: Number(editingTransaction!.fee_fcfa ?? 0),
+            net_amount_fcfa: Number(
+              editingTransaction!.net_amount_fcfa ?? formData.amount_fcfa,
+            ),
+          }
+        : buildTransactionFeeSnapshot(
+            formData.amount_fcfa,
+            formData.type,
+            formData.payment_operator,
+            settings.paymentFees,
+          );
+
       const transactionData = {
         date: formData.date,
         time: fallbackTime,
@@ -510,6 +543,7 @@ function Transactions() {
         payment_operator: formData.payment_operator || "Non spécifié",
         proof_status: formData.proof_status,
         proof_attachment_url: formData.proof_attachment_url || null,
+        ...feeSnapshot,
         ...writeRecordReference(ticketRef, formData.notes),
       };
 
@@ -1713,6 +1747,40 @@ function Transactions() {
                           {formData.payment_operator || "—"}
                         </span>
                       </div>
+                      {(() => {
+                        const isSameAsSaved =
+                          editingTransaction &&
+                          editingTransaction.fee_fcfa !== null &&
+                          editingTransaction.fee_fcfa !== undefined &&
+                          Number(editingTransaction.amount_fcfa) === Number(formData.amount_fcfa) &&
+                          editingTransaction.type === formData.type &&
+                          (editingTransaction.payment_operator || "") ===
+                            (formData.payment_operator || "");
+                        const feeInfo = isSameAsSaved
+                          ? resolveStoredTransactionFee(
+                              editingTransaction!,
+                              settings.paymentFees,
+                            )
+                          : {
+                              ...computeTransactionFee(
+                                Number(formData.amount_fcfa || 0),
+                                formData.type,
+                                formData.payment_operator,
+                                settings.paymentFees,
+                              ),
+                              isFrozen: false,
+                            };
+                        return (
+                          <div>
+                            <span className="text-slate-500 block">
+                              Frais opérateur ({feeInfo.ratePercent}%{feeInfo.isFrozen ? " · figé" : ""})
+                            </span>
+                            <span className="font-semibold text-amber-800 tabular-nums">
+                              {feeInfo.feeFcfa.toLocaleString("fr-FR")} FCFA
+                            </span>
+                          </div>
+                        );
+                      })()}
                       <div>
                         <span className="text-slate-500 block">Téléphone</span>
                         <span className="font-semibold text-slate-900 tabular-nums">

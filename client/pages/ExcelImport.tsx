@@ -44,6 +44,7 @@ import {
   parseBetRow,
   parseVenuesGrouped,
   detectDuplicatesInTransactions,
+  normalizeImportDate,
   ParsedTransactionRow,
   ParsedBetRow,
   ParsedVenueGroup,
@@ -126,7 +127,21 @@ function ExcelImportContent() {
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     return new Date().toISOString().split("T")[0];
   });
+  const [filterStartDate, setFilterStartDate] = useState<string>("");
+  const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [preventDuplicates, setPreventDuplicates] = useState<boolean>(true);
+
+  const detectedDateRange = useMemo(() => {
+    const dates: string[] = [];
+    for (const r of rawRows) {
+      const rawD = r["DATE"] ?? r["DATE "] ?? r["Date"] ?? r["date"];
+      const norm = normalizeImportDate(rawD, null);
+      if (norm) dates.push(norm);
+    }
+    if (dates.length === 0) return null;
+    dates.sort();
+    return { min: dates[0], max: dates[dates.length - 1] };
+  }, [rawRows]);
 
   // Données normalisées
   const [parsedTransactions, setParsedTransactions] = useState<ParsedTransactionRow[]>([]);
@@ -293,6 +308,8 @@ function ExcelImportContent() {
     setParsedBets([]);
     setParsedVenues([]);
     setBatchResult(null);
+    setFilterStartDate("");
+    setFilterEndDate("");
 
     let type: TargetEntityType = explicitType || "depotretrait";
     if (!explicitType) {
@@ -377,18 +394,31 @@ function ExcelImportContent() {
   async function handleProceedToPreview() {
     setIsProcessing(true);
     try {
+      const activeStart = detectedDateRange ? filterStartDate || detectedDateRange.min : "";
+      const activeEnd = detectedDateRange ? filterEndDate || detectedDateRange.max : "";
+      const inRange = (d: string | null) => {
+        if (!detectedDateRange || !d) return true;
+        if (activeStart && d < activeStart) return false;
+        if (activeEnd && d > activeEnd) return false;
+        return true;
+      };
+
       if (detectedType === "depotretrait") {
         // Charger les références existantes en base pour détecter les collisions
         const { data: existingTxs } = await supabase.from("transactions").select("reference").not("reference", "is", null);
         const existingRefs = new Set((existingTxs || []).map((t: any) => String(t.reference).toLowerCase()));
 
-        const parsed = rawRows.map((r) => parseTransactionRow(r, r.rowNumber, selectedDate));
+        const parsed = rawRows
+          .map((r) => parseTransactionRow(r, r.rowNumber, selectedDate))
+          .filter((row) => inRange(row.date));
         if (preventDuplicates) {
           detectDuplicatesInTransactions(parsed, existingRefs);
         }
         setParsedTransactions(parsed);
       } else if (detectedType === "pari") {
-        const parsed = rawRows.map((r) => parseBetRow(r, r.rowNumber, selectedDate));
+        const parsed = rawRows
+          .map((r) => parseBetRow(r, r.rowNumber, selectedDate))
+          .filter((row) => inRange(row.date));
         setParsedBets(parsed);
       } else if (detectedType === "salles") {
         const grouped = parseVenuesGrouped(rawRows as any);
@@ -1096,6 +1126,29 @@ function ExcelImportContent() {
                   ))}
                 </select>
 
+                {/* Accès rapide à tous les onglets détectés (PARI, DEPOT-RETRAIT, etc.) */}
+                {availableSheets.length > 1 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {availableSheets.map((s) => {
+                      const active = s === selectedSheet;
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => handleSheetChange(s)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                            active
+                              ? "bg-[#006B2D] text-white border-[#006B2D]"
+                              : "bg-white text-[#17251C] border-[#D8E6DB] hover:bg-[#F5F8F5]"
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div className="pt-2">
                   <label className="text-[11px] font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
                     Modèle métier cible (détecté ou forcé)
@@ -1112,25 +1165,76 @@ function ExcelImportContent() {
                 </div>
               </div>
 
-              {/* Règle de date explicite (Obligatoire car absente du fichier Excel) */}
+              {/* Règle de date : tranche détectée dans le fichier OU date de référence fallback */}
               {detectedType !== "salles" && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] flex items-center gap-1.5">
-                      <Calendar className="h-3.5 w-3.5 text-[#006B2D]" />
-                      Date de référence des opérations *
-                    </label>
-                    <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                      Règle explicite requise
-                    </span>
-                  </div>
-                  <DatePickerCustom
-                    value={selectedDate}
-                    onChange={setSelectedDate}
-                  />
-                  <p className="text-[11px] text-[#556B5C]">
-                    La colonne Date étant absente du fichier source, cette date sera appliquée à chaque ligne (aucune déduction silencieuse).
-                  </p>
+                  {detectedDateRange ? (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-[#006B2D]" />
+                          Tranche de dates détectée dans le fichier
+                        </label>
+                        <span className="text-[10px] text-[#006B2D] font-semibold bg-[#E8F5EC] px-2 py-0.5 rounded border border-[#B8DEC6]">
+                          Dates lues automatiquement
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[11px] text-[#556B5C] block mb-1">
+                            Du
+                          </label>
+                          <Input
+                            type="date"
+                            min={detectedDateRange.min}
+                            max={detectedDateRange.max}
+                            value={filterStartDate || detectedDateRange.min}
+                            onChange={(e) => setFilterStartDate(e.target.value)}
+                            className="h-10 bg-[#F5F8F5] border-[#D8E6DB] text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-[#556B5C] block mb-1">
+                            Au
+                          </label>
+                          <Input
+                            type="date"
+                            min={detectedDateRange.min}
+                            max={detectedDateRange.max}
+                            value={filterEndDate || detectedDateRange.max}
+                            onChange={(e) => setFilterEndDate(e.target.value)}
+                            className="h-10 bg-[#F5F8F5] border-[#D8E6DB] text-xs"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-[#556B5C]">
+                        Période complète du classeur :{" "}
+                        <strong>{new Date(`${detectedDateRange.min}T00:00:00`).toLocaleDateString("fr-FR")}</strong>{" "}
+                        au{" "}
+                        <strong>{new Date(`${detectedDateRange.max}T00:00:00`).toLocaleDateString("fr-FR")}</strong>.
+                        Ajustez si vous ne souhaitez importer qu&apos;une sous-tranche.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold uppercase tracking-wider text-[#556B5C] flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-[#006B2D]" />
+                          Date de référence des opérations *
+                        </label>
+                        <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          Règle explicite requise
+                        </span>
+                      </div>
+                      <DatePickerCustom
+                        value={selectedDate}
+                        onChange={setSelectedDate}
+                      />
+                      <p className="text-[11px] text-[#556B5C]">
+                        La colonne Date étant absente du fichier source, cette date sera appliquée à chaque ligne (aucune déduction silencieuse).
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1502,16 +1606,24 @@ function ExcelImportContent() {
               )}
             </div>
 
-            {/* BOUTONS D'ACTION FINALE */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-[#D8E6DB]">
-              <Button
-                variant="outline"
-                onClick={() => setCurrentStep("config")}
-                className="w-full sm:w-auto min-h-[44px] px-5 border-[#D8E6DB] text-[#556B5C]"
-              >
-                <ArrowLeft className="h-4 w-4 mr-1.5" />
-                Modifier la configuration
-              </Button>
+            <div className="h-24" aria-hidden="true" />
+
+            {/* DOCK D'ACTION FIXE EN BAS AU SCROLL */}
+            <div className="fixed bottom-4 left-4 right-4 md:left-[280px] md:right-8 z-40 max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3.5 bg-white rounded-2xl border border-[#D8E6DB] shadow-[0_10px_30px_rgba(15,23,42,0.12)]">
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  onClick={() => setCurrentStep("config")}
+                  className="w-full sm:w-auto min-h-[44px] px-4 border-[#D8E6DB] text-[#17251C] hover:bg-[#F5F8F5]"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-1.5" />
+                  Modifier la configuration
+                </Button>
+                <span className="hidden lg:inline-flex items-center gap-1.5 text-xs font-medium text-[#556B5C]">
+                  <span className="h-2 w-2 rounded-full bg-[#006B2D]" />
+                  {stats.validCount} prêt(s) · {stats.errorCount} erreur(s)
+                </span>
+              </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <Button

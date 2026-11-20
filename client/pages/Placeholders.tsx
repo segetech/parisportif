@@ -31,7 +31,13 @@ import { generateBlankImportTemplate } from "@/lib/excel-export";
 import { toast } from "sonner";
 import api, { Lookups, LookupKey } from "@/data/api";
 import { Pencil, Trash, Plus, FileText, Download } from "lucide-react";
-import { useSettings } from "@/lib/settings";
+import {
+  useSettings,
+  DEFAULT_PAYMENT_FEES,
+  computeTransactionFee,
+  type PaymentFeeRule,
+} from "@/lib/settings";
+import { useLookups } from "@/hooks/use-data-queries";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function LookupsPage() {
@@ -495,6 +501,38 @@ export function ExportsPage() {
 }
 export function SettingsPage() {
   const { settings, setSettings, applyNormalization, reset, save } = useSettings();
+  const { data: lookupsData } = useLookups();
+  const [newFeeOperator, setNewFeeOperator] = useState("");
+
+  const feeOperatorKeys = Array.from(
+    new Set([
+      ...Object.keys(DEFAULT_PAYMENT_FEES),
+      ...Object.keys(settings.paymentFees || {}),
+      ...(lookupsData?.paymentOperatorNames || []),
+    ]),
+  ).filter(Boolean);
+
+  function updateFeeRule(
+    opName: string,
+    patch: Partial<PaymentFeeRule>,
+  ) {
+    setSettings((s) => {
+      const current = (s.paymentFees || {})[opName] ||
+        DEFAULT_PAYMENT_FEES[opName] || {
+          depotRatePercent: 0,
+          depotFixedFcfa: 0,
+          retraitRatePercent: 0,
+          retraitFixedFcfa: 0,
+        };
+      return {
+        ...s,
+        paymentFees: {
+          ...(s.paymentFees || {}),
+          [opName]: { ...current, ...patch },
+        },
+      };
+    });
+  }
 
   return (
     <RequireAuth>
@@ -502,8 +540,9 @@ export function SettingsPage() {
         <AppLayout>
           <div className="w-full space-y-4">
             <Tabs defaultValue="saisie">
-              <TabsList>
+              <TabsList className="flex-wrap h-auto">
                 <TabsTrigger value="saisie">Saisie & qualité</TabsTrigger>
+                <TabsTrigger value="frais">Frais opérateurs</TabsTrigger>
                 <TabsTrigger value="roles">Rôles & permissions</TabsTrigger>
                 <TabsTrigger value="matching">Matching</TabsTrigger>
                 <TabsTrigger value="exports">Exports</TabsTrigger>
@@ -552,6 +591,147 @@ export function SettingsPage() {
                         </div>
                       </div>
                     </div>
+                    <div className="flex gap-2 justify-end pt-2">
+                      <Button variant="outline" onClick={reset}>Réinitialiser</Button>
+                      <Button onClick={save}>Enregistrer</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="frais">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      Frais des opérateurs de paiement (Dépôts &amp; Retraits)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-xs text-muted-foreground">
+                      Configurez le pourcentage (%) et/ou les frais fixes (FCFA) appliqués par chaque opérateur de paiement. Chaque opération enregistre le taux en vigueur au moment de sa saisie : <strong>modifier un taux ici n&apos;affecte jamais les opérations passées</strong>, seules les nouvelles opérations utiliseront le nouveau taux.
+                    </p>
+
+                    <div className="overflow-x-auto border rounded-lg">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 border-b text-slate-600">
+                          <tr>
+                            <th className="text-left p-2.5 font-semibold">Opérateur de paiement</th>
+                            <th className="text-right p-2.5 font-semibold">Dépôt (%)</th>
+                            <th className="text-right p-2.5 font-semibold">Dépôt fixe (FCFA)</th>
+                            <th className="text-right p-2.5 font-semibold">Retrait (%)</th>
+                            <th className="text-right p-2.5 font-semibold">Retrait fixe (FCFA)</th>
+                            <th className="text-left p-2.5 font-semibold">Simulation (10 000 FCFA)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {feeOperatorKeys.map((opName) => {
+                            const rule = (settings.paymentFees || {})[opName] ||
+                              DEFAULT_PAYMENT_FEES[opName] || {
+                                depotRatePercent: 0,
+                                depotFixedFcfa: 0,
+                                retraitRatePercent: 0,
+                                retraitFixedFcfa: 0,
+                              };
+                            const simDepot = computeTransactionFee(10000, "Dépôt", opName, settings.paymentFees);
+                            const simRetrait = computeTransactionFee(10000, "Retrait", opName, settings.paymentFees);
+                            return (
+                              <tr key={opName}>
+                                <td className="p-2.5 font-semibold text-slate-900">{opName}</td>
+                                <td className="p-2">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={0.1}
+                                    className="h-8 w-24 ml-auto text-right"
+                                    value={rule.depotRatePercent}
+                                    onChange={(e) =>
+                                      updateFeeRule(opName, {
+                                        depotRatePercent: Math.max(0, Number(e.target.value) || 0),
+                                      })
+                                    }
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={50}
+                                    className="h-8 w-28 ml-auto text-right"
+                                    value={rule.depotFixedFcfa}
+                                    onChange={(e) =>
+                                      updateFeeRule(opName, {
+                                        depotFixedFcfa: Math.max(0, Number(e.target.value) || 0),
+                                      })
+                                    }
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={0.1}
+                                    className="h-8 w-24 ml-auto text-right"
+                                    value={rule.retraitRatePercent}
+                                    onChange={(e) =>
+                                      updateFeeRule(opName, {
+                                        retraitRatePercent: Math.max(0, Number(e.target.value) || 0),
+                                      })
+                                    }
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={50}
+                                    className="h-8 w-28 ml-auto text-right"
+                                    value={rule.retraitFixedFcfa}
+                                    onChange={(e) =>
+                                      updateFeeRule(opName, {
+                                        retraitFixedFcfa: Math.max(0, Number(e.target.value) || 0),
+                                      })
+                                    }
+                                  />
+                                </td>
+                                <td className="p-2.5 text-slate-600">
+                                  Dépôt : <strong className="text-slate-900">{simDepot.feeFcfa.toLocaleString("fr-FR")} F</strong> · Retrait :{" "}
+                                  <strong className="text-slate-900">{simRetrait.feeFcfa.toLocaleString("fr-FR")} F</strong>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <Input
+                        value={newFeeOperator}
+                        onChange={(e) => setNewFeeOperator(e.target.value)}
+                        placeholder="Ajouter un autre opérateur de paiement..."
+                        className="h-9 max-w-xs text-xs"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const name = newFeeOperator.trim();
+                          if (!name) return;
+                          updateFeeRule(name, {
+                            depotRatePercent: 0,
+                            depotFixedFcfa: 0,
+                            retraitRatePercent: 0,
+                            retraitFixedFcfa: 0,
+                          });
+                          setNewFeeOperator("");
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Ajouter
+                      </Button>
+                    </div>
+
                     <div className="flex gap-2 justify-end pt-2">
                       <Button variant="outline" onClick={reset}>Réinitialiser</Button>
                       <Button onClick={save}>Enregistrer</Button>
