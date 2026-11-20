@@ -171,10 +171,18 @@ function AuthProviderContent({ children, navigate }: AuthProviderContentProps) {
               void (async () => {
                 try {
                   if (generationRef.current === generation) {
-                    await supabase
-                      .from("users")
-                      .update({ derniere_connexion: new Date().toISOString() })
-                      .eq("id", userId);
+                    const ua =
+                      typeof navigator !== "undefined" ? navigator.userAgent : null;
+                    const { error: rpcErr } = await supabase.rpc(
+                      "record_login_event",
+                      { p_user_agent: ua },
+                    );
+                    if (rpcErr) {
+                      await supabase
+                        .from("users")
+                        .update({ derniere_connexion: new Date().toISOString() })
+                        .eq("id", userId);
+                    }
                   }
                 } catch {
                   // Silencieux

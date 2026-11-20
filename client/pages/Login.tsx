@@ -18,6 +18,70 @@ import {
   Smartphone,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+
+interface LoginErrorDisplay {
+  title: string;
+  description: string;
+  showResetLink?: boolean;
+}
+
+function formatLoginError(err: any): LoginErrorDisplay {
+  const msg = String(err?.message || "").toLowerCase();
+
+  if (
+    msg.includes("invalid login credentials") ||
+    msg.includes("invalid_credentials")
+  ) {
+    return {
+      title: "Identifiants incorrects",
+      description:
+        "L'adresse e-mail ou le mot de passe saisi est incorrect. Vérifiez votre saisie (attention aux majuscules) ou réinitialisez votre mot de passe.",
+      showResetLink: true,
+    };
+  }
+  if (
+    msg.includes("suspendu") ||
+    msg.includes("inactif") ||
+    msg.includes("desactive")
+  ) {
+    return {
+      title: "Compte désactivé",
+      description:
+        "Votre compte a été suspendu ou désactivé. Veuillez contacter un administrateur.",
+    };
+  }
+  if (msg.includes("email not confirmed")) {
+    return {
+      title: "Adresse e-mail non confirmée",
+      description:
+        "Votre adresse e-mail n'a pas encore été confirmée. Vérifiez votre boîte de réception.",
+    };
+  }
+  if (
+    msg.includes("too many requests") ||
+    msg.includes("rate limit") ||
+    err?.status === 429
+  ) {
+    return {
+      title: "Trop de tentatives",
+      description:
+        "Par mesure de sécurité, veuillez patienter quelques instants avant de réessayer.",
+    };
+  }
+  if (msg.includes("failed to fetch") || msg.includes("network")) {
+    return {
+      title: "Problème de connexion réseau",
+      description:
+        "Impossible de joindre le serveur d'authentification. Vérifiez votre connexion Internet.",
+    };
+  }
+  return {
+    title: "Connexion impossible",
+    description:
+      "Vérifiez vos identifiants et réessayez. Si le problème persiste, contactez un administrateur.",
+  };
+}
 
 export default function Login() {
   const { user, login, mfaRequired, verifyMfaLogin, cancelMfaLogin } = useAuth();
@@ -25,7 +89,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoginErrorDisplay | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -39,26 +103,41 @@ export default function Login() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      const validationErr: LoginErrorDisplay = {
+        title: "Champs manquants",
+        description:
+          "Veuillez saisir votre adresse e-mail et votre mot de passe.",
+      };
+      setError(validationErr);
+      toast.error(validationErr.title, {
+        description: validationErr.description,
+      });
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      const emailErr: LoginErrorDisplay = {
+        title: "Adresse e-mail invalide",
+        description:
+          "Veuillez saisir une adresse e-mail valide (ex. nom@domaine.com).",
+      };
+      setError(emailErr);
+      toast.error(emailErr.title, { description: emailErr.description });
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await login(email.trim(), password);
+      await login(trimmedEmail, password);
       setLoading(false);
     } catch (err: any) {
-      console.error("Erreur de connexion:", err);
-      const msg = err?.message || "";
-      if (
-        msg.includes("Invalid login credentials") ||
-        msg.includes("invalid_credentials")
-      ) {
-        setError("Identifiants incorrects. Veuillez vérifier votre adresse e-mail et votre mot de passe.");
-      } else if (msg.includes("suspendu") || msg.includes("inactif")) {
-        setError("Votre compte a été suspendu ou désactivé. Veuillez contacter un administrateur.");
-      } else if (msg.includes("Email not confirmed")) {
-        setError("Votre adresse e-mail n'a pas encore été confirmée.");
-      } else {
-        setError(msg || "Une erreur est survenue lors de la connexion. Veuillez réessayer.");
-      }
+      const formatted = formatLoginError(err);
+      setError(formatted);
+      toast.error(formatted.title, { description: formatted.description });
       setLoading(false);
     }
   }
@@ -73,10 +152,13 @@ export default function Login() {
       await verifyMfaLogin(mfaCode);
       navigate("/");
     } catch (err: any) {
-      setError(
-        err?.message ||
-          "Code Authenticator invalide. Vérifiez le code affiché dans Google ou Microsoft Authenticator.",
-      );
+      const mfaErr: LoginErrorDisplay = {
+        title: "Code Authenticator invalide",
+        description:
+          "Vérifiez le code à 6 chiffres affiché dans Google Authenticator ou Microsoft Authenticator.",
+      };
+      setError(mfaErr);
+      toast.error(mfaErr.title, { description: mfaErr.description });
       setLoading(false);
     }
   }
@@ -254,15 +336,33 @@ export default function Login() {
               </p>
             </div>
 
-            {/* Bannière d'erreur soignée */}
+            {/* Bannière d'erreur lisible et structurée */}
             {error && (
               <div
                 role="alert"
                 aria-live="assertive"
-                className="mb-5 p-3.5 rounded-xl bg-[#FEECEB] border border-[#F87171] text-[#E52329] flex items-start gap-2.5 text-xs sm:text-sm"
+                className="mb-5 p-4 rounded-xl bg-[#FEECEB] border border-[#F87171] border-l-4 border-l-[#E52329] text-[#7F1D1D] flex items-start gap-3 text-xs sm:text-sm shadow-xs"
               >
-                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-[#E52329]" />
-                <span className="leading-snug">{error}</span>
+                <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5 text-[#E52329]" />
+                <div className="space-y-1 min-w-0">
+                  <p className="font-bold text-[#991B1B] leading-tight">
+                    {error.title}
+                  </p>
+                  <p className="text-xs sm:text-[13px] leading-relaxed text-[#7F1D1D]">
+                    {error.description}
+                  </p>
+                  {error.showResetLink && (
+                    <div className="pt-1">
+                      <Link
+                        to="/forgot-password"
+                        className="inline-flex items-center gap-1 text-xs font-bold text-[#991B1B] underline hover:text-[#7F1D1D]"
+                      >
+                        <span>Réinitialiser mon mot de passe</span>
+                        <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -346,7 +446,10 @@ export default function Login() {
                     type="email"
                     name="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError(null);
+                    }}
                     placeholder="agent@example.com"
                     autoComplete="email"
                     required
@@ -381,7 +484,10 @@ export default function Login() {
                     type={showPassword ? "text" : "password"}
                     name="password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError(null);
+                    }}
                     placeholder="••••••••••••"
                     autoComplete="current-password"
                     required

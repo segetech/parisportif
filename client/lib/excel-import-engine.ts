@@ -328,6 +328,54 @@ export function splitTypeAndPayment(rawType: string, rawPayment: string): {
 // ANALYSE DU FICHIER TRANSACTIONS (depotretrait)
 // -----------------------------------------------------------------------------
 
+function pickRowField(
+  rowValues: Record<string, any>,
+  candidates: string[],
+): any {
+  for (const key of candidates) {
+    if (rowValues[key] !== undefined && rowValues[key] !== null && String(rowValues[key]).trim() !== "") {
+      return rowValues[key];
+    }
+  }
+  const normalizedMap = new Map<string, any>();
+  for (const [k, v] of Object.entries(rowValues)) {
+    const norm = k.trim().toLowerCase();
+    if (!normalizedMap.has(norm) && v !== undefined && v !== null && String(v).trim() !== "") {
+      normalizedMap.set(norm, v);
+    }
+  }
+  for (const key of candidates) {
+    const val = normalizedMap.get(key.trim().toLowerCase());
+    if (val !== undefined) return val;
+  }
+  return "";
+}
+
+export function normalizeImportDate(
+  input: any,
+  fallback: string | null,
+): string | null {
+  if (input === null || input === undefined || String(input).trim() === "") {
+    return fallback;
+  }
+  if (input instanceof Date && !Number.isNaN(input.getTime())) {
+    return input.toISOString().slice(0, 10);
+  }
+  const s = String(input).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.slice(0, 10);
+  }
+  const fr = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (fr) {
+    return `${fr[3]}-${fr[2]}-${fr[1]}`;
+  }
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return fallback;
+}
+
 export function parseTransactionRow(
   rowValues: Record<string, any>,
   rowNumber: number,
@@ -335,15 +383,16 @@ export function parseTransactionRow(
 ): ParsedTransactionRow {
   const anomalies: Anomaly[] = [];
 
-  const rawOp = rowValues["Opérateur de jeux"] || rowValues["Opérateur"] || rowValues["operator"] || "";
-  const rawPlatform = rowValues["Plateforme"] || rowValues["Support"] || rowValues["platform"] || "";
-  const rawPayOp = rowValues["Opérateur de paiement"] || rowValues["Moyen de paiement"] || "";
-  const rawType = rowValues["Type"] || rowValues["type"] || "";
-  const rawAmount = rowValues["Montant"] || rowValues["amount"] || "";
-  const rawTime = rowValues["Heure"] || rowValues["time"] || "";
-  const rawPhone = rowValues["Numéro de téléphone"] || rowValues["Téléphone"] || rowValues["phone"] || "";
-  const rawRef = rowValues["Référence"] || rowValues["reference"] || "";
-  const rawProof = rowValues["preuve"] || rowValues["Preuve"] || "";
+  const rawOp = pickRowField(rowValues, ["Opérateur de jeux", "Opérateurs", "Opérateur", "operator"]);
+  const rawPlatform = pickRowField(rowValues, ["Plateforme", "Plateformes", "Support", "platform", "support"]);
+  const rawPayOp = pickRowField(rowValues, ["Opérateur de paiement", "Operateurs paiements", "Moyen de paiement", "payment_operator"]);
+  const rawType = pickRowField(rowValues, ["Type", "Types", "type"]);
+  const rawAmount = pickRowField(rowValues, ["Montant", "Montant F CFA", "Montant FCFA", "amount", "amount_fcfa"]);
+  const rawTime = pickRowField(rowValues, ["Heure", "time"]);
+  const rawDate = pickRowField(rowValues, ["DATE", "Date", "date"]);
+  const rawPhone = pickRowField(rowValues, ["Numéro de téléphone", "Téléphone", "TELEPHONE", "phone"]);
+  const rawRef = pickRowField(rowValues, ["Référence", "reference", "ID"]);
+  const rawProof = pickRowField(rowValues, ["preuve", "Preuve", "proof_status"]);
 
   // 1. Opérateur
   const operator = resolveAlias(rawOp, OPERATOR_ALIASES);
@@ -414,7 +463,7 @@ export function parseTransactionRow(
   }
 
   // 5. Date
-  let date = defaultDate;
+  const date = normalizeImportDate(rawDate, defaultDate);
   if (!date) {
     anomalies.push({
       row: rowNumber,
@@ -472,15 +521,16 @@ export function parseBetRow(
 ): ParsedBetRow {
   const anomalies: Anomaly[] = [];
 
-  const rawOp = rowValues["Opérateur de jeux"] || rowValues["Opérateur"] || rowValues["operator"] || "";
-  const rawSupport = rowValues["Support"] || rowValues["Plateforme"] || rowValues["platform"] || "";
-  const rawBetType = rowValues["Type de test"] || rowValues["Type de Test"] || rowValues["Type de Pari"] || rowValues["Type de pari"] || rowValues["bet_type"] || "";
-  const rawAmount = rowValues["Montant"] || rowValues["amount"] || "";
-  const rawTime = rowValues["Heure"] || rowValues["time"] || "";
-  const rawPhone = rowValues["Numéro de téléphone"] || rowValues["phone"] || "";
-  const rawRef = rowValues["Référence du test"] || rowValues["Référence"] || rowValues["reference"] || "";
-  const rawStatus = rowValues["statut"] || rowValues["Statut"] || "";
-  const rawAmountWon = rowValues["Montant retourné"] || rowValues["montant retourné"] || rowValues["montant gagné"] || rowValues["Montant gagné"] || "";
+  const rawOp = pickRowField(rowValues, ["Opérateur de jeux", "Opérateurs", "Opérateur", "operator"]);
+  const rawSupport = pickRowField(rowValues, ["Support", "Plateforme", "Plateformes", "platform", "support"]);
+  const rawBetType = pickRowField(rowValues, ["Type de test", "Type de Pari", "Types de paris", "bet_type"]);
+  const rawAmount = pickRowField(rowValues, ["Montant", "Montant FCFA", "Montant F CFA", "MONTANT MISE", "amount", "amount_fcfa"]);
+  const rawTime = pickRowField(rowValues, ["Heure", "time"]);
+  const rawDate = pickRowField(rowValues, ["DATE", "Date", "date"]);
+  const rawPhone = pickRowField(rowValues, ["Numéro de téléphone", "Téléphone", "TELEPHONE", "phone"]);
+  const rawRef = pickRowField(rowValues, ["Référence du test", "Référence", "reference", "ID"]);
+  const rawStatus = pickRowField(rowValues, ["statut", "Statut", "status"]);
+  const rawAmountWon = pickRowField(rowValues, ["Montant retourné", "montant gagné", "Montant gagné", "amount_won_fcfa"]);
 
   // 1. Opérateur
   const operator = resolveAlias(rawOp, OPERATOR_ALIASES);
@@ -542,7 +592,7 @@ export function parseBetRow(
   }
 
   // 5. Date
-  let date = defaultDate;
+  const date = normalizeImportDate(rawDate, defaultDate);
   if (!date) {
     anomalies.push({
       row: rowNumber,

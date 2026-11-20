@@ -1136,6 +1136,46 @@ export function useUsers(params?: any) {
   });
 }
 
+export interface LoginHistoryEntry {
+  id: string;
+  user_id: string;
+  user_email?: string | null;
+  user_role?: string | null;
+  user_name?: string | null;
+  logged_in_at: string;
+  user_agent?: string | null;
+}
+
+export function useLoginHistory(targetUserId?: string) {
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: ["login-history", userId || "anon", targetUserId || "all"],
+    enabled: !!userId,
+    queryFn: async (): Promise<LoginHistoryEntry[]> => {
+      let query = supabase
+        .from("login_history")
+        .select("*")
+        .order("logged_in_at", { ascending: false })
+        .limit(200);
+
+      if (targetUserId) {
+        query = query.eq("user_id", targetUserId);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        if (isAuthError(error)) throw error;
+        return [];
+      }
+      return (data || []) as LoginHistoryEntry[];
+    },
+    staleTime: CACHE_TIERS.OPERATIONAL.staleTime,
+    gcTime: CACHE_TIERS.OPERATIONAL.gcTime,
+  });
+}
+
 export function useUpdateUserStatus() {
   return useMutation({
     mutationFn: async ({ userId, statut }: { userId: string; statut: string }) => {

@@ -152,24 +152,76 @@ function ExcelImportContent() {
   // 1. LECTURE DU CLASSEUR EXCEL ET EXTRACTION DE FEUILLE
   // ---------------------------------------------------------------------------
 
+  function extractCellValue(cell: ExcelJS.Cell): string {
+    const raw = cell.value;
+    if (raw === null || raw === undefined) return "";
+    if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+      return raw.toISOString().slice(0, 10);
+    }
+    if (typeof raw === "object" && "result" in raw && (raw as any).result !== undefined) {
+      const res = (raw as any).result;
+      if (res instanceof Date && !Number.isNaN(res.getTime())) {
+        return res.toISOString().slice(0, 10);
+      }
+      return String(res ?? "").trim();
+    }
+    return (cell.text ? cell.text : String(raw)).trim();
+  }
+
+  function findHeaderRowNumber(worksheet: ExcelJS.Worksheet): number {
+    const keywords = [
+      "opérateur",
+      "operateur",
+      "montant",
+      "date",
+      "support",
+      "plateforme",
+      "type",
+      "référence",
+      "reference",
+      "quartier",
+      "localisation",
+    ];
+    let bestRow = 1;
+    let bestScore = -1;
+    const maxScan = Math.min(10, worksheet.rowCount || 1);
+    for (let r = 1; r <= maxScan; r++) {
+      const row = worksheet.getRow(r);
+      const uniqueTexts = new Set<string>();
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const txt = extractCellValue(cell).toLowerCase();
+        if (txt) uniqueTexts.add(txt);
+      });
+      if (uniqueTexts.size < 2) continue;
+      let score = 0;
+      for (const txt of uniqueTexts) {
+        if (keywords.some((kw) => txt.includes(kw))) score += 1;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestRow = r;
+      }
+    }
+    return bestRow;
+  }
+
   function extractSheetRows(workbook: ExcelJS.Workbook, sheetName: string, type: TargetEntityType): Record<string, any>[] {
     const worksheet = workbook.getWorksheet(sheetName);
     if (!worksheet) return [];
 
+    const headerRowNum = type === "salles" ? 1 : findHeaderRowNumber(worksheet);
     const headers: { col: number; name: string }[] = [];
-    const headerRow = worksheet.getRow(1);
+    const headerRow = worksheet.getRow(headerRowNum);
     headerRow.eachCell((cell, colNumber) => {
-      const val = cell.text ? cell.text.trim() : "";
+      const val = extractCellValue(cell);
       if (val) headers.push({ col: colNumber, name: val });
     });
 
     const rows: Record<string, any>[] = [];
+    let stopAtMatrix = false;
 
     worksheet.eachRow((r, rowNumber) => {
-      if (rowNumber === 1) return;
-
-      const rowObj: Record<string, any> = { rowNumber };
-      let hasData = false;
+      if (stopAtMatrix || rowNumber <= headerRowNum) return;
 
       if (type === "salles") {
         const no = r.getCell(1).text?.trim();
@@ -191,11 +243,38 @@ function ExcelImportContent() {
           });
         }
       } else {
-        for (const h of headers) {
-          const cellVal = r.getCell(h.col).text?.trim();
-          rowObj[h.name] = cellVal || "";
-          if (cellVal) hasData = true;
+        // Détection des titres de matrice en bas de feuille
+        const firstCells = [1, 2, 3]
+          .map((c) => extractCellValue(r.getCell(c)).toLowerCase())
+          .join(" ");
+        if (
+          firstCells.includes("récapitulatif clair et structuré") ||
+          firstCells.includes("matrice journalière") ||
+          firstCells.includes("matrice récapitulative")
+        ) {
+          stopAtMatrix = true;
+          return;
         }
+
+        const rowObj: Record<string, any> = { rowNumber };
+        let hasData = false;
+        let hasTotalLabel = false;
+
+        for (const h of headers) {
+          const cellVal = extractCellValue(r.getCell(h.col));
+          rowObj[h.name] = cellVal;
+          if (cellVal) {
+            hasData = true;
+            const upper = cellVal.toUpperCase();
+            if (upper === "TOTAL" || upper === "TOTAL DEPOT" || upper === "TOTAL RETRAIT") {
+              hasTotalLabel = true;
+            }
+          }
+        }
+
+        // Ignorer les lignes de sous-totaux (TOTAL / TOTAL DEPOT / TOTAL RETRAIT) sans opérateur
+        if (hasTotalLabel) return;
+
         if (hasData) {
           rows.push(rowObj);
         }
