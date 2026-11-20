@@ -218,6 +218,30 @@ export default function LookupsPage() {
     [],
   );
 
+  function renderOperatorBadges(key: LookupKey, value: string) {
+    if (key !== "operators") return null;
+    const meta = operatorMetaMap.get(value);
+    if (!meta) return null;
+    return (
+      <div className="flex items-center gap-1 shrink-0">
+        <span
+          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+            meta.is_illegal
+              ? "bg-[#FEECEB] text-[#E52329]"
+              : "bg-[#EBF7EE] text-[#006B2D]"
+          }`}
+        >
+          {meta.is_illegal ? "Illégal" : "Légal"}
+        </span>
+        {!meta.active && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">
+            Inactif
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <RequireAuth>
       <RequireRole allow={["ADMIN"]}>
@@ -269,28 +293,7 @@ export default function LookupsPage() {
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-sm truncate">{testStatusLabel(testCatalogLabel(v))}</span>
-                              {key === "operators" && (() => {
-                                const meta = operatorMetaMap.get(v);
-                                if (!meta) return null;
-                                return (
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <span
-                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                        meta.is_illegal
-                                          ? "bg-[#FEECEB] text-[#E52329]"
-                                          : "bg-[#EBF7EE] text-[#006B2D]"
-                                      }`}
-                                    >
-                                      {meta.is_illegal ? "Illégal" : "Légal"}
-                                    </span>
-                                    {!meta.active && (
-                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">
-                                        Inactif
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
+                              {renderOperatorBadges(key, v)}
                             </div>
                             <div className="flex items-center gap-1">
                               <Button
@@ -431,11 +434,14 @@ export default function LookupsPage() {
                           key={v}
                           className="flex items-center justify-between border rounded px-4 py-3 hover:bg-slate-50 transition-colors"
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-muted-foreground font-mono w-8">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="text-xs text-muted-foreground font-mono w-8 shrink-0">
                               #{index + 1}
                             </span>
-                            <span className="text-sm font-medium">{v}</span>
+                            <span className="text-sm font-medium truncate">
+                              {testStatusLabel(testCatalogLabel(v))}
+                            </span>
+                            {renderOperatorBadges(viewAllDialog.key, v)}
                           </div>
                           <div className="flex items-center gap-1">
                             <Button

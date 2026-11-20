@@ -87,9 +87,21 @@ export function WeeklyReportSection({
 
   const chartRef = useRef<HTMLDivElement>(null);
 
+  const dateFilters = useMemo(
+    () =>
+      startDate && endDate
+        ? { start: startDate, end: endDate }
+        : startDate
+          ? { start: startDate }
+          : endDate
+            ? { end: endDate }
+            : undefined,
+    [startDate, endDate],
+  );
+
   const { data: lookupsData } = useLookups();
-  const { data: bets = [] } = useBets();
-  const { data: transactions = [] } = useTransactions();
+  const { data: bets = [] } = useBets(dateFilters);
+  const { data: transactions = [] } = useTransactions(dateFilters);
   const { illegalBets = [], illegalTransactions = [] } = useIllegalActivities();
 
   const operatorFilterSet = useMemo(() => {

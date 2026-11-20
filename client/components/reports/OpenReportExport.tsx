@@ -106,6 +106,46 @@ export function OpenReportExport({
   activeUser.current = user;
   const { data: lookups } = useLookups();
 
+  const [availableYears, setAvailableYears] = useState<number[]>(() => [
+    initial.year,
+    initial.year - 1,
+    initial.year - 2,
+  ]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [minBet, maxBet, minTx, maxTx] = await Promise.all([
+          supabase.from("bets").select("date").is("archived_at", null).is("deleted_at", null).order("date", { ascending: true }).limit(1),
+          supabase.from("bets").select("date").is("archived_at", null).is("deleted_at", null).order("date", { ascending: false }).limit(1),
+          supabase.from("transactions").select("date").is("archived_at", null).is("deleted_at", null).order("date", { ascending: true }).limit(1),
+          supabase.from("transactions").select("date").is("archived_at", null).is("deleted_at", null).order("date", { ascending: false }).limit(1),
+        ]);
+        const dates = [
+          minBet.data?.[0]?.date,
+          maxBet.data?.[0]?.date,
+          minTx.data?.[0]?.date,
+          maxTx.data?.[0]?.date,
+        ].filter((d): d is string => typeof d === "string" && /^\d{4}/.test(d));
+        if (!active || dates.length === 0) return;
+        const years = dates.map((d) => Number(d.slice(0, 4))).filter((y) => Number.isFinite(y));
+        const minY = Math.min(...years, initial.year);
+        const maxY = Math.max(...years, initial.year);
+        const range: number[] = [];
+        for (let y = maxY; y >= minY; y--) {
+          range.push(y);
+        }
+        setAvailableYears(range);
+      } catch {
+        // Fallback silencieux sur les années par défaut
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [initial.year]);
+
   const allKnownOperators = useMemo(() => {
     const detected = periodSummary?.detectedOperators || [];
     const list = [
@@ -494,6 +534,7 @@ export function OpenReportExport({
             customEnd={customEnd}
             onCustomStartChange={setCustomStart}
             onCustomEndChange={setCustomEnd}
+            availableYears={availableYears}
             disabled={busy}
           />
         </div>
