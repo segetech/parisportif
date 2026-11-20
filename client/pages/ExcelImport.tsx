@@ -723,7 +723,24 @@ function ExcelImportContent() {
         }
         await queryClient.invalidateQueries({ queryKey: ["bets"] });
       } else if (entityType === "salles") {
-        const rowsToInsert = preview.parsedVenues.filter((v) => v.isValid);
+        const normVenue = (s?: string | null) =>
+          (s || "").trim().replace(/\s+/g, " ").toLowerCase();
+        const { data: existingVenues } = await supabase
+          .from("venues")
+          .select("quartier, operator")
+          .is("deleted_at", null);
+        const seenVenueKeys = new Set(
+          (existingVenues || []).map(
+            (ev: any) => `${normVenue(ev.quartier)}::${normVenue(ev.operator)}`,
+          ),
+        );
+        const rowsToInsert = preview.parsedVenues.filter((v) => {
+          if (!v.isValid) return false;
+          const key = `${normVenue(v.quartier)}::${normVenue(v.operator)}`;
+          if (seenVenueKeys.has(key)) return false;
+          seenVenueKeys.add(key);
+          return true;
+        });
         preview.parsedVenues.forEach((v) => sheetAnomalies.push(...v.anomalies));
         for (const chunk of chunkArray(rowsToInsert, 25)) {
           const records = chunk.map((v) => ({

@@ -36,7 +36,18 @@ import {
   Building,
   MapPin,
   Phone,
+  Download,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { exportStyledExcel } from "@/lib/excel-export";
+import { exportStyledPDF } from "@/lib/pdf-export";
 import { Badge } from "@/components/ui/badge";
 import {
   useVenues,
@@ -194,8 +205,38 @@ function Venues() {
     toast.success(`Type de test "${name}" créé avec succès`);
   }
 
+  const { uniqueVenues, duplicateVenueIds } = useMemo(() => {
+    const norm = (s?: string | null) =>
+      (s || "").trim().replace(/\s+/g, " ").toLowerCase();
+    const score = (v: Venue) => {
+      let s = 0;
+      const addr = norm(v.address);
+      if (addr && addr !== "non renseignée" && addr !== "non renseignee") s += 4;
+      if (v.contact_phone?.trim()) s += 2;
+      if (v.gps_lat != null && v.gps_lng != null) s += 2;
+      if (v.quartier_no?.trim()) s += 1;
+      s += Math.min((v.games?.length || 0) * 0.1, 1);
+      return s;
+    };
+    const byKey = new Map<string, Venue>();
+    const dupIds: string[] = [];
+    for (const v of venues) {
+      const key = `${norm(v.quartier)}::${norm(v.operator)}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, v);
+      } else if (score(v) > score(existing)) {
+        dupIds.push(existing.id);
+        byKey.set(key, v);
+      } else {
+        dupIds.push(v.id);
+      }
+    }
+    return { uniqueVenues: Array.from(byKey.values()), duplicateVenueIds: dupIds };
+  }, [venues]);
+
   const filteredVenues = useMemo(() => {
-    return venues.filter((v) => {
+    return uniqueVenues.filter((v) => {
       if (operatorFilter && v.operator !== operatorFilter) return false;
       if (betTypeFilter && v.bet_type !== betTypeFilter) return false;
       if (search) {
@@ -209,7 +250,7 @@ function Venues() {
       }
       return true;
     });
-  }, [venues, operatorFilter, betTypeFilter, search]);
+  }, [uniqueVenues, operatorFilter, betTypeFilter, search]);
 
   function openDialog(venue?: Venue) {
     if (venue) {
@@ -378,6 +419,36 @@ function Venues() {
     }
   }
 
+  const [exportBusy, setExportBusy] = useState(false);
+  const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
+
+  async function handleCleanupDuplicates() {
+    if (!isAdmin || duplicateVenueIds.length === 0 || cleaningDuplicates) return;
+    if (
+      !confirm(
+        `Supprimer définitivement ${duplicateVenueIds.length} site(s) en doublon de la base de données ? Les fiches les plus complètes seront conservées.`,
+      )
+    ) {
+      return;
+    }
+    setCleaningDuplicates(true);
+    try {
+      for (let i = 0; i < duplicateVenueIds.length; i += 50) {
+        const chunk = duplicateVenueIds.slice(i, i + 50);
+        const { error } = await supabase.from("venues").delete().in("id", chunk);
+        if (error) throw error;
+      }
+      toast.success(`${duplicateVenueIds.length} doublon(s) supprimé(s) avec succès`);
+      invalidateRelatedQueries("venues");
+      await refetch();
+    } catch (err: any) {
+      console.error("Erreur suppression doublons:", err);
+      toast.error(err?.message || "Erreur lors de la suppression des doublons");
+    } finally {
+      setCleaningDuplicates(false);
+    }
+  }
+
   if (isLoading && venues.length === 0) {
     return (
       <AppLayout>
@@ -388,28 +459,163 @@ function Venues() {
     );
   }
 
+  function normalizeVenueGames(venue: Venue): string[] {
+    const raw =
+      venue.games && venue.games.length > 0
+        ? venue.games
+        : [venue.bet_type].filter(Boolean);
+    return raw
+      .flatMap((item) => String(item).split(","))
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  function buildVenuesExportPayload() {
+    const columns = [
+      { header: "N°", key: "no", width: 8 },
+      { header: "Quartier", key: "quartier", width: 22 },
+      { header: "Opérateur", key: "operator", width: 16 },
+      { header: "Support", key: "support", width: 16 },
+      { header: "Types de test", key: "games", width: 32 },
+      { header: "Adresse", key: "address", width: 32 },
+      { header: "Téléphone", key: "phone", width: 16 },
+      { header: "GPS", key: "gps", width: 22 },
+    ];
+    const data = filteredVenues.map((venue) => {
+      const venueGames = normalizeVenueGames(venue);
+      return {
+        no: venue.quartier_no || "—",
+        quartier: venue.quartier,
+        operator: venue.operator,
+        support: venue.support || "—",
+        games: venueGames.join(", ") || "—",
+        address: venue.address || "—",
+        phone: venue.contact_phone || "—",
+        gps:
+          venue.gps_lat != null && venue.gps_lng != null
+            ? `${venue.gps_lat}, ${venue.gps_lng}`
+            : "—",
+      };
+    });
+    const opDisplay = operatorFilter || "Tous les opérateurs";
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    return { columns, data, opDisplay, dateStamp };
+  }
+
+  async function handleExportVenues(format: "excel" | "pdf") {
+    if (exportBusy) return;
+    if (filteredVenues.length === 0) {
+      toast.info("Aucun site à exporter avec les filtres actuels.");
+      return;
+    }
+    setExportBusy(true);
+    const toastId = `venues-${format}-export`;
+    toast.loading(
+      format === "excel" ? "Génération Excel en cours..." : "Génération PDF en cours...",
+      { id: toastId },
+    );
+    try {
+      const { columns, data, opDisplay, dateStamp } = buildVenuesExportPayload();
+      const subtitle = `Généré le ${new Date().toLocaleString("fr-FR")} • ${filteredVenues.length} site(s)`;
+      if (format === "excel") {
+        await exportStyledExcel({
+          sheetName: "Sites de test",
+          title: "Répertoire des sites de test",
+          subtitle,
+          operator: opDisplay,
+          periodText: "Liste filtrée",
+          columns,
+          data,
+          filename: `sites-de-test-${dateStamp}.xlsx`,
+          showTotals: false,
+        });
+        toast.success(`Export Excel réussi (${filteredVenues.length} site(s))`, { id: toastId });
+      } else {
+        await exportStyledPDF({
+          title: "Répertoire des sites de test",
+          subtitle,
+          operator: opDisplay,
+          periodText: "Liste filtrée",
+          columns,
+          data,
+          filename: `sites-de-test-${dateStamp}.pdf`,
+          showTotals: false,
+          orientation: "landscape",
+        });
+        toast.success(`Export PDF réussi (${filteredVenues.length} site(s))`, { id: toastId });
+      }
+    } catch (err: any) {
+      console.error("Erreur export sites:", err);
+      toast.error(err?.message || "Erreur lors de l'export", { id: toastId });
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Sites de test</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">Sites de test</h1>
             <p className="text-sm text-muted-foreground">
-
               Gérer les sites de test
             </p>
           </div>
-          {canManageVenues && (
-            <Button onClick={() => openDialog()}>
-              <Plus className="h-4 w-4 mr-2" />
-
-              Nouveau site
-            </Button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="flex-1 sm:flex-none"
+                  disabled={exportBusy || filteredVenues.length === 0}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Exporter
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExportVenues("excel")}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2 text-[#006B2D]" />
+                  Exporter en Excel (.xlsx)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportVenues("pdf")}>
+                  <FileText className="h-4 w-4 mr-2 text-[#E52329]" />
+                  Exporter en PDF (.pdf)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {canManageVenues && (
+              <Button onClick={() => openDialog()} className="flex-1 sm:flex-none">
+                <Plus className="h-4 w-4 mr-2" />
+                Nouveau site
+              </Button>
+            )}
+          </div>
         </div>
 
+        {isAdmin && duplicateVenueIds.length > 0 && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+            <span>
+              <strong>{duplicateVenueIds.length}</strong> doublon(s) détecté(s) en base (masqués dans cette liste).
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={cleaningDuplicates}
+              onClick={handleCleanupDuplicates}
+              className="border-amber-400 bg-white text-amber-900 hover:bg-amber-100 shrink-0"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              {cleaningDuplicates
+                ? "Suppression..."
+                : `Supprimer les doublons (${duplicateVenueIds.length})`}
+            </Button>
+          </div>
+        )}
+
         {/* Filtres */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="text-xs font-medium">Recherche</label>
             <Input
@@ -421,7 +627,7 @@ function Venues() {
           <div>
             <label className="text-xs font-medium">Opérateur</label>
             <select
-              className="w-full border rounded px-3 py-2 text-sm"
+              className="w-full border rounded px-3 py-2 text-sm bg-white"
               value={operatorFilter}
               onChange={(e) => setOperatorFilter(e.target.value)}
             >
@@ -436,7 +642,7 @@ function Venues() {
           <div>
             <label className="text-xs font-medium">Type de test</label>
             <select
-              className="w-full border rounded px-3 py-2 text-sm"
+              className="w-full border rounded px-3 py-2 text-sm bg-white"
               value={betTypeFilter}
               onChange={(e) => setBetTypeFilter(e.target.value)}
             >
@@ -451,6 +657,7 @@ function Venues() {
           <div className="flex items-end">
             <Button
               variant="outline"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setSearch("");
                 setOperatorFilter("");
@@ -462,13 +669,13 @@ function Venues() {
           </div>
         </div>
 
-        {/* VUE TABLEAU DESKTOP (>= 768px) */}
-        <div className="hidden md:block rounded-xl border border-[#D8E6DB] bg-white overflow-hidden shadow-xs">
+        {/* VUE TABLEAU DESKTOP (>= 1024px) */}
+        <div className="hidden lg:block rounded-xl border border-[#D8E6DB] bg-white overflow-x-auto shadow-xs">
           <Table>
             <TableHeader className="bg-[#F5F8F5]">
               <TableRow>
-                <TableHead className="text-xs font-bold text-[#556B5C]">
-                  N° Quartier
+                <TableHead className="w-16 text-xs font-bold text-[#556B5C] whitespace-nowrap">
+                  N°
                 </TableHead>
                 <TableHead className="text-xs font-bold text-[#556B5C]">
                   Quartier
@@ -477,19 +684,18 @@ function Venues() {
                   Opérateur
                 </TableHead>
                 <TableHead className="text-xs font-bold text-[#556B5C]">
-
                   Types de test proposés
                 </TableHead>
                 <TableHead className="text-xs font-bold text-[#556B5C]">
                   Adresse
                 </TableHead>
-                <TableHead className="text-xs font-bold text-[#556B5C]">
+                <TableHead className="text-xs font-bold text-[#556B5C] whitespace-nowrap">
                   Téléphone
                 </TableHead>
-                <TableHead className="text-xs font-bold text-[#556B5C]">
+                <TableHead className="hidden xl:table-cell text-xs font-bold text-[#556B5C] whitespace-nowrap">
                   GPS
                 </TableHead>
-                <TableHead className="text-right text-xs font-bold text-[#556B5C]">
+                <TableHead className="text-right text-xs font-bold text-[#556B5C] whitespace-nowrap">
                   Actions
                 </TableHead>
               </TableRow>
@@ -497,49 +703,46 @@ function Venues() {
             <TableBody>
               {filteredVenues.length > 0 ? (
                 filteredVenues.map((venue) => {
-                  const venueGames =
-                    venue.games && venue.games.length > 0
-                      ? venue.games
-                      : [venue.bet_type];
+                  const venueGames = normalizeVenueGames(venue);
                   return (
                     <TableRow
                       key={venue.id}
                       className="hover:bg-[#F5F8F5]/60 transition-colors"
                     >
-                      <TableCell className="text-xs text-[#556B5C] font-mono">
+                      <TableCell className="text-xs text-[#556B5C] font-mono whitespace-nowrap">
                         {venue.quartier_no || "—"}
                       </TableCell>
                       <TableCell className="font-bold text-xs text-[#17251C]">
                         {venue.quartier}
                       </TableCell>
-                      <TableCell className="text-xs font-semibold text-[#17251C]">
+                      <TableCell className="text-xs font-semibold text-[#17251C] whitespace-nowrap">
                         {venue.operator}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1 max-w-xs">
+                      <TableCell className="min-w-[180px] max-w-[260px]">
+                        <div className="flex flex-wrap gap-1">
                           {venueGames.map((g, gi) => (
                             <Badge
                               key={gi}
                               variant="outline"
-                              className="text-[10px] bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]"
+                              className="rounded-md px-1.5 py-0.5 text-[10px] font-medium leading-tight bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]"
                             >
                               {g}
                             </Badge>
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs text-[#556B5C] max-w-xs truncate">
+                      <TableCell className="text-xs text-[#556B5C] max-w-[180px] truncate">
                         {venue.address}
                       </TableCell>
-                      <TableCell className="text-xs text-[#556B5C]">
+                      <TableCell className="text-xs text-[#556B5C] whitespace-nowrap">
                         {venue.contact_phone || "—"}
                       </TableCell>
-                      <TableCell className="text-xs text-[#556B5C]">
+                      <TableCell className="hidden xl:table-cell text-xs text-[#556B5C] whitespace-nowrap">
                         {venue.gps_lat && venue.gps_lng
                           ? `${venue.gps_lat.toFixed(4)}, ${venue.gps_lng.toFixed(4)}`
                           : "—"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap">
                         <div className="flex justify-end gap-1.5">
                           <Button
                             variant="ghost"
@@ -571,8 +774,7 @@ function Venues() {
                     colSpan={8}
                     className="text-center text-sm text-[#556B5C] py-12"
                   >
-
-                    Aucun site trouvée
+                    Aucun site trouvé
                   </TableCell>
                 </TableRow>
               )}
@@ -580,61 +782,60 @@ function Venues() {
           </Table>
         </div>
 
-        {/* VUE CARTES MOBILE (< 768px) ERGONOMIQUE ET ACCESSIBLE AU TOUCHER */}
-        <div className="block md:hidden space-y-3">
+        {/* VUE CARTES MOBILE & TABLETTE (< 1024px) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:hidden">
           {filteredVenues.length > 0 ? (
             filteredVenues.map((venue) => {
-              const venueGames =
-                venue.games && venue.games.length > 0
-                  ? venue.games
-                  : [venue.bet_type];
+              const venueGames = normalizeVenueGames(venue);
               return (
                 <div
                   key={venue.id}
-                  className="p-4 bg-white rounded-2xl border border-[#D8E6DB] space-y-2.5 shadow-xs"
+                  className="p-4 bg-white rounded-2xl border border-[#D8E6DB] flex flex-col justify-between gap-2.5 shadow-xs"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black px-2 py-0.5 rounded bg-[#006B2D]/10 text-[#006B2D] border border-[#006B2D]/20">
-                        {venue.quartier_no
-                          ? `N° ${venue.quartier_no}`
-                          : "Salle"}
-                      </span>
-                      <span className="font-extrabold text-sm text-[#17251C]">
-                        {venue.quartier}
-                      </span>
+                  <div className="space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                        <span className="text-xs font-black px-2 py-0.5 rounded bg-[#006B2D]/10 text-[#006B2D] border border-[#006B2D]/20 shrink-0">
+                          {venue.quartier_no
+                            ? `N° ${venue.quartier_no}`
+                            : "Salle"}
+                        </span>
+                        <span className="font-extrabold text-sm text-[#17251C] break-words">
+                          {venue.quartier}
+                        </span>
+                      </div>
+                      <Badge className="bg-[#17251C] text-white font-bold text-xs shrink-0">
+                        {venue.operator}
+                      </Badge>
                     </div>
-                    <Badge className="bg-[#17251C] text-white font-bold text-xs">
-                      {venue.operator}
-                    </Badge>
-                  </div>
 
-                  <div className="text-xs text-[#556B5C] flex items-start gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 shrink-0 text-[#006B2D] mt-0.5" />
-                    <span>{venue.address}</span>
-                  </div>
-
-                  {venue.contact_phone && (
-                    <div className="text-xs text-[#556B5C] flex items-center gap-1.5">
-                      <Phone className="h-3.5 w-3.5 shrink-0 text-[#006B2D]" />
-                      <span>{venue.contact_phone}</span>
+                    <div className="text-xs text-[#556B5C] flex items-start gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-[#006B2D] mt-0.5" />
+                      <span className="break-words">{venue.address || "Non renseignée"}</span>
                     </div>
-                  )}
 
-                  <div className="pt-1 border-t border-[#D8E6DB]/60">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
-                      Jeux rattachés ({venueGames.length}) :
-                    </span>
-                    <div className="flex flex-wrap gap-1">
-                      {venueGames.map((g, gi) => (
-                        <Badge
-                          key={gi}
-                          variant="outline"
-                          className="text-[11px] bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]"
-                        >
-                          {g}
-                        </Badge>
-                      ))}
+                    {venue.contact_phone && (
+                      <div className="text-xs text-[#556B5C] flex items-center gap-1.5">
+                        <Phone className="h-3.5 w-3.5 shrink-0 text-[#006B2D]" />
+                        <span>{venue.contact_phone}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-1.5 border-t border-[#D8E6DB]/60">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#556B5C] block mb-1">
+                        Jeux rattachés ({venueGames.length}) :
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {venueGames.map((g, gi) => (
+                          <Badge
+                            key={gi}
+                            variant="outline"
+                            className="rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-tight bg-[#F5F8F5] border-[#D8E6DB] text-[#17251C]"
+                          >
+                            {g}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -643,7 +844,7 @@ function Venues() {
                       variant="outline"
                       size="sm"
                       onClick={() => openDialog(venue)}
-                      className="min-h-[44px] px-4 text-xs font-semibold border-[#D8E6DB] text-[#17251C]"
+                      className="min-h-[40px] px-3.5 text-xs font-semibold border-[#D8E6DB] text-[#17251C]"
                     >
                       <Eye className="h-3.5 w-3.5 mr-1.5" /> Consulter
                     </Button>
@@ -652,7 +853,7 @@ function Venues() {
                         variant="ghost"
                         size="sm"
                         onClick={() => handleDelete(venue.id)}
-                        className="min-h-[44px] px-3 text-xs text-[#E52329] hover:bg-red-50"
+                        className="min-h-[40px] px-3 text-xs text-[#E52329] hover:bg-red-50"
                       >
                         <Trash2 className="h-3.5 w-3.5 mr-1" /> Supprimer
                       </Button>
@@ -662,21 +863,20 @@ function Venues() {
               );
             })
           ) : (
-            <div className="p-8 text-center text-sm text-[#556B5C] bg-white rounded-2xl border border-[#D8E6DB]">
-
-              Aucun site trouvée
+            <div className="sm:col-span-2 p-8 text-center text-sm text-[#556B5C] bg-white rounded-2xl border border-[#D8E6DB]">
+              Aucun site trouvé
             </div>
           )}
         </div>
 
         <div className="text-sm text-muted-foreground">
-          Total : {filteredVenues.length}  site(s)
+          Total : {filteredVenues.length} site(s)
         </div>
       </div>
 
       {/* Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-h-[90vh] overflow-y-auto max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg font-bold text-[#17251C]">
               {editing ? "Consulter le site" : "Nouveau site de test"}

@@ -158,6 +158,8 @@ export function WeeklyReportSection({
         : customEnd;
 
   const chartRef = useRef<HTMLDivElement>(null);
+  const txChartRef = useRef<HTMLDivElement>(null);
+  const [txChartMode, setTxChartMode] = useState<"depots" | "retraits" | "compare">("depots");
 
   const dateFilters = useMemo(
     () =>
@@ -318,6 +320,47 @@ export function WeeklyReportSection({
       }),
     [betMatrix, reportOperators],
   );
+
+  const txChartData = useMemo(
+    () =>
+      txMatrix.map((row) => {
+        const entry: Record<string, string | number> = { date: row.label };
+        let totalDepots = 0;
+        let totalRetraits = 0;
+        for (const op of reportOperators) {
+          const d = row.depots[op.key] || 0;
+          const r = row.retraits[op.key] || 0;
+          totalDepots += d;
+          totalRetraits += r;
+          entry[op.key] = txChartMode === "retraits" ? r : d;
+        }
+        entry.__depots = totalDepots;
+        entry.__retraits = totalRetraits;
+        return entry;
+      }),
+    [txMatrix, reportOperators, txChartMode],
+  );
+
+  async function handleDownloadTxChartPng() {
+    if (!txChartRef.current) return;
+    try {
+      const canvas = await html2canvas(txChartRef.current, {
+        backgroundColor: "#FFFFFF",
+        scale: 2,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = buildReportFilename("graphe-depots-retraits", startDate, endDate, "xlsx").replace(/\.xlsx$/, ".png");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success("Image PNG du graphe Dépôts & Retraits téléchargée");
+    } catch (err) {
+      console.warn("Capture graphe Dépôts/Retraits impossible:", err);
+      toast.error("Impossible de capturer le graphe");
+    }
+  }
 
   async function captureChartBase64(): Promise<string | null> {
     if (!chartRef.current) return null;
@@ -913,6 +956,127 @@ export function WeeklyReportSection({
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Graphe visuel Dépôts & Retraits exportable en image PNG */}
+      <div
+        ref={txChartRef}
+        className="p-5 rounded-2xl border border-[#D8E6DB] bg-white shadow-xs space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-[#006B2D]" />
+            <h3 className="text-sm font-extrabold text-[#17251C]">
+              Évolution Journalière des Dépôts &amp; Retraits par Opérateur Actif (F CFA)
+            </h3>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-[#D8E6DB] bg-[#F5F8F5] p-0.5 text-[11px] font-semibold">
+              <button
+                type="button"
+                onClick={() => setTxChartMode("depots")}
+                className={`px-2.5 py-1 rounded-md transition-colors ${
+                  txChartMode === "depots"
+                    ? "bg-[#006B2D] text-white"
+                    : "text-[#556B5C] hover:text-[#17251C]"
+                }`}
+              >
+                Dépôts
+              </button>
+              <button
+                type="button"
+                onClick={() => setTxChartMode("retraits")}
+                className={`px-2.5 py-1 rounded-md transition-colors ${
+                  txChartMode === "retraits"
+                    ? "bg-[#E52329] text-white"
+                    : "text-[#556B5C] hover:text-[#17251C]"
+                }`}
+              >
+                Retraits
+              </button>
+              <button
+                type="button"
+                onClick={() => setTxChartMode("compare")}
+                className={`px-2.5 py-1 rounded-md transition-colors ${
+                  txChartMode === "compare"
+                    ? "bg-[#17251C] text-white"
+                    : "text-[#556B5C] hover:text-[#17251C]"
+                }`}
+              >
+                Dépôts vs Retraits
+              </button>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadTxChartPng}
+              className="h-7 px-2.5 text-[11px] border-[#D8E6DB] text-[#17251C]"
+            >
+              PNG
+            </Button>
+          </div>
+        </div>
+
+        <div className="h-[320px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={txChartData}
+              margin={{ top: 10, right: 12, left: 10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2ECE4" />
+              <XAxis
+                dataKey="date"
+                tick={{ fill: "#17251C", fontSize: 11, fontWeight: 600 }}
+              />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fill: "#556B5C", fontSize: 11 }}
+                tickFormatter={(v: number) =>
+                  v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)
+                }
+              />
+              <Tooltip
+                formatter={(value: any) => [
+                  `${new Intl.NumberFormat("fr-FR").format(Number(value) || 0)} F CFA`,
+                ]}
+                contentStyle={{
+                  backgroundColor: "#FFFFFF",
+                  borderColor: "#D8E6DB",
+                  borderRadius: "0.75rem",
+                  fontSize: "12px",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: "11px", fontWeight: 700 }} />
+              {txChartMode === "compare" ? (
+                <>
+                  <Bar
+                    dataKey="__depots"
+                    name="Total Dépôts"
+                    fill="#006B2D"
+                    radius={[3, 3, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="__retraits"
+                    name="Total Retraits"
+                    fill="#E52329"
+                    radius={[3, 3, 0, 0]}
+                  />
+                </>
+              ) : (
+                reportOperators.map((op) => (
+                  <Bar
+                    key={op.key}
+                    dataKey={op.key}
+                    name={op.label}
+                    fill={op.chartColor}
+                    radius={[3, 3, 0, 0]}
+                  />
+                ))
+              )}
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
